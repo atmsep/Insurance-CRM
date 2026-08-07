@@ -9,6 +9,7 @@ const links = [
   { href: "/dashboard/clients", label: "Πελάτες" },
   { href: "/dashboard/policies", label: "Συμβόλαια" },
   { href: "/dashboard/tasks", label: "Υπενθυμίσεις" },
+  { href: "/dashboard/settings", label: "Ρυθμίσεις" },
 ];
 
 export function DashboardNav() {
