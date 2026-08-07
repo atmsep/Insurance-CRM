@@ -20,6 +20,7 @@ export type PaymentFrequency =
   | "semiannual"
   | "annual";
 export type PaymentStatus = "pending" | "paid" | "overdue" | "partially_paid" | "cancelled";
+export type InteractionType = "call" | "email" | "meeting" | "sms" | "note" | "other";
 export type ClaimStatus =
   | "reported"
   | "under_review"

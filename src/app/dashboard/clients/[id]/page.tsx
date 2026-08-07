@@ -7,12 +7,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { updateClientNotes } from "../actions";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { updateClientNotes, createInteraction } from "../actions";
+import { InteractionTypeSelect } from "../interaction-type-select";
+import { INTERACTION_TYPE_LABELS } from "../interaction-labels";
 
 const CLIENT_TYPE_LABELS: Record<string, string> = {
   individual: "Φυσικό πρόσωπο",
   legal_entity: "Νομικό πρόσωπο",
 };
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default async function ClientDetailPage({
   params,
@@ -32,17 +52,26 @@ export default async function ClientDetailPage({
 
   if (!client) notFound();
 
-  const { data: policies } = await supabase
-    .from("policies")
-    .select("id, policy_number, status, end_date, insurance_lines(name_el)")
-    .eq("client_id", id)
-    .order("end_date", { ascending: false });
+  const [{ data: policies }, { data: interactions }] = await Promise.all([
+    supabase
+      .from("policies")
+      .select("id, policy_number, status, end_date, insurance_lines(name_el)")
+      .eq("client_id", id)
+      .order("end_date", { ascending: false }),
+    supabase
+      .from("interactions")
+      .select("id, interaction_type, subject, notes, interaction_date, follow_up_needed")
+      .eq("client_id", id)
+      .order("interaction_date", { ascending: false })
+      .limit(20),
+  ]);
 
   const name = client.client_individuals
     ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
     : client.client_legal_entities?.company_name ?? "—";
 
   const updateAction = updateClientNotes.bind(null, id);
+  const addInteractionAction = createInteraction.bind(null, id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -132,6 +161,70 @@ export default async function ClientDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Επικοινωνία</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ημ/νία</TableHead>
+                <TableHead>Τύπος</TableHead>
+                <TableHead>Θέμα</TableHead>
+                <TableHead>Σημειώσεις</TableHead>
+                <TableHead>Follow-up</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {interactions?.length ? (
+                interactions.map((interaction) => (
+                  <TableRow key={interaction.id}>
+                    <TableCell className="whitespace-nowrap">
+                      {formatDateTime(interaction.interaction_date)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {INTERACTION_TYPE_LABELS[interaction.interaction_type] ??
+                          interaction.interaction_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{interaction.subject ?? "—"}</TableCell>
+                    <TableCell className="max-w-xs truncate">{interaction.notes ?? "—"}</TableCell>
+                    <TableCell>{interaction.follow_up_needed ? "Ναι" : "—"}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    Δεν υπάρχει ιστορικό επικοινωνίας.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+
+          <form action={addInteractionAction} className="flex flex-wrap items-end gap-3">
+            <InteractionTypeSelect />
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="subject">Θέμα</Label>
+              <Input id="subject" name="subject" className="w-56" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="notes-interaction">Σημειώσεις</Label>
+              <Input id="notes-interaction" name="notes" className="w-72" />
+            </div>
+            <label className="flex items-center gap-2 pb-2 text-sm">
+              <input type="checkbox" name="follow_up_needed" className="size-4" />
+              Χρειάζεται follow-up
+            </label>
+            <Button type="submit" variant="secondary">
+              Καταχώρηση
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

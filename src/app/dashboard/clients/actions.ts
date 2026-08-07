@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
-import type { ClientType } from "@/lib/database.types";
+import type { ClientType, InteractionType } from "@/lib/database.types";
 
 export type ClientFormState = { error: string } | undefined;
 
@@ -78,6 +78,27 @@ export async function updateClientNotes(clientId: string, formData: FormData) {
       notes: (formData.get("notes") as string) || null,
     })
     .eq("id", clientId);
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
+export async function createInteraction(clientId: string, formData: FormData) {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const interactionType = (formData.get("interaction_type") as InteractionType) || "note";
+  const subject = (formData.get("subject") as string) || null;
+  const notes = (formData.get("notes") as string) || null;
+  const followUpNeeded = formData.get("follow_up_needed") === "on";
+
+  await supabase.from("interactions").insert({
+    client_id: clientId,
+    agent_id: agencyUser.id,
+    interaction_type: interactionType,
+    subject,
+    notes,
+    follow_up_needed: followUpNeeded,
+  });
 
   revalidatePath(`/dashboard/clients/${clientId}`);
 }
