@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusSelect } from "../status-select";
 import { updateClaimDetails } from "../actions";
 import type { ClaimStatus } from "@/lib/database.types";
+import { DocumentsSection } from "../../documents/documents-section";
+import { getDocumentsFor } from "../../documents/get-documents";
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR");
@@ -31,6 +33,8 @@ export default async function ClaimDetailPage({
     .single();
 
   if (!claim) notFound();
+
+  const documents = await getDocumentsFor("claim", id);
 
   const policy = claim.policies as unknown as {
     id: string;
@@ -141,6 +145,8 @@ export default async function ClaimDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <DocumentsSection entityType="claim" entityId={id} documents={documents} />
     </div>
   );
 }

@@ -18,6 +18,8 @@ import {
 import { updateClientNotes, createInteraction } from "../actions";
 import { InteractionTypeSelect } from "../interaction-type-select";
 import { INTERACTION_TYPE_LABELS } from "../interaction-labels";
+import { DocumentsSection } from "../../documents/documents-section";
+import { getDocumentsFor } from "../../documents/get-documents";
 
 const CLIENT_TYPE_LABELS: Record<string, string> = {
   individual: "Φυσικό πρόσωπο",
@@ -52,7 +54,7 @@ export default async function ClientDetailPage({
 
   if (!client) notFound();
 
-  const [{ data: policies }, { data: interactions }] = await Promise.all([
+  const [{ data: policies }, { data: interactions }, documents] = await Promise.all([
     supabase
       .from("policies")
       .select("id, policy_number, status, end_date, insurance_lines(name_el)")
@@ -64,6 +66,7 @@ export default async function ClientDetailPage({
       .eq("client_id", id)
       .order("interaction_date", { ascending: false })
       .limit(20),
+    getDocumentsFor("client", id),
   ]);
 
   const name = client.client_individuals
@@ -225,6 +228,8 @@ export default async function ClientDetailPage({
           </form>
         </CardContent>
       </Card>
+
+      <DocumentsSection entityType="client" entityId={id} documents={documents} />
     </div>
   );
 }

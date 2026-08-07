@@ -17,6 +17,8 @@ import {
 import { StatusSelect } from "../status-select";
 import { createInstallment, markInstallmentPaid } from "../actions";
 import type { PolicyStatus } from "@/lib/database.types";
+import { DocumentsSection } from "../../documents/documents-section";
+import { getDocumentsFor } from "../../documents/get-documents";
 
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
   pending: "Εκκρεμεί",
@@ -74,7 +76,7 @@ export default async function PolicyDetailPage({
     ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
     : client?.client_legal_entities?.company_name ?? "—";
 
-  const [{ data: vehicle }, { data: property }, { data: lifeHealth }, { data: installments }, { data: claims }] =
+  const [{ data: vehicle }, { data: property }, { data: lifeHealth }, { data: installments }, { data: claims }, documents] =
     await Promise.all([
       line?.requires_vehicle_details
         ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
@@ -95,6 +97,7 @@ export default async function PolicyDetailPage({
         .select("id, claim_number, status, date_of_loss, claim_amount_estimated")
         .eq("policy_id", id)
         .order("date_of_loss", { ascending: false }),
+      getDocumentsFor("policy", id),
     ]);
 
   const addInstallmentAction = createInstallment.bind(null, id);
@@ -282,6 +285,8 @@ export default async function PolicyDetailPage({
           </Table>
         </CardContent>
       </Card>
+
+      <DocumentsSection entityType="policy" entityId={id} documents={documents} />
     </div>
   );
 }
