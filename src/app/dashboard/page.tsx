@@ -21,12 +21,17 @@ export default async function DashboardPage() {
   const [
     { count: activePoliciesCount },
     { count: pendingTasksCount },
+    { count: openClaimsCount },
     { data: expiringPolicies },
     { data: overdueInstallments },
     { data: upcomingTasks },
   ] = await Promise.all([
     supabase.from("policies").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("tasks").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    supabase
+      .from("claims")
+      .select("id", { count: "exact", head: true })
+      .not("status", "in", "(paid,closed)"),
     supabase
       .from("policies")
       .select("id, policy_number, end_date, clients(client_individuals(first_name,last_name), client_legal_entities(company_name))")
@@ -56,7 +61,7 @@ export default async function DashboardPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Επισκόπηση</h1>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatTile label="Ενεργά συμβόλαια" value={activePoliciesCount ?? 0} />
         <StatTile label="Εκκρεμείς υπενθυμίσεις" value={pendingTasksCount ?? 0} />
         <StatTile
@@ -68,6 +73,11 @@ export default async function DashboardPage() {
           label="Ληξιπρόθεσμες δόσεις"
           value={overdueCount}
           tone={overdueCount > 0 ? "critical" : "neutral"}
+        />
+        <StatTile
+          label="Ανοιχτές ζημιές"
+          value={openClaimsCount ?? 0}
+          tone={(openClaimsCount ?? 0) > 0 ? "warning" : "neutral"}
         />
       </div>
 

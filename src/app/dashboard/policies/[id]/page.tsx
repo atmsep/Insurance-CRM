@@ -26,6 +26,15 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   cancelled: "Ακυρώθηκε",
 };
 
+const CLAIM_STATUS_LABELS: Record<string, string> = {
+  reported: "Αναφέρθηκε",
+  under_review: "Υπό εξέταση",
+  approved: "Εγκρίθηκε",
+  rejected: "Απορρίφθηκε",
+  paid: "Πληρώθηκε",
+  closed: "Έκλεισε",
+};
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR");
 }
@@ -65,7 +74,7 @@ export default async function PolicyDetailPage({
     ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
     : client?.client_legal_entities?.company_name ?? "—";
 
-  const [{ data: vehicle }, { data: property }, { data: lifeHealth }, { data: installments }] =
+  const [{ data: vehicle }, { data: property }, { data: lifeHealth }, { data: installments }, { data: claims }] =
     await Promise.all([
       line?.requires_vehicle_details
         ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
@@ -81,6 +90,11 @@ export default async function PolicyDetailPage({
         .select("*")
         .eq("policy_id", id)
         .order("installment_number", { ascending: true }),
+      supabase
+        .from("claims")
+        .select("id, claim_number, status, date_of_loss, claim_amount_estimated")
+        .eq("policy_id", id)
+        .order("date_of_loss", { ascending: false }),
     ]);
 
   const addInstallmentAction = createInstallment.bind(null, id);
@@ -213,6 +227,59 @@ export default async function PolicyDetailPage({
               Προσθήκη δόσης
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Ζημιές</CardTitle>
+          <Button
+            size="sm"
+            nativeButton={false}
+            render={<Link href={`/dashboard/claims/new?policy_id=${id}`}>Νέα ζημιά</Link>}
+          />
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Αριθμός</TableHead>
+                <TableHead>Ημ. ζημιάς</TableHead>
+                <TableHead>Εκτιμώμενο ποσό</TableHead>
+                <TableHead>Κατάσταση</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {claims?.length ? (
+                claims.map((claim) => (
+                  <TableRow key={claim.id}>
+                    <TableCell>
+                      <Link href={`/dashboard/claims/${claim.id}`} className="hover:underline">
+                        {claim.claim_number ?? "—"}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{formatDate(claim.date_of_loss)}</TableCell>
+                    <TableCell>
+                      {claim.claim_amount_estimated != null
+                        ? `${claim.claim_amount_estimated} €`
+                        : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {CLAIM_STATUS_LABELS[claim.status] ?? claim.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    Δεν υπάρχουν ζημιές.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

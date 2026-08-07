@@ -8,6 +8,7 @@ const links = [
   { href: "/dashboard", label: "Επισκόπηση" },
   { href: "/dashboard/clients", label: "Πελάτες" },
   { href: "/dashboard/policies", label: "Συμβόλαια" },
+  { href: "/dashboard/claims", label: "Ζημιές" },
   { href: "/dashboard/tasks", label: "Υπενθυμίσεις" },
   { href: "/dashboard/settings", label: "Ρυθμίσεις" },
 ];

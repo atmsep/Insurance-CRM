@@ -20,6 +20,13 @@ export type PaymentFrequency =
   | "semiannual"
   | "annual";
 export type PaymentStatus = "pending" | "paid" | "overdue" | "partially_paid" | "cancelled";
+export type ClaimStatus =
+  | "reported"
+  | "under_review"
+  | "approved"
+  | "rejected"
+  | "paid"
+  | "closed";
 export type TaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 export type TaskType = "renewal_reminder" | "follow_up" | "payment_due" | "birthday" | "custom";
