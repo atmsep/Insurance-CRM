@@ -9,19 +9,26 @@ import { isValidAfm, isValidAmka, isValidEmail } from "@/lib/validation";
 
 export type ClientFormState = { error: string } | undefined;
 
-export async function searchClients(query: string): Promise<{ id: string; label: string }[]> {
+export async function searchClients(
+  query: string,
+  excludeId?: string,
+): Promise<{ id: string; label: string }[]> {
   await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
   if (!query.trim()) return [];
 
-  const { data } = await supabase
+  let dbQuery = supabase
     .from("clients")
     .select("id, display_name")
     .eq("is_active", true)
     .or(`afm.ilike.%${query}%,phone_mobile.ilike.%${query}%,display_name.ilike.%${query}%`)
     .order("display_name")
     .limit(20);
+
+  if (excludeId) dbQuery = dbQuery.neq("id", excludeId);
+
+  const { data } = await dbQuery;
 
   return (data ?? []).map((c) => ({ id: c.id, label: c.display_name ?? "—" }));
 }
@@ -54,11 +61,14 @@ export async function createClientRecord(
     doy: (formData.get("doy") as string) || null,
     email,
     phone_mobile: (formData.get("phone_mobile") as string) || null,
+    phone_landline: (formData.get("phone_landline") as string) || null,
     address_city: (formData.get("address_city") as string) || null,
     iban: (formData.get("iban") as string) || null,
     notes: (formData.get("notes") as string) || null,
     referral_source: (formData.get("referral_source") as string) || null,
-    assigned_agent_id: agencyUser.id,
+    referred_by_client_id: (formData.get("referred_by_client_id") as string) || null,
+    referrer_relationship: (formData.get("referrer_relationship") as string) || null,
+    assigned_agent_id: (formData.get("assigned_agent_id") as string) || agencyUser.id,
     created_by: agencyUser.id,
   };
 
@@ -78,6 +88,9 @@ export async function createClientRecord(
           client_id: client.id,
           first_name: (formData.get("first_name") as string) ?? "",
           last_name: (formData.get("last_name") as string) ?? "",
+          father_name: (formData.get("father_name") as string) || null,
+          date_of_birth: (formData.get("date_of_birth") as string) || null,
+          occupation: (formData.get("occupation") as string) || null,
           amka: (formData.get("amka") as string) || null,
         })
       : await supabase.from("client_legal_entities").insert({
@@ -223,12 +236,27 @@ export async function updateClientNotes(clientId: string, formData: FormData) {
     .update({
       email: (formData.get("email") as string) || null,
       phone_mobile: (formData.get("phone_mobile") as string) || null,
+      phone_landline: (formData.get("phone_landline") as string) || null,
       address_city: (formData.get("address_city") as string) || null,
       iban: (formData.get("iban") as string) || null,
       notes: (formData.get("notes") as string) || null,
       referral_source: (formData.get("referral_source") as string) || null,
+      referred_by_client_id: (formData.get("referred_by_client_id") as string) || null,
+      referrer_relationship: (formData.get("referrer_relationship") as string) || null,
+      assigned_agent_id: (formData.get("assigned_agent_id") as string) || null,
     })
     .eq("id", clientId);
+
+  if (formData.get("client_type") === "individual") {
+    await supabase
+      .from("client_individuals")
+      .update({
+        father_name: (formData.get("father_name") as string) || null,
+        date_of_birth: (formData.get("date_of_birth") as string) || null,
+        occupation: (formData.get("occupation") as string) || null,
+      })
+      .eq("client_id", clientId);
+  }
 
   revalidatePath(`/dashboard/clients/${clientId}`);
 }

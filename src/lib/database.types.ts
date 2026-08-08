@@ -108,6 +108,8 @@ export interface Database {
           assigned_agent_id: string | null;
           notes: string | null;
           referral_source: string | null;
+          referred_by_client_id: string | null;
+          referrer_relationship: string | null;
           is_active: boolean;
           created_by: string | null;
           created_at: string;

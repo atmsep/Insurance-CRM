@@ -14,6 +14,7 @@ export function Combobox({
   searchAction,
   onSelect,
   className,
+  minLength = 1,
 }: {
   name: string;
   value: string;
@@ -22,6 +23,7 @@ export function Combobox({
   searchAction: (query: string) => Promise<ComboboxOption[]>;
   onSelect: (option: ComboboxOption) => void;
   className?: string;
+  minLength?: number;
 }) {
   const [text, setText] = useState(initialLabel ?? "");
   const [results, setResults] = useState<ComboboxOption[]>([]);
@@ -29,13 +31,13 @@ export function Combobox({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!text.trim()) return;
+    if (text.trim().length < minLength) return;
     const handle = setTimeout(async () => {
       const found = await searchAction(text);
       setResults(found);
     }, 250);
     return () => clearTimeout(handle);
-  }, [text, searchAction]);
+  }, [text, searchAction, minLength]);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -60,7 +62,7 @@ export function Combobox({
         autoComplete="off"
       />
       <input type="hidden" name={name} value={value} />
-      {open && text.trim() && results.length > 0 && (
+      {open && text.trim().length >= minLength && results.length > 0 && (
         <div className="absolute top-full z-10 mt-1 w-full rounded-md border bg-popover shadow-md">
           {results.map((option) => (
             <button

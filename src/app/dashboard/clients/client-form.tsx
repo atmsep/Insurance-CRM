@@ -13,8 +13,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createClientRecord, type ClientFormState } from "./actions";
+import { ReferrerField } from "./referrer-field";
+import { AgentSelect } from "./agent-select";
 
-export function ClientForm() {
+export function ClientForm({ agents }: { agents: { id: string; full_name: string }[] }) {
   const [state, formAction, pending] = useActionState<ClientFormState, FormData>(
     createClientRecord,
     undefined,
@@ -46,6 +48,9 @@ export function ClientForm() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Όνομα" name="first_name" required />
           <Field label="Επώνυμο" name="last_name" required />
+          <Field label="Πατρώνυμο" name="father_name" />
+          <Field label="Ημερομηνία γέννησης" name="date_of_birth" type="date" />
+          <Field label="Επάγγελμα" name="occupation" />
           <Field label="ΑΜΚΑ" name="amka" />
         </div>
       ) : (
@@ -61,9 +66,12 @@ export function ClientForm() {
         <Field label="ΔΟΥ" name="doy" />
         <Field label="Email" name="email" type="email" />
         <Field label="Κινητό τηλέφωνο" name="phone_mobile" />
+        <Field label="Σταθερό τηλέφωνο" name="phone_landline" />
         <Field label="Πόλη" name="address_city" />
         <Field label="IBAN" name="iban" />
         <Field label="Πηγή σύστασης" name="referral_source" />
+        <ReferrerField />
+        <AgentSelect agents={agents} />
       </div>
 
       <div className="flex flex-col gap-2">

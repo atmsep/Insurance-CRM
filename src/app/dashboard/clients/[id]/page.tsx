@@ -18,6 +18,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { updateClientNotes, createInteraction, toggleClientActive } from "../actions";
+import { ReferrerField } from "../referrer-field";
+import { AgentSelect } from "../agent-select";
 import { InteractionTypeSelect } from "../interaction-type-select";
 import { INTERACTION_TYPE_LABELS } from "../interaction-labels";
 import { DocumentsSection } from "../../documents/documents-section";
@@ -62,14 +64,14 @@ export default async function ClientDetailPage({
   const { data: client } = await supabase
     .from("clients")
     .select(
-      "*, client_individuals(*), client_legal_entities(*)",
+      "*, client_individuals(*), client_legal_entities(*), referred_by:referred_by_client_id(display_name)",
     )
     .eq("id", id)
     .single();
 
   if (!client) notFound();
 
-  const [{ data: policies }, { data: interactions }, documents, { data: installments }, { data: tickets }] =
+  const [{ data: policies }, { data: interactions }, documents, { data: installments }, { data: tickets }, { data: agents }] =
     await Promise.all([
       supabase
         .from("policies")
@@ -92,6 +94,7 @@ export default async function ClientDetailPage({
         .select("id, subject, description, status, priority, created_at")
         .eq("client_id", id)
         .order("created_at", { ascending: false }),
+      supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
     ]);
 
   // "Billed"/"outstanding" are measured against each policy's actual
@@ -169,6 +172,36 @@ export default async function ClientDetailPage({
           </CardHeader>
           <CardContent>
             <form action={updateAction} className="flex flex-col gap-4">
+              <input type="hidden" name="client_type" value={client.client_type} />
+              {client.client_type === "individual" && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="father_name">Πατρώνυμο</Label>
+                    <Input
+                      id="father_name"
+                      name="father_name"
+                      defaultValue={client.client_individuals?.father_name ?? ""}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="date_of_birth">Ημερομηνία γέννησης</Label>
+                    <Input
+                      id="date_of_birth"
+                      name="date_of_birth"
+                      type="date"
+                      defaultValue={client.client_individuals?.date_of_birth ?? ""}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="occupation">Επάγγελμα</Label>
+                    <Input
+                      id="occupation"
+                      name="occupation"
+                      defaultValue={client.client_individuals?.occupation ?? ""}
+                    />
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="email">Email</Label>
@@ -180,6 +213,14 @@ export default async function ClientDetailPage({
                     id="phone_mobile"
                     name="phone_mobile"
                     defaultValue={client.phone_mobile ?? ""}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="phone_landline">Σταθερό τηλέφωνο</Label>
+                  <Input
+                    id="phone_landline"
+                    name="phone_landline"
+                    defaultValue={client.phone_landline ?? ""}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
@@ -199,10 +240,20 @@ export default async function ClientDetailPage({
                   <Input
                     id="referral_source"
                     name="referral_source"
-                    placeholder="π.χ. όνομα πελάτη, Facebook, Google..."
+                    placeholder="π.χ. Facebook, Google..."
                     defaultValue={client.referral_source ?? ""}
                   />
                 </div>
+                <ReferrerField
+                  excludeId={client.id}
+                  defaultReferrerId={client.referred_by_client_id ?? undefined}
+                  defaultReferrerLabel={
+                    (client.referred_by as unknown as { display_name: string | null } | null)
+                      ?.display_name ?? undefined
+                  }
+                  defaultRelationship={client.referrer_relationship ?? undefined}
+                />
+                <AgentSelect agents={agents ?? []} defaultValue={client.assigned_agent_id ?? undefined} />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="notes">Σημειώσεις</Label>
