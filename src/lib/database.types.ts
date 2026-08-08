@@ -267,6 +267,88 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["policy_installments"]["Row"]>;
       };
+      commission_payees: {
+        Row: {
+          id: string;
+          name: string;
+          agency_user_id: string | null;
+          is_external: boolean;
+          phone: string | null;
+          email: string | null;
+          notes: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["commission_payees"]["Row"]> & {
+          name: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["commission_payees"]["Row"]>;
+      };
+      commissions: {
+        Row: {
+          id: string;
+          policy_id: string;
+          agent_id: string;
+          carrier_id: string;
+          policy_installment_id: string | null;
+          commission_type: CommissionType;
+          base_amount: number | null;
+          commission_rate_percent: number | null;
+          commission_amount: number;
+          status: CommissionStatus;
+          period: string | null;
+          direction: CommissionDirection;
+          payee_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["commissions"]["Row"]> & {
+          policy_id: string;
+          agent_id: string;
+          carrier_id: string;
+          commission_type: CommissionType;
+          commission_amount: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["commissions"]["Row"]>;
+      };
+      broker_offices: {
+        Row: {
+          id: string;
+          name: string;
+          is_direct: boolean;
+          phone: string | null;
+          email: string | null;
+          notes: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["broker_offices"]["Row"]> & {
+          name: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["broker_offices"]["Row"]>;
+      };
+      carrier_commission_rates: {
+        Row: {
+          id: string;
+          broker_office_id: string;
+          carrier_id: string;
+          insurance_line_id: string;
+          default_commission_percent: number;
+          valid_from: string;
+          valid_to: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["carrier_commission_rates"]["Row"]> & {
+          broker_office_id: string;
+          carrier_id: string;
+          insurance_line_id: string;
+          default_commission_percent: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["carrier_commission_rates"]["Row"]>;
+      };
       tasks: {
         Row: {
           id: string;

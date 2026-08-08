@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { CommissionTypeSelect } from "./commission-type-select";
 import { COMMISSION_DIRECTION_LABELS } from "./direction-labels";
+import { getCommissionRate } from "../policies/actions";
 import type { CommissionDirection } from "@/lib/database.types";
 
 type Payee = { id: string; name: string };
@@ -21,13 +22,38 @@ export function AddCommissionForm({
   addAction,
   payees,
   premiumNet,
+  carrierId,
+  insuranceLineId,
+  brokerOfficeId,
 }: {
   addAction: (formData: FormData) => void;
   payees: Payee[];
   premiumNet?: number | null;
+  carrierId: string;
+  insuranceLineId: string;
+  brokerOfficeId: string | null;
 }) {
   const [direction, setDirection] = useState<CommissionDirection>("incoming");
   const [payeeId, setPayeeId] = useState("");
+  const [baseAmount, setBaseAmount] = useState(premiumNet != null ? String(premiumNet) : "");
+  const [ratePercent, setRatePercent] = useState("");
+  const [amount, setAmount] = useState("");
+
+  // Pre-fill the incoming commission rate/amount from the agreed rate for
+  // this policy's broker + carrier + line, if one is configured — still a
+  // plain editable input, just a default instead of always typing by hand.
+  useEffect(() => {
+    if (!brokerOfficeId) return;
+    getCommissionRate(brokerOfficeId, carrierId, insuranceLineId).then((rate) => {
+      if (rate == null) return;
+      setRatePercent(String(rate));
+      const base = premiumNet != null ? premiumNet : null;
+      if (base != null) {
+        setAmount(((base * rate) / 100).toFixed(2));
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <form action={addAction} className="flex flex-wrap items-end gap-3">
@@ -83,7 +109,8 @@ export function AddCommissionForm({
           name="base_amount"
           type="number"
           step="0.01"
-          defaultValue={premiumNet ?? undefined}
+          value={baseAmount}
+          onChange={(e) => setBaseAmount(e.target.value)}
           className="w-28"
         />
       </div>
@@ -94,6 +121,8 @@ export function AddCommissionForm({
           name="commission_rate_percent"
           type="number"
           step="0.01"
+          value={ratePercent}
+          onChange={(e) => setRatePercent(e.target.value)}
           className="w-24"
         />
       </div>
@@ -105,6 +134,8 @@ export function AddCommissionForm({
           type="number"
           step="0.01"
           required
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
           className="w-28"
         />
       </div>

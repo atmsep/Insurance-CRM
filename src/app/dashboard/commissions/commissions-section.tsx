@@ -36,6 +36,8 @@ function payeeName(payees: Commission["commission_payees"]) {
 export function CommissionsSection({
   policyId,
   carrierId,
+  insuranceLineId,
+  brokerOfficeId,
   commissions,
   isAdmin,
   premiumNet,
@@ -43,6 +45,8 @@ export function CommissionsSection({
 }: {
   policyId: string;
   carrierId: string;
+  insuranceLineId: string;
+  brokerOfficeId: string | null;
   commissions: Commission[];
   isAdmin: boolean;
   premiumNet?: number | null;
@@ -108,7 +112,14 @@ export function CommissionsSection({
         </Table>
 
         {isAdmin && (
-          <AddCommissionForm addAction={addAction} payees={payees} premiumNet={premiumNet} />
+          <AddCommissionForm
+            addAction={addAction}
+            payees={payees}
+            premiumNet={premiumNet}
+            carrierId={carrierId}
+            insuranceLineId={insuranceLineId}
+            brokerOfficeId={brokerOfficeId}
+          />
         )}
       </CardContent>
     </Card>

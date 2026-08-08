@@ -25,8 +25,15 @@ export default async function NewPolicyPage({
         .eq("is_active", true)
         .order("sort_order"),
       supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
-      supabase.from("commission_payees").select("id, name").eq("is_active", true).order("name"),
+      supabase
+        .from("broker_offices")
+        .select("id, name, is_direct")
+        .eq("is_active", true)
+        .order("is_direct", { ascending: false })
+        .order("name"),
     ]);
+
+  const directBrokerOffice = brokerOffices?.find((b) => b.is_direct);
 
   let renewFrom: RenewFromData | undefined;
   let defaultClientId = client_id;
@@ -34,6 +41,7 @@ export default async function NewPolicyPage({
   let defaultCarrierId: string | undefined;
   let defaultLineId: string | undefined;
   let defaultAgentId: string | undefined;
+  let defaultBrokerOfficeId: string | undefined = directBrokerOffice?.id;
 
   if (renew_from) {
     const { data: source } = await supabase
@@ -52,6 +60,7 @@ export default async function NewPolicyPage({
       defaultClientId = source.client_id;
       defaultCarrierId = source.carrier_id;
       defaultLineId = source.insurance_line_id;
+      defaultBrokerOfficeId = source.broker_office_id ?? defaultBrokerOfficeId;
 
       renewFrom = {
         policyId: source.id,
@@ -93,6 +102,7 @@ export default async function NewPolicyPage({
         defaultCarrierId={defaultCarrierId}
         defaultLineId={defaultLineId}
         defaultAgentId={defaultAgentId}
+        defaultBrokerOfficeId={defaultBrokerOfficeId}
         renewFrom={renewFrom}
       />
     </div>

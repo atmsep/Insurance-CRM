@@ -52,6 +52,33 @@ export async function getClientAssignedAgent(clientId: string): Promise<string |
   return data?.assigned_agent_id ?? null;
 }
 
+// Looks up the agreed commission % for a broker/carrier/line combination, as
+// of today — non-blocking: returns null (no prefill, plain manual entry)
+// when no agreement is configured rather than erroring.
+export async function getCommissionRate(
+  brokerOfficeId: string,
+  carrierId: string,
+  insuranceLineId: string,
+): Promise<number | null> {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const { data } = await supabase
+    .from("carrier_commission_rates")
+    .select("default_commission_percent")
+    .eq("broker_office_id", brokerOfficeId)
+    .eq("carrier_id", carrierId)
+    .eq("insurance_line_id", insuranceLineId)
+    .lte("valid_from", today)
+    .or(`valid_to.is.null,valid_to.gte.${today}`)
+    .order("valid_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data?.default_commission_percent ?? null;
+}
+
 function str(formData: FormData, key: string) {
   const v = formData.get(key);
   return typeof v === "string" && v.length > 0 ? v : null;

@@ -88,6 +88,56 @@ export async function togglePayeeActive(payeeId: string, isActive: boolean) {
   revalidatePath("/dashboard/settings");
 }
 
+export async function createBrokerOffice(formData: FormData) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = formData.get("name") as string;
+  if (!name) return;
+
+  await supabase.from("broker_offices").insert({
+    name,
+    phone: (formData.get("phone") as string) || null,
+    email: (formData.get("email") as string) || null,
+  });
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function toggleBrokerOfficeActive(brokerOfficeId: string, isActive: boolean) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  await supabase
+    .from("broker_offices")
+    .update({ is_active: isActive })
+    .eq("id", brokerOfficeId)
+    .eq("is_direct", false);
+  revalidatePath("/dashboard/settings");
+}
+
+export async function createCarrierCommissionRate(formData: FormData) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const brokerOfficeId = formData.get("broker_office_id") as string;
+  const carrierId = formData.get("carrier_id") as string;
+  const insuranceLineId = formData.get("insurance_line_id") as string;
+  const percent = formData.get("default_commission_percent");
+
+  if (!brokerOfficeId || !carrierId || !insuranceLineId || !percent) return;
+
+  await supabase.from("carrier_commission_rates").insert({
+    broker_office_id: brokerOfficeId,
+    carrier_id: carrierId,
+    insurance_line_id: insuranceLineId,
+    default_commission_percent: Number(percent),
+    valid_from: (formData.get("valid_from") as string) || undefined,
+    valid_to: (formData.get("valid_to") as string) || null,
+  });
+
+  revalidatePath("/dashboard/settings");
+}
+
 export async function updateAgencyUserRole(userId: string, role: string) {
   await requireAdmin();
   const supabase = await createSupabaseClient();

@@ -95,6 +95,7 @@ export default async function PolicyDetailPage({
     { data: payees },
     agencyUser,
     { data: agents },
+    { data: brokerOffices },
   ] = await Promise.all([
     line?.requires_vehicle_details
       ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
@@ -126,6 +127,12 @@ export default async function PolicyDetailPage({
     supabase.from("commission_payees").select("id, name").eq("is_active", true).order("name"),
     getCurrentAgencyUser(),
     supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
+    supabase
+      .from("broker_offices")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("is_direct", { ascending: false })
+      .order("name"),
   ]);
 
   const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
@@ -210,7 +217,7 @@ export default async function PolicyDetailPage({
               <EntitySelect
                 label="Συνεργαζόμενο γραφείο"
                 name="broker_office_id"
-                options={(payees ?? []).map((p) => ({ id: p.id, label: p.name }))}
+                options={(brokerOffices ?? []).map((b) => ({ id: b.id, label: b.name }))}
                 defaultValue={policy.broker_office_id ?? undefined}
                 placeholder="— (προαιρετικό)"
               />
@@ -433,6 +440,8 @@ export default async function PolicyDetailPage({
       <CommissionsSection
         policyId={id}
         carrierId={policy.carrier_id}
+        insuranceLineId={policy.insurance_line_id}
+        brokerOfficeId={policy.broker_office_id}
         commissions={(commissions ?? []) as unknown as Commission[]}
         isAdmin={isAdmin}
         premiumNet={policy.premium_net}

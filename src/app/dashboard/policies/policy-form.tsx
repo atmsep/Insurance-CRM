@@ -70,6 +70,7 @@ export function PolicyForm({
   defaultCarrierId,
   defaultLineId,
   defaultAgentId,
+  defaultBrokerOfficeId,
   renewFrom,
 }: {
   carriers: { id: string; name: string }[];
@@ -81,6 +82,7 @@ export function PolicyForm({
   defaultCarrierId?: string;
   defaultLineId?: string;
   defaultAgentId?: string;
+  defaultBrokerOfficeId?: string;
   renewFrom?: RenewFromData;
 }) {
   const [state, formAction, pending] = useActionState<PolicyFormState, FormData>(
@@ -138,6 +140,7 @@ export function PolicyForm({
           label="Συνεργαζόμενο γραφείο"
           name="broker_office_id"
           options={brokerOffices.map((b) => ({ id: b.id, label: b.name }))}
+          defaultValue={defaultBrokerOfficeId}
           placeholder="— (προαιρετικό)"
         />
 
