@@ -7,6 +7,7 @@ import { MobileNav } from "@/components/mobile-nav";
 import { ToastListener } from "@/components/toast-listener";
 import { GlobalSearch } from "@/components/global-search";
 import { QuickCreateMenu } from "@/components/quick-create-menu";
+import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { Button } from "@/components/ui/button";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -24,14 +25,15 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
       <Suspense fallback={null}>
         <ToastListener />
       </Suspense>
-      <aside className="hidden w-56 shrink-0 flex-col justify-between border-r bg-muted/20 p-4 sm:flex">
+      <KeyboardShortcuts />
+      <aside className="no-print hidden w-56 shrink-0 flex-col justify-between border-r bg-muted/20 p-4 sm:flex">
         <div>
           <p className="mb-6 px-2 text-lg font-semibold">CRM Ασφαλιστικού</p>
           <DashboardNav />
         </div>
       </aside>
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
+        <header className="no-print flex items-center justify-between border-b px-4 py-3 sm:px-6">
           <div className="flex items-center gap-4">
             <MobileNav />
             <BackButton />

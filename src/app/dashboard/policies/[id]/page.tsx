@@ -22,6 +22,7 @@ import type { PolicyStatus } from "@/lib/database.types";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
 import { CommissionsSection, type Commission } from "../../commissions/commissions-section";
+import { PrintButton } from "@/components/print-button";
 import { getCurrentAgencyUser } from "@/lib/dal";
 
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
@@ -146,6 +147,7 @@ export default async function PolicyDetailPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <PrintButton />
           <Button
             variant="outline"
             nativeButton={false}

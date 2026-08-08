@@ -20,6 +20,7 @@ import { InteractionTypeSelect } from "../interaction-type-select";
 import { INTERACTION_TYPE_LABELS } from "../interaction-labels";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
+import { PrintButton } from "@/components/print-button";
 
 const CLIENT_TYPE_LABELS: Record<string, string> = {
   individual: "Φυσικό πρόσωπο",
@@ -116,6 +117,7 @@ export default async function ClientDetailPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <PrintButton />
           <form action={toggleClientActive.bind(null, id, !client.is_active)}>
             <Button type="submit" variant="outline">
               {client.is_active ? "Απενεργοποίηση" : "Ενεργοποίηση"}

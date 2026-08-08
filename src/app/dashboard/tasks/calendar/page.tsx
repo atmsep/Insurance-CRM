@@ -1,14 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-
-const PRIORITY_VARIANT: Record<string, "outline" | "default" | "destructive"> = {
-  low: "outline",
-  medium: "outline",
-  high: "default",
-  urgent: "destructive",
-};
+import { DayCell } from "./day-cell";
 
 const WEEKDAY_LABELS = ["Δε", "Τρ", "Τε", "Πε", "Πα", "Σα", "Κυ"];
 const MONTH_LABELS = [
@@ -99,34 +92,11 @@ export default async function TasksCalendarPage({
           </div>
         ))}
         {cells.map((day, idx) => {
-          const dayTasks = day ? (tasksByDay.get(day) ?? []) : [];
+          if (!day) return <div key={idx} className="min-h-24 bg-muted/30 p-1.5" />;
+          const dayTasks = tasksByDay.get(day) ?? [];
           const isToday = isCurrentMonth && day === today.getDate();
-          return (
-            <div
-              key={idx}
-              className={`min-h-24 bg-background p-1.5 ${day ? "" : "bg-muted/30"}`}
-            >
-              {day && (
-                <>
-                  <p className={`mb-1 text-right ${isToday ? "font-bold text-primary" : "text-muted-foreground"}`}>
-                    {day}
-                  </p>
-                  <div className="flex flex-col gap-1">
-                    {dayTasks.map((task) => (
-                      <Badge
-                        key={task.id}
-                        variant={PRIORITY_VARIANT[task.priority] ?? "outline"}
-                        className="block w-full truncate text-left"
-                        title={task.title}
-                      >
-                        {task.title}
-                      </Badge>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          );
+          const date = `${year}-${pad(monthIndex)}-${pad(day)}`;
+          return <DayCell key={idx} day={day} date={date} isToday={isToday} tasks={dayTasks} />;
         })}
       </div>
     </div>

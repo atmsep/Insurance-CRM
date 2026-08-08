@@ -96,6 +96,123 @@ export async function createClientRecord(
   redirect(`/dashboard/clients/${client.id}?toast=${encodeURIComponent("Ο πελάτης δημιουργήθηκε.")}`);
 }
 
+export type ImportClientRow = {
+  client_type?: string;
+  first_name?: string;
+  last_name?: string;
+  company_name?: string;
+  afm?: string;
+  phone_mobile?: string;
+  email?: string;
+  address_city?: string;
+};
+
+export type ImportSummary = {
+  created: number;
+  skipped: number;
+  errors: { row: number; reason: string }[];
+};
+
+export async function bulkImportClients(rows: ImportClientRow[]): Promise<ImportSummary> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const summary: ImportSummary = { created: 0, skipped: 0, errors: [] };
+  const seenAfm = new Set<string>();
+
+  if (rows.length > 500) {
+    summary.errors.push({ row: 0, reason: "Μέγιστο 500 γραμμές ανά εισαγωγή — χώρισε το αρχείο." });
+    return summary;
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2; // +1 for header row, +1 for 1-based
+
+    const afm = row.afm?.trim() || null;
+    if (afm && !isValidAfm(afm)) {
+      summary.errors.push({ row: rowNum, reason: "Μη έγκυρο ΑΦΜ" });
+      continue;
+    }
+    if (afm && (seenAfm.has(afm) || (await afmExists(supabase, afm)))) {
+      summary.skipped++;
+      continue;
+    }
+
+    const companyName = row.company_name?.trim();
+    const firstName = row.first_name?.trim();
+    const lastName = row.last_name?.trim();
+
+    const clientType: ClientType =
+      row.client_type === "legal_entity" || (!row.client_type && companyName)
+        ? "legal_entity"
+        : "individual";
+
+    if (clientType === "individual" && (!firstName || !lastName)) {
+      summary.errors.push({ row: rowNum, reason: "Λείπει όνομα/επώνυμο" });
+      continue;
+    }
+    if (clientType === "legal_entity" && !companyName) {
+      summary.errors.push({ row: rowNum, reason: "Λείπει επωνυμία" });
+      continue;
+    }
+
+    const email = row.email?.trim() || null;
+    if (email && !isValidEmail(email)) {
+      summary.errors.push({ row: rowNum, reason: "Μη έγκυρο email" });
+      continue;
+    }
+
+    const { data: client, error: clientError } = await supabase
+      .from("clients")
+      .insert({
+        client_type: clientType,
+        afm,
+        email,
+        phone_mobile: row.phone_mobile?.trim() || null,
+        address_city: row.address_city?.trim() || null,
+        assigned_agent_id: agencyUser.id,
+        created_by: agencyUser.id,
+      })
+      .select("id")
+      .single();
+
+    if (clientError || !client) {
+      summary.errors.push({ row: rowNum, reason: clientError?.message ?? "Σφάλμα αποθήκευσης" });
+      continue;
+    }
+
+    const subtypeResult =
+      clientType === "individual"
+        ? await supabase
+            .from("client_individuals")
+            .insert({ client_id: client.id, first_name: firstName!, last_name: lastName! })
+        : await supabase
+            .from("client_legal_entities")
+            .insert({ client_id: client.id, company_name: companyName! });
+
+    if (subtypeResult.error) {
+      await supabase.from("clients").delete().eq("id", client.id);
+      summary.errors.push({ row: rowNum, reason: subtypeResult.error.message });
+      continue;
+    }
+
+    if (afm) seenAfm.add(afm);
+    summary.created++;
+  }
+
+  revalidatePath("/dashboard/clients");
+  return summary;
+}
+
+async function afmExists(
+  supabase: Awaited<ReturnType<typeof createSupabaseClient>>,
+  afm: string,
+) {
+  const { data } = await supabase.from("clients").select("id").eq("afm", afm).maybeSingle();
+  return !!data;
+}
+
 export async function updateClientNotes(clientId: string, formData: FormData) {
   await requireAgencyUser();
   const supabase = await createSupabaseClient();

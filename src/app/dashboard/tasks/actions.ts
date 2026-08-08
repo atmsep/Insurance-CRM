@@ -24,6 +24,8 @@ export async function createTask(formData: FormData) {
   });
 
   revalidatePath("/dashboard/tasks");
+  revalidatePath("/dashboard/tasks/calendar");
+  revalidatePath("/dashboard");
 }
 
 export async function completeTask(taskId: string) {
@@ -36,4 +38,6 @@ export async function completeTask(taskId: string) {
     .eq("id", taskId);
 
   revalidatePath("/dashboard/tasks");
+  revalidatePath("/dashboard/tasks/calendar");
+  revalidatePath("/dashboard");
 }

@@ -19,8 +19,17 @@ export function GlobalSearch() {
   const router = useRouter();
 
   useEffect(() => {
+    function isTypingTarget(target: EventTarget | null) {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
+    }
+
     function onKeydown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setOpen(true);
+      } else if (e.key === "/" && !isTypingTarget(e.target)) {
         e.preventDefault();
         setOpen(true);
       } else if (e.key === "Escape") {

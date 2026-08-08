@@ -53,7 +53,14 @@ export default async function ClientsPage({
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Πελάτες</h1>
-        <Button nativeButton={false} render={<Link href="/dashboard/clients/new">Νέος πελάτης</Link>} />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/dashboard/clients/import">Εισαγωγή από CSV</Link>}
+          />
+          <Button nativeButton={false} render={<Link href="/dashboard/clients/new">Νέος πελάτης</Link>} />
+        </div>
       </div>
 
       <form className="flex flex-wrap items-end gap-3">
