@@ -164,6 +164,7 @@ export interface Database {
           carrier_id: string;
           insurance_line_id: string;
           assigned_agent_id: string | null;
+          broker_office_id: string | null;
           status: PolicyStatus;
           issue_date: string | null;
           start_date: string;

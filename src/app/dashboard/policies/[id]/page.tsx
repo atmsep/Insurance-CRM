@@ -26,6 +26,7 @@ import { getDocumentsFor } from "../../documents/get-documents";
 import { CommissionsSection, type Commission } from "../../commissions/commissions-section";
 import { PrintButton } from "@/components/print-button";
 import { getCurrentAgencyUser } from "@/lib/dal";
+import { EntitySelect } from "@/components/entity-select";
 
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
   pending: "Εκκρεμεί",
@@ -93,6 +94,7 @@ export default async function PolicyDetailPage({
     { data: commissions },
     { data: payees },
     agencyUser,
+    { data: agents },
   ] = await Promise.all([
     line?.requires_vehicle_details
       ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
@@ -123,6 +125,7 @@ export default async function PolicyDetailPage({
       .order("period", { ascending: false }),
     supabase.from("commission_payees").select("id, name").eq("is_active", true).order("name"),
     getCurrentAgencyUser(),
+    supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
   ]);
 
   const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
@@ -197,6 +200,20 @@ export default async function PolicyDetailPage({
               </div>
               <PremiumFields defaultGross={policy.premium_gross} defaultNet={policy.premium_net} />
               <PaymentFrequencySelect defaultValue={policy.payment_frequency} />
+              <EntitySelect
+                label="Συνεργάτης"
+                name="assigned_agent_id"
+                options={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
+                defaultValue={policy.assigned_agent_id ?? undefined}
+                placeholder="Επίλεξε συνεργάτη"
+              />
+              <EntitySelect
+                label="Συνεργαζόμενο γραφείο"
+                name="broker_office_id"
+                options={(payees ?? []).map((p) => ({ id: p.id, label: p.name }))}
+                defaultValue={policy.broker_office_id ?? undefined}
+                placeholder="— (προαιρετικό)"
+              />
             </div>
 
             {vehicle && (

@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { createClientRecord, type ClientFormState } from "./actions";
 import { ReferrerField } from "./referrer-field";
-import { AgentSelect } from "./agent-select";
+import { EntitySelect } from "@/components/entity-select";
 
 export function ClientForm({ agents }: { agents: { id: string; full_name: string }[] }) {
   const [state, formAction, pending] = useActionState<ClientFormState, FormData>(
@@ -71,7 +71,12 @@ export function ClientForm({ agents }: { agents: { id: string; full_name: string
         <Field label="IBAN" name="iban" />
         <Field label="Πηγή σύστασης" name="referral_source" />
         <ReferrerField />
-        <AgentSelect agents={agents} />
+        <EntitySelect
+          label="Συνεργάτης"
+          name="assigned_agent_id"
+          options={agents.map((a) => ({ id: a.id, label: a.full_name }))}
+          placeholder="Επίλεξε συνεργάτη"
+        />
       </div>
 
       <div className="flex flex-col gap-2">

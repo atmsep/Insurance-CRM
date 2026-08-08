@@ -12,7 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
-import { createPolicy, type PolicyFormState } from "./actions";
+import { EntitySelect } from "@/components/entity-select";
+import { createPolicy, getClientAssignedAgent, type PolicyFormState } from "./actions";
 import { searchClients } from "../clients/actions";
 import { PremiumFields } from "./premium-fields";
 import type { PaymentFrequency } from "@/lib/database.types";
@@ -62,18 +63,24 @@ const PAYMENT_FREQUENCIES: { value: PaymentFrequency; label: string }[] = [
 export function PolicyForm({
   carriers,
   insuranceLines,
+  agents,
+  brokerOffices,
   defaultClientId,
   defaultClientLabel,
   defaultCarrierId,
   defaultLineId,
+  defaultAgentId,
   renewFrom,
 }: {
   carriers: { id: string; name: string }[];
   insuranceLines: InsuranceLine[];
+  agents: { id: string; full_name: string }[];
+  brokerOffices: { id: string; name: string }[];
   defaultClientId?: string;
   defaultClientLabel?: string;
   defaultCarrierId?: string;
   defaultLineId?: string;
+  defaultAgentId?: string;
   renewFrom?: RenewFromData;
 }) {
   const [state, formAction, pending] = useActionState<PolicyFormState, FormData>(
@@ -83,6 +90,7 @@ export function PolicyForm({
   const [clientId, setClientId] = useState(defaultClientId ?? "");
   const [carrierId, setCarrierId] = useState(defaultCarrierId ?? "");
   const [lineId, setLineId] = useState(defaultLineId ?? "");
+  const [agentId, setAgentId] = useState(defaultAgentId ?? "");
   const [frequency, setFrequency] = useState<PaymentFrequency>(
     renewFrom?.paymentFrequency ?? "annual",
   );
@@ -110,9 +118,28 @@ export function PolicyForm({
             initialLabel={defaultClientLabel}
             placeholder="Αναζήτηση πελάτη με όνομα, ΑΦΜ ή τηλέφωνο..."
             searchAction={searchClients}
-            onSelect={(option) => setClientId(option.id)}
+            onSelect={(option) => {
+              setClientId(option.id);
+              getClientAssignedAgent(option.id).then((agentId) => setAgentId(agentId ?? ""));
+            }}
           />
         </div>
+
+        <EntitySelect
+          label="Συνεργάτης"
+          name="assigned_agent_id"
+          options={agents.map((a) => ({ id: a.id, label: a.full_name }))}
+          placeholder="Επίλεξε συνεργάτη"
+          value={agentId}
+          onValueChange={setAgentId}
+        />
+
+        <EntitySelect
+          label="Συνεργαζόμενο γραφείο"
+          name="broker_office_id"
+          options={brokerOffices.map((b) => ({ id: b.id, label: b.name }))}
+          placeholder="— (προαιρετικό)"
+        />
 
         <div className="flex flex-col gap-2">
           <Label>Ασφαλιστική εταιρεία</Label>

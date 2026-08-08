@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { updateClientNotes, createInteraction, toggleClientActive } from "../actions";
 import { ReferrerField } from "../referrer-field";
-import { AgentSelect } from "../agent-select";
+import { EntitySelect } from "@/components/entity-select";
 import { InteractionTypeSelect } from "../interaction-type-select";
 import { INTERACTION_TYPE_LABELS } from "../interaction-labels";
 import { DocumentsSection } from "../../documents/documents-section";
@@ -253,7 +253,13 @@ export default async function ClientDetailPage({
                   }
                   defaultRelationship={client.referrer_relationship ?? undefined}
                 />
-                <AgentSelect agents={agents ?? []} defaultValue={client.assigned_agent_id ?? undefined} />
+                <EntitySelect
+                  label="Συνεργάτης"
+                  name="assigned_agent_id"
+                  options={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
+                  defaultValue={client.assigned_agent_id ?? undefined}
+                  placeholder="Επίλεξε συνεργάτη"
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="notes">Σημειώσεις</Label>

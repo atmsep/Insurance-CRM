@@ -16,20 +16,24 @@ export default async function NewPolicyPage({
   const { client_id, renew_from } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: carriers }, { data: insuranceLines }] = await Promise.all([
-    supabase.from("carriers").select("id, name").eq("is_active", true).order("name"),
-    supabase
-      .from("insurance_lines")
-      .select("*")
-      .eq("is_active", true)
-      .order("sort_order"),
-  ]);
+  const [{ data: carriers }, { data: insuranceLines }, { data: agents }, { data: brokerOffices }] =
+    await Promise.all([
+      supabase.from("carriers").select("id, name").eq("is_active", true).order("name"),
+      supabase
+        .from("insurance_lines")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order"),
+      supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
+      supabase.from("commission_payees").select("id, name").eq("is_active", true).order("name"),
+    ]);
 
   let renewFrom: RenewFromData | undefined;
   let defaultClientId = client_id;
   let defaultClientLabel: string | undefined;
   let defaultCarrierId: string | undefined;
   let defaultLineId: string | undefined;
+  let defaultAgentId: string | undefined;
 
   if (renew_from) {
     const { data: source } = await supabase
@@ -69,10 +73,11 @@ export default async function NewPolicyPage({
   if (defaultClientId) {
     const { data: client } = await supabase
       .from("clients")
-      .select("display_name")
+      .select("display_name, assigned_agent_id")
       .eq("id", defaultClientId)
       .maybeSingle();
     defaultClientLabel = client?.display_name ?? undefined;
+    defaultAgentId = client?.assigned_agent_id ?? undefined;
   }
 
   return (
@@ -81,10 +86,13 @@ export default async function NewPolicyPage({
       <PolicyForm
         carriers={carriers ?? []}
         insuranceLines={insuranceLines ?? []}
+        agents={agents ?? []}
+        brokerOffices={brokerOffices ?? []}
         defaultClientId={defaultClientId}
         defaultClientLabel={defaultClientLabel}
         defaultCarrierId={defaultCarrierId}
         defaultLineId={defaultLineId}
+        defaultAgentId={defaultAgentId}
         renewFrom={renewFrom}
       />
     </div>

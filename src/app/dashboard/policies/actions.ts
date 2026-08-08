@@ -41,6 +41,17 @@ export async function searchPolicies(query: string): Promise<{ id: string; label
   return [...merged.values()].slice(0, 20);
 }
 
+export async function getClientAssignedAgent(clientId: string): Promise<string | null> {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+  const { data } = await supabase
+    .from("clients")
+    .select("assigned_agent_id")
+    .eq("id", clientId)
+    .single();
+  return data?.assigned_agent_id ?? null;
+}
+
 function str(formData: FormData, key: string) {
   const v = formData.get(key);
   return typeof v === "string" && v.length > 0 ? v : null;
@@ -84,7 +95,8 @@ export async function createPolicy(
       client_id: clientId,
       carrier_id: carrierId,
       insurance_line_id: insuranceLineId,
-      assigned_agent_id: agencyUser.id,
+      assigned_agent_id: str(formData, "assigned_agent_id") ?? agencyUser.id,
+      broker_office_id: str(formData, "broker_office_id"),
       start_date: str(formData, "start_date") ?? "",
       end_date: str(formData, "end_date") ?? "",
       premium_gross: num(formData, "premium_gross") ?? 0,
@@ -187,6 +199,8 @@ export async function updatePolicyDetails(
       premium_net: num(formData, "premium_net"),
       taxes_fees: num(formData, "taxes_fees"),
       payment_frequency: str(formData, "payment_frequency") ?? undefined,
+      assigned_agent_id: str(formData, "assigned_agent_id"),
+      broker_office_id: str(formData, "broker_office_id"),
     })
     .eq("id", policyId);
 
