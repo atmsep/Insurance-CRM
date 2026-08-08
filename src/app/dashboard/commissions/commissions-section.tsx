@@ -1,7 +1,4 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -12,19 +9,27 @@ import {
 } from "@/components/ui/table";
 import { createCommission } from "./actions";
 import { StatusSelect } from "./status-select";
-import { CommissionTypeSelect } from "./commission-type-select";
+import { AddCommissionForm } from "./add-commission-form";
 import { COMMISSION_TYPE_LABELS, COMMISSION_STATUS_LABELS } from "./commission-labels";
+import { COMMISSION_DIRECTION_LABELS } from "./direction-labels";
 import type { CommissionStatus } from "@/lib/database.types";
 
-type Commission = {
+export type Commission = {
   id: string;
   commission_type: string;
+  direction: string;
   base_amount: number | null;
   commission_rate_percent: number | null;
   commission_amount: number;
   status: string;
   period: string | null;
+  commission_payees?: { name: string } | { name: string }[] | null;
 };
+
+function payeeName(payees: Commission["commission_payees"]) {
+  if (!payees) return null;
+  return Array.isArray(payees) ? payees[0]?.name ?? null : payees.name;
+}
 
 export function CommissionsSection({
   policyId,
@@ -32,12 +37,14 @@ export function CommissionsSection({
   commissions,
   isAdmin,
   premiumNet,
+  payees,
 }: {
   policyId: string;
   carrierId: string;
   commissions: Commission[];
   isAdmin: boolean;
   premiumNet?: number | null;
+  payees: { id: string; name: string }[];
 }) {
   const addAction = createCommission.bind(null, policyId, carrierId);
 
@@ -50,7 +57,9 @@ export function CommissionsSection({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Κατεύθυνση</TableHead>
               <TableHead>Τύπος</TableHead>
+              <TableHead>Δικαιούχος</TableHead>
               <TableHead>Βάση</TableHead>
               <TableHead>Ποσοστό</TableHead>
               <TableHead>Ποσό</TableHead>
@@ -62,7 +71,9 @@ export function CommissionsSection({
             {commissions.length ? (
               commissions.map((c) => (
                 <TableRow key={c.id}>
+                  <TableCell>{COMMISSION_DIRECTION_LABELS[c.direction] ?? c.direction}</TableCell>
                   <TableCell>{COMMISSION_TYPE_LABELS[c.commission_type] ?? c.commission_type}</TableCell>
+                  <TableCell>{payeeName(c.commission_payees) ?? "—"}</TableCell>
                   <TableCell>{c.base_amount != null ? `${c.base_amount} €` : "—"}</TableCell>
                   <TableCell>
                     {c.commission_rate_percent != null ? `${c.commission_rate_percent}%` : "—"}
@@ -84,7 +95,7 @@ export function CommissionsSection({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   Δεν υπάρχουν προμήθειες.
                 </TableCell>
               </TableRow>
@@ -93,48 +104,7 @@ export function CommissionsSection({
         </Table>
 
         {isAdmin && (
-          <form action={addAction} className="flex flex-wrap items-end gap-3">
-            <CommissionTypeSelect />
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="base_amount">Βάση (€)</Label>
-              <Input
-                id="base_amount"
-                name="base_amount"
-                type="number"
-                step="0.01"
-                defaultValue={premiumNet ?? undefined}
-                className="w-28"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="commission_rate_percent">Ποσοστό (%)</Label>
-              <Input
-                id="commission_rate_percent"
-                name="commission_rate_percent"
-                type="number"
-                step="0.01"
-                className="w-24"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="commission_amount">Ποσό (€)</Label>
-              <Input
-                id="commission_amount"
-                name="commission_amount"
-                type="number"
-                step="0.01"
-                required
-                className="w-28"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="period">Περίοδος</Label>
-              <Input id="period" name="period" type="date" className="w-40" />
-            </div>
-            <Button type="submit" variant="secondary">
-              Προσθήκη προμήθειας
-            </Button>
-          </form>
+          <AddCommissionForm addAction={addAction} payees={payees} premiumNet={premiumNet} />
         )}
       </CardContent>
     </Card>

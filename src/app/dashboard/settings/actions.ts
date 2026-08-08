@@ -65,6 +65,29 @@ export async function toggleCarrierActive(carrierId: string, isActive: boolean) 
   revalidatePath("/dashboard/settings");
 }
 
+export async function createPayee(formData: FormData) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = formData.get("name") as string;
+  if (!name) return;
+
+  await supabase.from("commission_payees").insert({
+    name,
+    phone: (formData.get("phone") as string) || null,
+    email: (formData.get("email") as string) || null,
+  });
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function togglePayeeActive(payeeId: string, isActive: boolean) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  await supabase.from("commission_payees").update({ is_active: isActive }).eq("id", payeeId);
+  revalidatePath("/dashboard/settings");
+}
+
 export async function updateAgencyUserRole(userId: string, role: string) {
   await requireAdmin();
   const supabase = await createSupabaseClient();

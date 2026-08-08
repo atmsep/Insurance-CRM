@@ -11,28 +11,36 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { COMMISSION_TYPE_LABELS, COMMISSION_STATUS_LABELS } from "./commission-labels";
+import { COMMISSION_DIRECTION_LABELS } from "./direction-labels";
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString("el-GR") : "—";
 }
 
+const DIRECTION_TABS: { value: string | undefined; label: string }[] = [
+  { value: undefined, label: "Όλες" },
+  { value: "incoming", label: "Εισερχόμενες" },
+  { value: "outgoing", label: "Εξερχόμενες" },
+];
+
 export default async function CommissionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; direction?: string }>;
 }) {
-  const { status } = await searchParams;
+  const { status, direction } = await searchParams;
   const supabase = await createClient();
 
   let query = supabase
     .from("commissions")
     .select(
-      "id, commission_type, commission_amount, status, period, policies(id, policy_number), agency_users(full_name)",
+      "id, commission_type, direction, commission_amount, status, period, policies(id, policy_number), agency_users(full_name), commission_payees(name)",
     )
     .order("period", { ascending: false })
     .limit(100);
 
   if (status) query = query.eq("status", status);
+  if (direction) query = query.eq("direction", direction);
 
   const { data: commissions } = await query;
 
@@ -47,7 +55,26 @@ export default async function CommissionsPage({
         </p>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        {DIRECTION_TABS.map((tab) => {
+          const isActive = (direction ?? undefined) === tab.value;
+          const href = tab.value
+            ? `/dashboard/commissions?direction=${tab.value}`
+            : "/dashboard/commissions";
+          return (
+            <Button
+              key={tab.label}
+              size="sm"
+              variant={isActive ? "default" : "outline"}
+              nativeButton={false}
+              render={<Link href={href}>{tab.label}</Link>}
+            />
+          );
+        })}
+      </div>
+
       <form className="flex flex-wrap items-end gap-3">
+        {direction && <input type="hidden" name="direction" value={direction} />}
         <select
           name="status"
           defaultValue={status ?? ""}
@@ -69,8 +96,10 @@ export default async function CommissionsPage({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Κατεύθυνση</TableHead>
               <TableHead>Συμβόλαιο</TableHead>
-              <TableHead>Συνεργάτης</TableHead>
+              <TableHead>Χειριστής</TableHead>
+              <TableHead>Δικαιούχος</TableHead>
               <TableHead>Τύπος</TableHead>
               <TableHead>Ποσό</TableHead>
               <TableHead>Περίοδος</TableHead>
@@ -82,8 +111,12 @@ export default async function CommissionsPage({
               commissions.map((c) => {
                 const policy = c.policies as unknown as { id: string; policy_number: string } | null;
                 const agent = c.agency_users as unknown as { full_name: string } | null;
+                const payee = c.commission_payees as unknown as { name: string } | null;
                 return (
                   <TableRow key={c.id}>
+                    <TableCell>
+                      {COMMISSION_DIRECTION_LABELS[c.direction] ?? c.direction}
+                    </TableCell>
                     <TableCell>
                       {policy ? (
                         <Link href={`/dashboard/policies/${policy.id}`} className="hover:underline">
@@ -94,6 +127,7 @@ export default async function CommissionsPage({
                       )}
                     </TableCell>
                     <TableCell>{agent?.full_name ?? "—"}</TableCell>
+                    <TableCell>{payee?.name ?? "—"}</TableCell>
                     <TableCell>
                       {COMMISSION_TYPE_LABELS[c.commission_type] ?? c.commission_type}
                     </TableCell>
@@ -109,7 +143,7 @@ export default async function CommissionsPage({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   Δεν υπάρχουν προμήθειες.
                 </TableCell>
               </TableRow>

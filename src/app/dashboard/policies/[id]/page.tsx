@@ -21,7 +21,7 @@ import { PremiumFields } from "../premium-fields";
 import type { PolicyStatus } from "@/lib/database.types";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
-import { CommissionsSection } from "../../commissions/commissions-section";
+import { CommissionsSection, type Commission } from "../../commissions/commissions-section";
 import { getCurrentAgencyUser } from "@/lib/dal";
 
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
@@ -88,6 +88,7 @@ export default async function PolicyDetailPage({
     { data: claims },
     documents,
     { data: commissions },
+    { data: payees },
     agencyUser,
   ] = await Promise.all([
     line?.requires_vehicle_details
@@ -112,9 +113,12 @@ export default async function PolicyDetailPage({
     getDocumentsFor("policy", id),
     supabase
       .from("commissions")
-      .select("id, commission_type, base_amount, commission_rate_percent, commission_amount, status, period")
+      .select(
+        "id, commission_type, direction, base_amount, commission_rate_percent, commission_amount, status, period, commission_payees(name)",
+      )
       .eq("policy_id", id)
       .order("period", { ascending: false }),
+    supabase.from("commission_payees").select("id, name").eq("is_active", true).order("name"),
     getCurrentAgencyUser(),
   ]);
 
@@ -392,9 +396,10 @@ export default async function PolicyDetailPage({
       <CommissionsSection
         policyId={id}
         carrierId={policy.carrier_id}
-        commissions={commissions ?? []}
+        commissions={(commissions ?? []) as unknown as Commission[]}
         isAdmin={isAdmin}
         premiumNet={policy.premium_net}
+        payees={payees ?? []}
       />
 
       <DocumentsSection entityType="policy" entityId={id} documents={documents} />

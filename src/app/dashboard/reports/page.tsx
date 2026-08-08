@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { COMMISSION_DIRECTION_LABELS } from "../commissions/direction-labels";
 
 const POLICY_STATUS_LABELS: Record<string, string> = {
   draft: "Πρόχειρο",
@@ -67,11 +68,14 @@ export default async function ReportsPage() {
     supabase.from("policies").select("id, status, premium_gross, insurance_lines(name_el)"),
     supabase.from("policy_installments").select("policy_id, amount, status"),
     supabase.from("claims").select("status, claim_amount_estimated, claim_amount_paid"),
-    supabase.from("commissions").select("status, commission_amount"),
+    supabase.from("commissions").select("status, commission_amount, direction"),
     supabase
       .from("policy_installments")
       .select("amount, status, policies!inner(carrier_id, carriers(name))"),
-    supabase.from("commissions").select("carrier_id, commission_amount, status, carriers(name)"),
+    supabase
+      .from("commissions")
+      .select("carrier_id, commission_amount, status, carriers(name)")
+      .eq("direction", "incoming"),
   ]);
 
   const policiesByStatus = groupSum(
@@ -116,12 +120,28 @@ export default async function ReportsPage() {
     (c) => c.claim_amount_paid ?? c.claim_amount_estimated ?? 0,
   );
 
-  const commissionsByStatus = groupSum(
-    commissions ?? [],
+  const incomingCommissions = (commissions ?? []).filter((c) => c.direction === "incoming");
+  const outgoingCommissions = (commissions ?? []).filter((c) => c.direction === "outgoing");
+
+  const incomingByStatus = groupSum(
+    incomingCommissions,
     (c) => c.status,
     (c) => c.commission_amount,
   );
-  const totalCommissions = (commissions ?? []).reduce((sum, c) => sum + c.commission_amount, 0);
+  const outgoingByStatus = groupSum(
+    outgoingCommissions,
+    (c) => c.status,
+    (c) => c.commission_amount,
+  );
+  const totalIncomingCommissions = incomingCommissions.reduce(
+    (sum, c) => sum + c.commission_amount,
+    0,
+  );
+  const totalOutgoingCommissions = outgoingCommissions.reduce(
+    (sum, c) => sum + c.commission_amount,
+    0,
+  );
+  const netCommissions = totalIncomingCommissions - totalOutgoingCommissions;
 
   type CarrierAgg = {
     name: string;
@@ -164,7 +184,7 @@ export default async function ReportsPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Αναφορές</h1>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label="Ενεργό ασφάλιστρο" value={`${activePremium.toFixed(2)} €`} />
         <StatCard label="Χρεωθέν σύνολο δόσεων" value={`${totalBilled.toFixed(2)} €`} />
         <StatCard label="Εισπραγμένο" value={`${totalCollected.toFixed(2)} €`} />
@@ -172,6 +192,11 @@ export default async function ReportsPage() {
           label="Ανείσπρακτο υπόλοιπο"
           value={`${outstanding.toFixed(2)} €`}
           tone={outstanding > 0 ? "warning" : "neutral"}
+        />
+        <StatCard
+          label="Καθαρές προμήθειες"
+          value={`${netCommissions.toFixed(2)} €`}
+          tone={netCommissions < 0 ? "warning" : "neutral"}
         />
       </div>
 
@@ -263,7 +288,8 @@ export default async function ReportsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              Προμήθειες ανά κατάσταση — σύνολο {totalCommissions.toFixed(2)} €
+              {COMMISSION_DIRECTION_LABELS.incoming} προμήθειες ανά κατάσταση — σύνολο{" "}
+              {totalIncomingCommissions.toFixed(2)} €
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -276,8 +302,8 @@ export default async function ReportsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {commissionsByStatus.size ? (
-                  [...commissionsByStatus.entries()].map(([status, { count, total }]) => (
+                {incomingByStatus.size ? (
+                  [...incomingByStatus.entries()].map(([status, { count, total }]) => (
                     <TableRow key={status}>
                       <TableCell>{COMMISSION_STATUS_LABELS[status] ?? status}</TableCell>
                       <TableCell>{count}</TableCell>
@@ -287,7 +313,44 @@ export default async function ReportsPage() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={3} className="text-center text-muted-foreground">
-                      Δεν υπάρχουν προμήθειες.
+                      Δεν υπάρχουν εισερχόμενες προμήθειες.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {COMMISSION_DIRECTION_LABELS.outgoing} προμήθειες ανά κατάσταση — σύνολο{" "}
+              {totalOutgoingCommissions.toFixed(2)} €
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Κατάσταση</TableHead>
+                  <TableHead>Πλήθος</TableHead>
+                  <TableHead>Ποσό</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {outgoingByStatus.size ? (
+                  [...outgoingByStatus.entries()].map(([status, { count, total }]) => (
+                    <TableRow key={status}>
+                      <TableCell>{COMMISSION_STATUS_LABELS[status] ?? status}</TableCell>
+                      <TableCell>{count}</TableCell>
+                      <TableCell>{total.toFixed(2)} €</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      Δεν υπάρχουν εξερχόμενες προμήθειες.
                     </TableCell>
                   </TableRow>
                 )}
