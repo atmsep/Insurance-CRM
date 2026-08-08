@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createPolicy, type PolicyFormState } from "./actions";
+import { PremiumFields } from "./premium-fields";
 import type { PaymentFrequency } from "@/lib/database.types";
 
 type InsuranceLine = {
@@ -186,25 +187,7 @@ export function PolicyForm({
         </div>
         <Field label="Έναρξη" name="start_date" type="date" required defaultValue={renewFrom?.startDate} />
         <Field label="Λήξη" name="end_date" type="date" required defaultValue={renewFrom?.endDate} />
-        <Field
-          label="Μικτό ασφάλιστρο (€)"
-          name="premium_gross"
-          type="number"
-          required
-          defaultValue={renewFrom?.premiumGross}
-        />
-        <Field
-          label="Καθαρό ασφάλιστρο (€)"
-          name="premium_net"
-          type="number"
-          defaultValue={renewFrom?.premiumNet}
-        />
-        <Field
-          label="Τέλη/Φόροι (€)"
-          name="taxes_fees"
-          type="number"
-          defaultValue={renewFrom?.taxesFees}
-        />
+        <PremiumFields defaultGross={renewFrom?.premiumGross} defaultNet={renewFrom?.premiumNet} required />
       </div>
 
       {selectedLine?.requires_vehicle_details && (

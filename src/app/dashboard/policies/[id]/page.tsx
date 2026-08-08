@@ -17,6 +17,7 @@ import {
 import { StatusSelect } from "../status-select";
 import { createInstallment, markInstallmentPaid, updatePolicyDetails } from "../actions";
 import { PaymentFrequencySelect } from "../payment-frequency-select";
+import { PremiumFields } from "../premium-fields";
 import type { PolicyStatus } from "@/lib/database.types";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
@@ -176,36 +177,7 @@ export default async function PolicyDetailPage({
                 <Label htmlFor="end_date">Λήξη</Label>
                 <Input id="end_date" name="end_date" type="date" defaultValue={policy.end_date} />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="premium_gross">Μικτό ασφάλιστρο (€)</Label>
-                <Input
-                  id="premium_gross"
-                  name="premium_gross"
-                  type="number"
-                  step="0.01"
-                  defaultValue={policy.premium_gross}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="premium_net">Καθαρό ασφάλιστρο (€)</Label>
-                <Input
-                  id="premium_net"
-                  name="premium_net"
-                  type="number"
-                  step="0.01"
-                  defaultValue={policy.premium_net ?? ""}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="taxes_fees">Τέλη/Φόροι (€)</Label>
-                <Input
-                  id="taxes_fees"
-                  name="taxes_fees"
-                  type="number"
-                  step="0.01"
-                  defaultValue={policy.taxes_fees ?? ""}
-                />
-              </div>
+              <PremiumFields defaultGross={policy.premium_gross} defaultNet={policy.premium_net} />
               <PaymentFrequencySelect defaultValue={policy.payment_frequency} />
             </div>
 
