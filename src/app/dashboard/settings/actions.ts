@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgencyUser } from "@/lib/dal";
+import { isValidEmail } from "@/lib/validation";
 
 export type ActionState = { error: string } | { success: string } | undefined;
 
@@ -84,4 +86,47 @@ export async function updateAgencyUserCreditLimit(userId: string, formData: Form
   const value = typeof raw === "string" && raw.length > 0 ? Number(raw) : null;
   await supabase.from("agency_users").update({ credit_limit: value }).eq("id", userId);
   revalidatePath("/dashboard/settings");
+}
+
+export async function inviteAgencyUser(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+
+  const email = (formData.get("email") as string) || "";
+  const fullName = (formData.get("full_name") as string) || "";
+  const role = (formData.get("role") as string) || "agent";
+
+  if (!isValidEmail(email)) {
+    return { error: "Δώσε ένα έγκυρο email." };
+  }
+  if (!fullName) {
+    return { error: "Δώσε ονοματεπώνυμο." };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.auth.admin.inviteUserByEmail(email);
+
+  if (error || !data.user) {
+    return { error: "Σφάλμα πρόσκλησης: " + (error?.message ?? "") };
+  }
+
+  const supabase = await createSupabaseClient();
+  const { error: insertError } = await supabase.from("agency_users").insert({
+    auth_user_id: data.user.id,
+    full_name: fullName,
+    email,
+    role,
+  });
+
+  if (insertError) {
+    // Compensate: the invited auth user has no matching profile — remove it
+    // rather than leave an orphaned login with no agency_users row.
+    await admin.auth.admin.deleteUser(data.user.id);
+    return { error: "Σφάλμα καταχώρησης προφίλ: " + insertError.message };
+  }
+
+  revalidatePath("/dashboard/settings");
+  return { success: `Στάλθηκε πρόσκληση στο ${email}.` };
 }

@@ -1,9 +1,11 @@
 "use client";
 
-import { useTransition } from "react";
+import { useActionState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -23,6 +25,8 @@ import {
   updateAgencyUserRole,
   toggleAgencyUserActive,
   updateAgencyUserCreditLimit,
+  inviteAgencyUser,
+  type ActionState,
 } from "./actions";
 
 type AgencyUser = {
@@ -51,13 +55,57 @@ export function TeamTab({
   outstandingByAgent: Record<string, number>;
 }) {
   const [pending, startTransition] = useTransition();
+  const [inviteState, inviteAction, invitePending] = useActionState<ActionState, FormData>(
+    inviteAgencyUser,
+    undefined,
+  );
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm text-muted-foreground">
-        Για να προστεθεί νέος συνεργάτης χρειάζεται ξεχωριστή ρύθμιση (invite flow) — πες μου αν
-        θες να το φτιάξουμε.
-      </p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Πρόσκληση νέου συνεργάτη</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form action={inviteAction} className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="invite_full_name">Ονοματεπώνυμο</Label>
+              <Input id="invite_full_name" name="full_name" required className="w-56" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="invite_email">Email</Label>
+              <Input id="invite_email" name="email" type="email" required className="w-64" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Ρόλος</Label>
+              <Select name="role" defaultValue="agent">
+                <SelectTrigger className="w-40">
+                  <SelectValue>{(v: string) => ROLE_LABELS[v] ?? v}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" disabled={invitePending}>
+              {invitePending ? "Αποστολή..." : "Αποστολή πρόσκλησης"}
+            </Button>
+          </form>
+          {inviteState && "error" in inviteState && (
+            <p className="mt-2 text-sm text-destructive">{inviteState.error}</p>
+          )}
+          {inviteState && "success" in inviteState && (
+            <p className="mt-2 text-sm text-emerald-600 dark:text-emerald-500">
+              {inviteState.success}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="rounded-md border">
         <Table>
           <TableHeader>
