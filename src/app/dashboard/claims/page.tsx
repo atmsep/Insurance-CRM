@@ -28,9 +28,9 @@ function formatDate(value: string) {
 export default async function ClaimsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; open?: string }>;
 }) {
-  const { q, status } = await searchParams;
+  const { q, status, open } = await searchParams;
   const supabase = await createClient();
 
   let query = supabase
@@ -43,12 +43,23 @@ export default async function ClaimsPage({
 
   if (q) query = query.ilike("claim_number", `%${q}%`);
   if (status) query = query.eq("status", status);
+  else if (open) query = query.not("status", "in", "(paid,closed)");
 
   const { data: claims } = await query;
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Ζημιές</h1>
+      <div>
+        <h1 className="text-2xl font-semibold">Ζημιές</h1>
+        {open && !status && (
+          <p className="text-sm text-muted-foreground">
+            Μόνο ανοιχτές ζημιές ·{" "}
+            <Link href="/dashboard/claims" className="hover:underline">
+              Καθαρισμός φίλτρου
+            </Link>
+          </p>
+        )}
+      </div>
 
       <form className="flex flex-wrap items-end gap-3">
         <Input name="q" placeholder="Αναζήτηση με αριθμό ζημιάς..." defaultValue={q ?? ""} className="max-w-xs" />

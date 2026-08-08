@@ -28,9 +28,9 @@ function formatDate(value: string) {
 export default async function PoliciesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; expiring?: string }>;
 }) {
-  const { q, status } = await searchParams;
+  const { q, status, expiring } = await searchParams;
   const supabase = await createClient();
 
   let query = supabase
@@ -38,8 +38,19 @@ export default async function PoliciesPage({
     .select(
       "id, policy_number, status, end_date, premium_gross, insurance_lines(name_el), carriers(name), clients(client_individuals(first_name,last_name), client_legal_entities(company_name))",
     )
-    .order("created_at", { ascending: false })
     .limit(50);
+
+  if (expiring) {
+    const days = Number(expiring) || 30;
+    const until = new Date();
+    until.setDate(until.getDate() + days);
+    query = query
+      .eq("status", "active")
+      .lte("end_date", until.toISOString().slice(0, 10))
+      .order("end_date", { ascending: true });
+  } else {
+    query = query.order("created_at", { ascending: false });
+  }
 
   if (q) query = query.ilike("policy_number", `%${q}%`);
   if (status) query = query.eq("status", status);
@@ -49,7 +60,17 @@ export default async function PoliciesPage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Συμβόλαια</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">Συμβόλαια</h1>
+          {expiring && (
+            <p className="text-sm text-muted-foreground">
+              Ενεργά συμβόλαια που λήγουν εντός {Number(expiring) || 30} ημερών ·{" "}
+              <Link href="/dashboard/policies" className="hover:underline">
+                Καθαρισμός φίλτρου
+              </Link>
+            </p>
+          )}
+        </div>
         <Button nativeButton={false} render={<Link href="/dashboard/policies/new">Νέο συμβόλαιο</Link>} />
       </div>
 

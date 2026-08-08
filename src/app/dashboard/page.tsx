@@ -62,22 +62,33 @@ export default async function DashboardPage() {
       <h1 className="text-2xl font-semibold">Επισκόπηση</h1>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <StatTile label="Ενεργά συμβόλαια" value={activePoliciesCount ?? 0} />
-        <StatTile label="Εκκρεμείς υπενθυμίσεις" value={pendingTasksCount ?? 0} />
+        <StatTile
+          label="Ενεργά συμβόλαια"
+          value={activePoliciesCount ?? 0}
+          href="/dashboard/policies?status=active"
+        />
+        <StatTile
+          label="Εκκρεμείς υπενθυμίσεις"
+          value={pendingTasksCount ?? 0}
+          href="/dashboard/tasks"
+        />
         <StatTile
           label="Λήγουν σε 30 ημέρες"
           value={expiringCount}
           tone={expiringCount > 0 ? "warning" : "neutral"}
+          href="/dashboard/policies?expiring=30"
         />
         <StatTile
           label="Ληξιπρόθεσμες δόσεις"
           value={overdueCount}
           tone={overdueCount > 0 ? "critical" : "neutral"}
+          href="/dashboard/installments"
         />
         <StatTile
           label="Ανοιχτές ζημιές"
           value={openClaimsCount ?? 0}
           tone={(openClaimsCount ?? 0) > 0 ? "warning" : "neutral"}
+          href="/dashboard/claims?open=1"
         />
       </div>
 
@@ -145,10 +156,12 @@ function StatTile({
   label,
   value,
   tone = "neutral",
+  href,
 }: {
   label: string;
   value: number;
   tone?: "neutral" | "warning" | "critical";
+  href?: string;
 }) {
   const toneClass =
     tone === "critical"
@@ -157,12 +170,20 @@ function StatTile({
         ? "text-amber-600 dark:text-amber-500"
         : "text-foreground";
 
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-3xl font-semibold tabular-nums ${toneClass}`}>{value}</p>
-      </CardContent>
-    </Card>
+  const content = (
+    <CardContent className="pt-6">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className={`mt-1 text-3xl font-semibold tabular-nums ${toneClass}`}>{value}</p>
+    </CardContent>
   );
+
+  if (href) {
+    return (
+      <Link href={href}>
+        <Card className="transition-colors hover:bg-muted/50">{content}</Card>
+      </Link>
+    );
+  }
+
+  return <Card>{content}</Card>;
 }
