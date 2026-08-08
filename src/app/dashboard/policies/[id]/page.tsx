@@ -15,7 +15,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusSelect } from "../status-select";
-import { createInstallment, markInstallmentPaid } from "../actions";
+import { createInstallment, markInstallmentPaid, updatePolicyDetails } from "../actions";
+import { PaymentFrequencySelect } from "../payment-frequency-select";
 import type { PolicyStatus } from "@/lib/database.types";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
@@ -119,6 +120,13 @@ export default async function PolicyDetailPage({
   const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
 
   const addInstallmentAction = createInstallment.bind(null, id);
+  const updateDetailsAction = updatePolicyDetails.bind(
+    null,
+    id,
+    !!vehicle,
+    !!property,
+    !!lifeHealth,
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -142,68 +150,135 @@ export default async function PolicyDetailPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Στοιχεία συμβολαίου</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
-            <InfoRow label="Έναρξη" value={formatDate(policy.start_date)} />
-            <InfoRow label="Λήξη" value={formatDate(policy.end_date)} />
-            <InfoRow label="Μικτό ασφάλιστρο" value={`${policy.premium_gross.toFixed(2)} €`} />
-            <InfoRow label="Συχνότητα" value={policy.payment_frequency} />
-            {policy.previous_policy_id && (
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Προηγούμενη περίοδος</span>
-                <Link
-                  href={`/dashboard/policies/${policy.previous_policy_id}`}
-                  className="text-right font-medium hover:underline"
-                >
-                  Προβολή
-                </Link>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Στοιχεία συμβολαίου</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {policy.previous_policy_id && (
+            <p className="mb-4 text-sm text-muted-foreground">
+              Προηγούμενη περίοδος:{" "}
+              <Link
+                href={`/dashboard/policies/${policy.previous_policy_id}`}
+                className="font-medium hover:underline"
+              >
+                Προβολή
+              </Link>
+            </p>
+          )}
+          <form action={updateDetailsAction} className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="start_date">Έναρξη</Label>
+                <Input id="start_date" name="start_date" type="date" defaultValue={policy.start_date} />
               </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="end_date">Λήξη</Label>
+                <Input id="end_date" name="end_date" type="date" defaultValue={policy.end_date} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="premium_gross">Μικτό ασφάλιστρο (€)</Label>
+                <Input
+                  id="premium_gross"
+                  name="premium_gross"
+                  type="number"
+                  step="0.01"
+                  defaultValue={policy.premium_gross}
+                />
+              </div>
+              <PaymentFrequencySelect defaultValue={policy.payment_frequency} />
+            </div>
+
+            {vehicle && (
+              <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+                <legend className="px-1 text-sm font-medium">Στοιχεία οχήματος</legend>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="plate_number">Πινακίδα</Label>
+                    <Input id="plate_number" name="plate_number" defaultValue={vehicle.plate_number ?? ""} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="manufacture_year">Έτος κατασκευής</Label>
+                    <Input
+                      id="manufacture_year"
+                      name="manufacture_year"
+                      type="number"
+                      defaultValue={vehicle.manufacture_year ?? ""}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="make">Μάρκα</Label>
+                    <Input id="make" name="make" defaultValue={vehicle.make ?? ""} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="model">Μοντέλο</Label>
+                    <Input id="model" name="model" defaultValue={vehicle.model ?? ""} />
+                  </div>
+                </div>
+              </fieldset>
             )}
-          </CardContent>
-        </Card>
 
-        {vehicle && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Στοιχεία οχήματος</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2 text-sm">
-              <InfoRow label="Πινακίδα" value={vehicle.plate_number ?? "—"} />
-              <InfoRow label="Μάρκα / Μοντέλο" value={`${vehicle.make ?? ""} ${vehicle.model ?? ""}`} />
-              <InfoRow label="Έτος" value={vehicle.manufacture_year?.toString() ?? "—"} />
-            </CardContent>
-          </Card>
-        )}
+            {property && (
+              <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+                <legend className="px-1 text-sm font-medium">Στοιχεία ακινήτου</legend>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="address_street">Οδός</Label>
+                    <Input id="address_street" name="address_street" defaultValue={property.address_street ?? ""} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="address_city">Πόλη</Label>
+                    <Input id="address_city" name="address_city" defaultValue={property.address_city ?? ""} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="square_meters">Τετραγωνικά μέτρα</Label>
+                    <Input
+                      id="square_meters"
+                      name="square_meters"
+                      type="number"
+                      defaultValue={property.square_meters ?? ""}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="commercial_value">Εμπορική αξία (€)</Label>
+                    <Input
+                      id="commercial_value"
+                      name="commercial_value"
+                      type="number"
+                      defaultValue={property.commercial_value ?? ""}
+                    />
+                  </div>
+                </div>
+              </fieldset>
+            )}
 
-        {property && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Στοιχεία ακινήτου</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2 text-sm">
-              <InfoRow label="Διεύθυνση" value={`${property.address_street ?? ""}, ${property.address_city ?? ""}`} />
-              <InfoRow label="Τετραγωνικά" value={property.square_meters?.toString() ?? "—"} />
-              <InfoRow label="Εμπορική αξία" value={property.commercial_value ? `${property.commercial_value} €` : "—"} />
-            </CardContent>
-          </Card>
-        )}
+            {lifeHealth && (
+              <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+                <legend className="px-1 text-sm font-medium">Στοιχεία κάλυψης</legend>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="coverage_type">Είδος κάλυψης</Label>
+                    <Input id="coverage_type" name="coverage_type" defaultValue={lifeHealth.coverage_type ?? ""} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="sum_insured">Ασφαλισμένο κεφάλαιο (€)</Label>
+                    <Input
+                      id="sum_insured"
+                      name="sum_insured"
+                      type="number"
+                      defaultValue={lifeHealth.sum_insured ?? ""}
+                    />
+                  </div>
+                </div>
+              </fieldset>
+            )}
 
-        {lifeHealth && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Στοιχεία κάλυψης</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2 text-sm">
-              <InfoRow label="Είδος κάλυψης" value={lifeHealth.coverage_type ?? "—"} />
-              <InfoRow label="Ασφαλισμένο κεφάλαιο" value={lifeHealth.sum_insured ? `${lifeHealth.sum_insured} €` : "—"} />
-            </CardContent>
-          </Card>
-        )}
-      </div>
+            <Button type="submit" className="w-fit">
+              Αποθήκευση
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -330,15 +405,6 @@ export default async function PolicyDetailPage({
       />
 
       <DocumentsSection entityType="policy" entityId={id} documents={documents} />
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium">{value}</span>
     </div>
   );
 }

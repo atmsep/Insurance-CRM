@@ -56,13 +56,23 @@ export default async function ReportsPage() {
 
   const supabase = await createClient();
 
-  const [{ data: policies }, { data: installments }, { data: claims }, { data: commissions }] =
-    await Promise.all([
-      supabase.from("policies").select("status, premium_gross, insurance_lines(name_el)"),
-      supabase.from("policy_installments").select("amount, status"),
-      supabase.from("claims").select("status, claim_amount_estimated, claim_amount_paid"),
-      supabase.from("commissions").select("status, commission_amount"),
-    ]);
+  const [
+    { data: policies },
+    { data: installments },
+    { data: claims },
+    { data: commissions },
+    { data: carrierInstallments },
+    { data: carrierCommissions },
+  ] = await Promise.all([
+    supabase.from("policies").select("status, premium_gross, insurance_lines(name_el)"),
+    supabase.from("policy_installments").select("amount, status"),
+    supabase.from("claims").select("status, claim_amount_estimated, claim_amount_paid"),
+    supabase.from("commissions").select("status, commission_amount"),
+    supabase
+      .from("policy_installments")
+      .select("amount, status, policies!inner(carrier_id, carriers(name))"),
+    supabase.from("commissions").select("carrier_id, commission_amount, status, carriers(name)"),
+  ]);
 
   const policiesByStatus = groupSum(
     policies ?? [],
@@ -97,6 +107,43 @@ export default async function ReportsPage() {
     (c) => c.commission_amount,
   );
   const totalCommissions = (commissions ?? []).reduce((sum, c) => sum + c.commission_amount, 0);
+
+  type CarrierAgg = {
+    name: string;
+    collected: number;
+    commissionTotal: number;
+    commissionPending: number;
+  };
+  const carrierMap = new Map<string, CarrierAgg>();
+
+  for (const i of carrierInstallments ?? []) {
+    if (i.status !== "paid") continue;
+    const p = i.policies as unknown as { carrier_id: string; carriers: { name: string } | null } | null;
+    if (!p) continue;
+    const entry = carrierMap.get(p.carrier_id) ?? {
+      name: p.carriers?.name ?? "—",
+      collected: 0,
+      commissionTotal: 0,
+      commissionPending: 0,
+    };
+    entry.collected += i.amount;
+    carrierMap.set(p.carrier_id, entry);
+  }
+
+  for (const c of carrierCommissions ?? []) {
+    const carrierName = (c.carriers as unknown as { name: string } | null)?.name ?? "—";
+    const entry = carrierMap.get(c.carrier_id) ?? {
+      name: carrierName,
+      collected: 0,
+      commissionTotal: 0,
+      commissionPending: 0,
+    };
+    entry.commissionTotal += c.commission_amount;
+    if (c.status === "pending" || c.status === "invoiced") {
+      entry.commissionPending += c.commission_amount;
+    }
+    carrierMap.set(c.carrier_id, entry);
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -226,6 +273,48 @@ export default async function ReportsPage() {
                   <TableRow>
                     <TableCell colSpan={3} className="text-center text-muted-foreground">
                       Δεν υπάρχουν προμήθειες.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Καρτέλα ανά ασφαλιστική εταιρεία</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-3 text-xs text-muted-foreground">
+              &quot;Οφειλή προς εταιρεία&quot; = εισπραγμένο ασφάλιστρο μείον το σύνολο των
+              προμηθειών μας — ενδεικτικός υπολογισμός, όχι επίσημη λογιστική καρτέλα.
+            </p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Εταιρεία</TableHead>
+                  <TableHead>Εισπραγμένο ασφάλιστρο</TableHead>
+                  <TableHead>Προμήθειά μας</TableHead>
+                  <TableHead>Εκκρεμής προμήθεια (μας οφείλει)</TableHead>
+                  <TableHead>Οφειλή προς εταιρεία (εκτίμηση)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {carrierMap.size ? (
+                  [...carrierMap.entries()].map(([carrierId, agg]) => (
+                    <TableRow key={carrierId}>
+                      <TableCell>{agg.name}</TableCell>
+                      <TableCell>{agg.collected.toFixed(2)} €</TableCell>
+                      <TableCell>{agg.commissionTotal.toFixed(2)} €</TableCell>
+                      <TableCell>{agg.commissionPending.toFixed(2)} €</TableCell>
+                      <TableCell>{(agg.collected - agg.commissionTotal).toFixed(2)} €</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      Δεν υπάρχουν δεδομένα ακόμα.
                     </TableCell>
                   </TableRow>
                 )}

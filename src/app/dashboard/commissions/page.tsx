@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -15,16 +16,25 @@ function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString("el-GR") : "—";
 }
 
-export default async function CommissionsPage() {
+export default async function CommissionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+  const { status } = await searchParams;
   const supabase = await createClient();
 
-  const { data: commissions } = await supabase
+  let query = supabase
     .from("commissions")
     .select(
       "id, commission_type, commission_amount, status, period, policies(id, policy_number), agency_users(full_name)",
     )
     .order("period", { ascending: false })
     .limit(100);
+
+  if (status) query = query.eq("status", status);
+
+  const { data: commissions } = await query;
 
   const total = (commissions ?? []).reduce((sum, c) => sum + (c.commission_amount ?? 0), 0);
 
@@ -36,6 +46,24 @@ export default async function CommissionsPage() {
           Σύνολο: <span className="font-medium text-foreground">{total.toFixed(2)} €</span>
         </p>
       </div>
+
+      <form className="flex flex-wrap items-end gap-3">
+        <select
+          name="status"
+          defaultValue={status ?? ""}
+          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+        >
+          <option value="">Όλες οι καταστάσεις</option>
+          {Object.entries(COMMISSION_STATUS_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" variant="secondary">
+          Φίλτρο
+        </Button>
+      </form>
 
       <div className="rounded-md border">
         <Table>

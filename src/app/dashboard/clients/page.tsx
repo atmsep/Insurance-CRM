@@ -26,9 +26,10 @@ function clientName(client: {
 export default async function ClientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; show_inactive?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, show_inactive } = await searchParams;
+  const showInactive = show_inactive === "1";
   const supabase = await createClient();
 
   let query = supabase
@@ -39,6 +40,9 @@ export default async function ClientsPage({
     .order("created_at", { ascending: false })
     .limit(50);
 
+  if (!showInactive) {
+    query = query.eq("is_active", true);
+  }
   if (q) {
     query = query.or(`afm.ilike.%${q}%`);
   }
@@ -52,8 +56,15 @@ export default async function ClientsPage({
         <Button nativeButton={false} render={<Link href="/dashboard/clients/new">Νέος πελάτης</Link>} />
       </div>
 
-      <form className="max-w-sm">
-        <Input name="q" placeholder="Αναζήτηση με ΑΦΜ..." defaultValue={q ?? ""} />
+      <form className="flex flex-wrap items-end gap-3">
+        <Input name="q" placeholder="Αναζήτηση με ΑΦΜ..." defaultValue={q ?? ""} className="max-w-sm" />
+        <label className="flex items-center gap-2 pb-2 text-sm">
+          <input type="checkbox" name="show_inactive" value="1" defaultChecked={showInactive} className="size-4" />
+          Εμφάνιση ανενεργών
+        </label>
+        <Button type="submit" variant="secondary">
+          Φίλτρο
+        </Button>
       </form>
 
       <div className="rounded-md border">

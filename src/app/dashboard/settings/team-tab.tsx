@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -18,7 +19,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { updateAgencyUserRole, toggleAgencyUserActive } from "./actions";
+import {
+  updateAgencyUserRole,
+  toggleAgencyUserActive,
+  updateAgencyUserCreditLimit,
+} from "./actions";
 
 type AgencyUser = {
   id: string;
@@ -26,6 +31,7 @@ type AgencyUser = {
   email: string;
   role: string;
   is_active: boolean;
+  credit_limit: number | null;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -38,9 +44,11 @@ const ROLE_LABELS: Record<string, string> = {
 export function TeamTab({
   users,
   currentUserId,
+  outstandingByAgent,
 }: {
   users: AgencyUser[];
   currentUserId: string;
+  outstandingByAgent: Record<string, number>;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -58,57 +66,90 @@ export function TeamTab({
               <TableHead>Email</TableHead>
               <TableHead>Ρόλος</TableHead>
               <TableHead>Κατάσταση</TableHead>
+              <TableHead>Ανεξόφλητο υπόλοιπο</TableHead>
+              <TableHead>Πλαφόν (€)</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>{user.full_name}</TableCell>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>
-                  <Select
-                    value={user.role}
-                    disabled={pending || user.id === currentUserId}
-                    onValueChange={(value) => {
-                      if (value) startTransition(() => updateAgencyUserRole(user.id, value));
-                    }}
-                  >
-                    <SelectTrigger className="w-40">
-                      <SelectValue>
-                        {(value: string) => ROLE_LABELS[value] ?? value}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={user.is_active ? "default" : "outline"}>
-                    {user.is_active ? "Ενεργός" : "Ανενεργός"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {user.id !== currentUserId && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() =>
-                        startTransition(() => toggleAgencyUserActive(user.id, !user.is_active))
-                      }
+            {users.map((user) => {
+              const outstanding = outstandingByAgent[user.id] ?? 0;
+              const overLimit = user.credit_limit != null && outstanding > user.credit_limit;
+              const updateCreditLimitAction = updateAgencyUserCreditLimit.bind(null, user.id);
+
+              return (
+                <TableRow key={user.id}>
+                  <TableCell>{user.full_name}</TableCell>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>
+                    <Select
+                      value={user.role}
+                      disabled={pending || user.id === currentUserId}
+                      onValueChange={(value) => {
+                        if (value) startTransition(() => updateAgencyUserRole(user.id, value));
+                      }}
                     >
-                      {user.is_active ? "Απενεργοποίηση" : "Ενεργοποίηση"}
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+                      <SelectTrigger className="w-40">
+                        <SelectValue>
+                          {(value: string) => ROLE_LABELS[value] ?? value}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={user.is_active ? "default" : "outline"}>
+                      {user.is_active ? "Ενεργός" : "Ανενεργός"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <span className={overLimit ? "font-medium text-destructive" : ""}>
+                      {outstanding.toFixed(2)} €
+                    </span>
+                    {overLimit && (
+                      <Badge variant="destructive" className="ml-2">
+                        Υπέρβαση πλαφόν
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <form action={updateCreditLimitAction} className="flex items-center gap-2">
+                      <Input
+                        name="credit_limit"
+                        type="number"
+                        step="0.01"
+                        defaultValue={user.credit_limit ?? ""}
+                        placeholder="Χωρίς όριο"
+                        className="w-28"
+                      />
+                      <Button type="submit" size="sm" variant="outline">
+                        Αποθ.
+                      </Button>
+                    </form>
+                  </TableCell>
+                  <TableCell>
+                    {user.id !== currentUserId && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() =>
+                          startTransition(() => toggleAgencyUserActive(user.id, !user.is_active))
+                        }
+                      >
+                        {user.is_active ? "Απενεργοποίηση" : "Ενεργοποίηση"}
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

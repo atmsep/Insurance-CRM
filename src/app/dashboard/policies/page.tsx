@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -24,10 +25,15 @@ function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR");
 }
 
-export default async function PoliciesPage() {
+export default async function PoliciesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; status?: string }>;
+}) {
+  const { q, status } = await searchParams;
   const supabase = await createClient();
 
-  const { data: policies } = await supabase
+  let query = supabase
     .from("policies")
     .select(
       "id, policy_number, status, end_date, premium_gross, insurance_lines(name_el), carriers(name), clients(client_individuals(first_name,last_name), client_legal_entities(company_name))",
@@ -35,12 +41,36 @@ export default async function PoliciesPage() {
     .order("created_at", { ascending: false })
     .limit(50);
 
+  if (q) query = query.ilike("policy_number", `%${q}%`);
+  if (status) query = query.eq("status", status);
+
+  const { data: policies } = await query;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Συμβόλαια</h1>
         <Button nativeButton={false} render={<Link href="/dashboard/policies/new">Νέο συμβόλαιο</Link>} />
       </div>
+
+      <form className="flex flex-wrap items-end gap-3">
+        <Input name="q" placeholder="Αναζήτηση με αριθμό συμβολαίου..." defaultValue={q ?? ""} className="max-w-xs" />
+        <select
+          name="status"
+          defaultValue={status ?? ""}
+          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+        >
+          <option value="">Όλες οι καταστάσεις</option>
+          {Object.entries(STATUS_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" variant="secondary">
+          Φίλτρο
+        </Button>
+      </form>
 
       <div className="rounded-md border">
         <Table>

@@ -76,3 +76,12 @@ export async function toggleAgencyUserActive(userId: string, isActive: boolean) 
   await supabase.from("agency_users").update({ is_active: isActive }).eq("id", userId);
   revalidatePath("/dashboard/settings");
 }
+
+export async function updateAgencyUserCreditLimit(userId: string, formData: FormData) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  const raw = formData.get("credit_limit");
+  const value = typeof raw === "string" && raw.length > 0 ? Number(raw) : null;
+  await supabase.from("agency_users").update({ credit_limit: value }).eq("id", userId);
+  revalidatePath("/dashboard/settings");
+}

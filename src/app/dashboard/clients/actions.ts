@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import type { ClientType, InteractionType } from "@/lib/database.types";
+import { isValidAfm, isValidAmka, isValidEmail } from "@/lib/validation";
 
 export type ClientFormState = { error: string } | undefined;
 
@@ -16,11 +17,25 @@ export async function createClientRecord(
   const supabase = await createSupabaseClient();
 
   const clientType = formData.get("client_type") as ClientType;
+  const afm = (formData.get("afm") as string) || null;
+  const email = (formData.get("email") as string) || null;
+  const amka = (formData.get("amka") as string) || null;
+
+  if (afm && !isValidAfm(afm)) {
+    return { error: "Το ΑΦΜ δεν είναι έγκυρο (9 ψηφία, λάθος ψηφίο ελέγχου)." };
+  }
+  if (email && !isValidEmail(email)) {
+    return { error: "Το email δεν είναι έγκυρο." };
+  }
+  if (amka && !isValidAmka(amka)) {
+    return { error: "Το ΑΜΚΑ πρέπει να έχει ακριβώς 11 ψηφία." };
+  }
+
   const common = {
     client_type: clientType,
-    afm: (formData.get("afm") as string) || null,
+    afm,
     doy: (formData.get("doy") as string) || null,
-    email: (formData.get("email") as string) || null,
+    email,
     phone_mobile: (formData.get("phone_mobile") as string) || null,
     address_city: (formData.get("address_city") as string) || null,
     iban: (formData.get("iban") as string) || null,
@@ -80,6 +95,14 @@ export async function updateClientNotes(clientId: string, formData: FormData) {
     .eq("id", clientId);
 
   revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
+export async function toggleClientActive(clientId: string, isActive: boolean) {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+  await supabase.from("clients").update({ is_active: isActive }).eq("id", clientId);
+  revalidatePath(`/dashboard/clients/${clientId}`);
+  revalidatePath("/dashboard/clients");
 }
 
 export async function createInteraction(clientId: string, formData: FormData) {

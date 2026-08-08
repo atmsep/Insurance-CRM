@@ -133,6 +133,63 @@ export async function createInstallment(policyId: string, formData: FormData) {
   revalidatePath(`/dashboard/policies/${policyId}`);
 }
 
+export async function updatePolicyDetails(
+  policyId: string,
+  hasVehicle: boolean,
+  hasProperty: boolean,
+  hasLifeHealth: boolean,
+  formData: FormData,
+) {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  await supabase
+    .from("policies")
+    .update({
+      start_date: str(formData, "start_date") ?? undefined,
+      end_date: str(formData, "end_date") ?? undefined,
+      premium_gross: num(formData, "premium_gross") ?? undefined,
+      payment_frequency: str(formData, "payment_frequency") ?? undefined,
+    })
+    .eq("id", policyId);
+
+  if (hasVehicle) {
+    await supabase
+      .from("policy_vehicle_details")
+      .update({
+        plate_number: str(formData, "plate_number"),
+        make: str(formData, "make"),
+        model: str(formData, "model"),
+        manufacture_year: num(formData, "manufacture_year"),
+      })
+      .eq("policy_id", policyId);
+  }
+
+  if (hasProperty) {
+    await supabase
+      .from("policy_property_details")
+      .update({
+        address_street: str(formData, "address_street"),
+        address_city: str(formData, "address_city"),
+        square_meters: num(formData, "square_meters"),
+        commercial_value: num(formData, "commercial_value"),
+      })
+      .eq("policy_id", policyId);
+  }
+
+  if (hasLifeHealth) {
+    await supabase
+      .from("policy_life_health_details")
+      .update({
+        coverage_type: str(formData, "coverage_type"),
+        sum_insured: num(formData, "sum_insured"),
+      })
+      .eq("policy_id", policyId);
+  }
+
+  revalidatePath(`/dashboard/policies/${policyId}`);
+}
+
 export async function markInstallmentPaid(policyId: string, installmentId: string) {
   await requireAgencyUser();
   const supabase = await createSupabaseClient();

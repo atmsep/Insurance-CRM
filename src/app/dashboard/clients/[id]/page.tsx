@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { updateClientNotes, createInteraction } from "../actions";
+import { updateClientNotes, createInteraction, toggleClientActive } from "../actions";
 import { InteractionTypeSelect } from "../interaction-type-select";
 import { INTERACTION_TYPE_LABELS } from "../interaction-labels";
 import { DocumentsSection } from "../../documents/documents-section";
@@ -93,15 +93,25 @@ export default async function ClientDetailPage({
         <div>
           <h1 className="text-2xl font-semibold">{name}</h1>
           <p className="text-sm text-muted-foreground">
-            {CLIENT_TYPE_LABELS[client.client_type]} · ΑΦΜ {client.afm ?? "—"}
+            {CLIENT_TYPE_LABELS[client.client_type]} · ΑΦΜ {client.afm ?? "—"}{" "}
+            <Badge variant={client.is_active ? "default" : "outline"} className="ml-2">
+              {client.is_active ? "Ενεργός" : "Ανενεργός"}
+            </Badge>
           </p>
         </div>
-        <Button
-          nativeButton={false}
-          render={
-            <Link href={`/dashboard/policies/new?client_id=${client.id}`}>Νέο συμβόλαιο</Link>
-          }
-        />
+        <div className="flex items-center gap-2">
+          <form action={toggleClientActive.bind(null, id, !client.is_active)}>
+            <Button type="submit" variant="outline">
+              {client.is_active ? "Απενεργοποίηση" : "Ενεργοποίηση"}
+            </Button>
+          </form>
+          <Button
+            nativeButton={false}
+            render={
+              <Link href={`/dashboard/policies/new?client_id=${client.id}`}>Νέο συμβόλαιο</Link>
+            }
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

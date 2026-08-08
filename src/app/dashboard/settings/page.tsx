@@ -10,14 +10,28 @@ export default async function SettingsPage() {
   const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
   const supabase = await createClient();
 
-  const [{ data: carriers }, { data: users }] = await Promise.all([
+  const [{ data: carriers }, { data: users }, { data: outstandingRows }] = await Promise.all([
     isAdmin
       ? supabase.from("carriers").select("*").order("name")
       : Promise.resolve({ data: [] }),
     isAdmin
       ? supabase.from("agency_users").select("*").order("full_name")
       : Promise.resolve({ data: [] }),
+    isAdmin
+      ? supabase
+          .from("policy_installments")
+          .select("amount, status, policies!inner(assigned_agent_id)")
+          .in("status", ["pending", "overdue", "partially_paid"])
+      : Promise.resolve({ data: [] }),
   ]);
+
+  const outstandingByAgent = new Map<string, number>();
+  for (const row of outstandingRows ?? []) {
+    const agentId = (row.policies as unknown as { assigned_agent_id: string | null } | null)
+      ?.assigned_agent_id;
+    if (!agentId) continue;
+    outstandingByAgent.set(agentId, (outstandingByAgent.get(agentId) ?? 0) + row.amount);
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -39,7 +53,11 @@ export default async function SettingsPage() {
         )}
         {isAdmin && (
           <TabsContent value="team" className="pt-4">
-            <TeamTab users={users ?? []} currentUserId={agencyUser.id} />
+            <TeamTab
+              users={users ?? []}
+              currentUserId={agencyUser.id}
+              outstandingByAgent={Object.fromEntries(outstandingByAgent)}
+            />
           </TabsContent>
         )}
       </Tabs>
