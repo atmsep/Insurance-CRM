@@ -23,6 +23,9 @@ import { INTERACTION_TYPE_LABELS } from "../interaction-labels";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
 import { PrintButton } from "@/components/print-button";
+import { createTicket } from "../../tickets/actions";
+import { StatusSelect as TicketStatusSelect } from "../../tickets/status-select";
+import type { TicketStatus } from "@/lib/database.types";
 
 const CLIENT_TYPE_LABELS: Record<string, string> = {
   individual: "Φυσικό πρόσωπο",
@@ -66,7 +69,7 @@ export default async function ClientDetailPage({
 
   if (!client) notFound();
 
-  const [{ data: policies }, { data: interactions }, documents, { data: installments }] =
+  const [{ data: policies }, { data: interactions }, documents, { data: installments }, { data: tickets }] =
     await Promise.all([
       supabase
         .from("policies")
@@ -84,6 +87,11 @@ export default async function ClientDetailPage({
         .from("policy_installments")
         .select("policy_id, amount, status, policies!inner(client_id)")
         .eq("policies.client_id", id),
+      supabase
+        .from("client_tickets")
+        .select("id, subject, description, status, priority, created_at")
+        .eq("client_id", id)
+        .order("created_at", { ascending: false }),
     ]);
 
   // "Billed"/"outstanding" are measured against each policy's actual
@@ -114,6 +122,7 @@ export default async function ClientDetailPage({
 
   const updateAction = updateClientNotes.bind(null, id);
   const addInteractionAction = createInteraction.bind(null, id);
+  const addTicketAction = createTicket.bind(null, id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -147,6 +156,7 @@ export default async function ClientDetailPage({
         <TabsList>
           <TabsTrigger value="details">Στοιχεία</TabsTrigger>
           <TabsTrigger value="interactions">Επικοινωνία</TabsTrigger>
+          <TabsTrigger value="tickets">Αιτήματα</TabsTrigger>
           <TabsTrigger value="policies">Συμβόλαια</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
         </TabsList>
@@ -183,6 +193,15 @@ export default async function ClientDetailPage({
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="iban">IBAN</Label>
                   <Input id="iban" name="iban" defaultValue={client.iban ?? ""} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="referral_source">Πηγή σύστασης</Label>
+                  <Input
+                    id="referral_source"
+                    name="referral_source"
+                    placeholder="π.χ. όνομα πελάτη, Facebook, Google..."
+                    defaultValue={client.referral_source ?? ""}
+                  />
                 </div>
               </div>
               <div className="flex flex-col gap-2">
@@ -309,6 +328,66 @@ export default async function ClientDetailPage({
               <input type="checkbox" name="follow_up_needed" className="size-4" />
               Χρειάζεται follow-up
             </label>
+            <Button type="submit" variant="secondary">
+              Καταχώρηση
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+        </TabsContent>
+
+        <TabsContent value="tickets" className="pt-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Αιτήματα</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ημ/νία</TableHead>
+                <TableHead>Θέμα</TableHead>
+                <TableHead>Περιγραφή</TableHead>
+                <TableHead>Κατάσταση</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tickets?.length ? (
+                tickets.map((ticket) => (
+                  <TableRow key={ticket.id}>
+                    <TableCell className="whitespace-nowrap">
+                      {formatDateTime(ticket.created_at)}
+                    </TableCell>
+                    <TableCell>{ticket.subject}</TableCell>
+                    <TableCell className="max-w-xs truncate">{ticket.description ?? "—"}</TableCell>
+                    <TableCell>
+                      <TicketStatusSelect
+                        ticketId={ticket.id}
+                        clientId={id}
+                        status={ticket.status as TicketStatus}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    Δεν υπάρχουν αιτήματα.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+
+          <form action={addTicketAction} className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="ticket-subject">Θέμα</Label>
+              <Input id="ticket-subject" name="subject" required className="w-56" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="ticket-description">Περιγραφή</Label>
+              <Input id="ticket-description" name="description" className="w-72" />
+            </div>
             <Button type="submit" variant="secondary">
               Καταχώρηση
             </Button>

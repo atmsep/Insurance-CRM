@@ -64,6 +64,7 @@ export default async function ReportsPage() {
     { data: commissions },
     { data: carrierInstallments },
     { data: carrierCommissions },
+    { data: clients },
   ] = await Promise.all([
     supabase.from("policies").select("id, status, premium_gross, insurance_lines(name_el)"),
     supabase.from("policy_installments").select("policy_id, amount, status"),
@@ -76,6 +77,7 @@ export default async function ReportsPage() {
       .from("commissions")
       .select("carrier_id, commission_amount, status, carriers(name)")
       .eq("direction", "incoming"),
+    supabase.from("clients").select("referral_source").eq("is_active", true),
   ]);
 
   const policiesByStatus = groupSum(
@@ -142,6 +144,12 @@ export default async function ReportsPage() {
     0,
   );
   const netCommissions = totalIncomingCommissions - totalOutgoingCommissions;
+
+  const referralBreakdown = groupSum(
+    clients ?? [],
+    (c) => c.referral_source?.trim() || "Χωρίς καταγραφή",
+    () => 1,
+  );
 
   type CarrierAgg = {
     name: string;
@@ -351,6 +359,40 @@ export default async function ReportsPage() {
                   <TableRow>
                     <TableCell colSpan={3} className="text-center text-muted-foreground">
                       Δεν υπάρχουν εξερχόμενες προμήθειες.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Πελάτες ανά πηγή σύστασης</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Πηγή</TableHead>
+                  <TableHead>Πλήθος</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {referralBreakdown.size ? (
+                  [...referralBreakdown.entries()]
+                    .sort((a, b) => b[1].count - a[1].count)
+                    .map(([source, { count }]) => (
+                      <TableRow key={source}>
+                        <TableCell>{source}</TableCell>
+                        <TableCell>{count}</TableCell>
+                      </TableRow>
+                    ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={2} className="text-center text-muted-foreground">
+                      Δεν υπάρχουν πελάτες ακόμα.
                     </TableCell>
                   </TableRow>
                 )}

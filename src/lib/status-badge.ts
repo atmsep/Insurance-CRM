@@ -39,3 +39,10 @@ export function taskPriorityVariant(priority: string): StatusBadgeVariant {
   if (priority === "high") return "warning";
   return "outline";
 }
+
+export function ticketStatusVariant(status: string): StatusBadgeVariant {
+  if (status === "open") return "info";
+  if (status === "in_progress") return "warning";
+  if (status === "resolved") return "success";
+  return "outline";
+}

@@ -22,6 +22,7 @@ export default async function DashboardPage() {
     { count: activePoliciesCount },
     { count: pendingTasksCount },
     { count: openClaimsCount },
+    { count: openTicketsCount },
     { data: expiringPolicies },
     { data: overdueInstallments },
     { data: upcomingTasks },
@@ -35,6 +36,10 @@ export default async function DashboardPage() {
       .from("claims")
       .select("id", { count: "exact", head: true })
       .not("status", "in", "(paid,closed)"),
+    supabase
+      .from("client_tickets")
+      .select("id", { count: "exact", head: true })
+      .not("status", "in", "(resolved,closed)"),
     supabase
       .from("policies")
       .select("id, policy_number, end_date, clients(client_individuals(first_name,last_name), client_legal_entities(company_name))")
@@ -138,7 +143,7 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <StatTile
           label="Ενεργά συμβόλαια"
           value={activePoliciesCount ?? 0}
@@ -166,6 +171,12 @@ export default async function DashboardPage() {
           value={openClaimsCount ?? 0}
           tone={(openClaimsCount ?? 0) > 0 ? "warning" : "neutral"}
           href="/dashboard/claims?open=1"
+        />
+        <StatTile
+          label="Ανοιχτά αιτήματα"
+          value={openTicketsCount ?? 0}
+          tone={(openTicketsCount ?? 0) > 0 ? "warning" : "neutral"}
+          href="/dashboard/tickets?open=1"
         />
       </div>
 

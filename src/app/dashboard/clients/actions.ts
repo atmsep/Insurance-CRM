@@ -57,6 +57,7 @@ export async function createClientRecord(
     address_city: (formData.get("address_city") as string) || null,
     iban: (formData.get("iban") as string) || null,
     notes: (formData.get("notes") as string) || null,
+    referral_source: (formData.get("referral_source") as string) || null,
     assigned_agent_id: agencyUser.id,
     created_by: agencyUser.id,
   };
@@ -225,6 +226,7 @@ export async function updateClientNotes(clientId: string, formData: FormData) {
       address_city: (formData.get("address_city") as string) || null,
       iban: (formData.get("iban") as string) || null,
       notes: (formData.get("notes") as string) || null,
+      referral_source: (formData.get("referral_source") as string) || null,
     })
     .eq("id", clientId);
 

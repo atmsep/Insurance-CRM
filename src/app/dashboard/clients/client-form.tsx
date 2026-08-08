@@ -63,6 +63,7 @@ export function ClientForm() {
         <Field label="Κινητό τηλέφωνο" name="phone_mobile" />
         <Field label="Πόλη" name="address_city" />
         <Field label="IBAN" name="iban" />
+        <Field label="Πηγή σύστασης" name="referral_source" />
       </div>
 
       <div className="flex flex-col gap-2">
