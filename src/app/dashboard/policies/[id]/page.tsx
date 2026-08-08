@@ -186,6 +186,26 @@ export default async function PolicyDetailPage({
                   defaultValue={policy.premium_gross}
                 />
               </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="premium_net">Καθαρό ασφάλιστρο (€)</Label>
+                <Input
+                  id="premium_net"
+                  name="premium_net"
+                  type="number"
+                  step="0.01"
+                  defaultValue={policy.premium_net ?? ""}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="taxes_fees">Τέλη/Φόροι (€)</Label>
+                <Input
+                  id="taxes_fees"
+                  name="taxes_fees"
+                  type="number"
+                  step="0.01"
+                  defaultValue={policy.taxes_fees ?? ""}
+                />
+              </div>
               <PaymentFrequencySelect defaultValue={policy.payment_frequency} />
             </div>
 
@@ -402,6 +422,7 @@ export default async function PolicyDetailPage({
         carrierId={policy.carrier_id}
         commissions={commissions ?? []}
         isAdmin={isAdmin}
+        premiumNet={policy.premium_net}
       />
 
       <DocumentsSection entityType="policy" entityId={id} documents={documents} />

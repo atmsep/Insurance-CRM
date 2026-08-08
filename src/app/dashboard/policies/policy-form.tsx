@@ -30,6 +30,8 @@ export type RenewFromData = {
   startDate: string;
   endDate: string;
   premiumGross: number;
+  premiumNet?: number | null;
+  taxesFees?: number | null;
   paymentFrequency: PaymentFrequency;
   vehicle?: {
     plate_number?: string | null;
@@ -190,6 +192,18 @@ export function PolicyForm({
           type="number"
           required
           defaultValue={renewFrom?.premiumGross}
+        />
+        <Field
+          label="Καθαρό ασφάλιστρο (€)"
+          name="premium_net"
+          type="number"
+          defaultValue={renewFrom?.premiumNet}
+        />
+        <Field
+          label="Τέλη/Φόροι (€)"
+          name="taxes_fees"
+          type="number"
+          defaultValue={renewFrom?.taxesFees}
         />
       </div>
 

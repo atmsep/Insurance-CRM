@@ -77,6 +77,8 @@ export default async function NewPolicyPage({
         startDate: source.end_date,
         endDate: addYears(source.end_date, 1),
         premiumGross: source.premium_gross,
+        premiumNet: source.premium_net,
+        taxesFees: source.taxes_fees,
         paymentFrequency: source.payment_frequency as PaymentFrequency,
         vehicle: vehicle ?? undefined,
         property: property ?? undefined,

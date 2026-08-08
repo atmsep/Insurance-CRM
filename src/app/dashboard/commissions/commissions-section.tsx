@@ -31,11 +31,13 @@ export function CommissionsSection({
   carrierId,
   commissions,
   isAdmin,
+  premiumNet,
 }: {
   policyId: string;
   carrierId: string;
   commissions: Commission[];
   isAdmin: boolean;
+  premiumNet?: number | null;
 }) {
   const addAction = createCommission.bind(null, policyId, carrierId);
 
@@ -95,7 +97,14 @@ export function CommissionsSection({
             <CommissionTypeSelect />
             <div className="flex flex-col gap-2">
               <Label htmlFor="base_amount">Βάση (€)</Label>
-              <Input id="base_amount" name="base_amount" type="number" step="0.01" className="w-28" />
+              <Input
+                id="base_amount"
+                name="base_amount"
+                type="number"
+                step="0.01"
+                defaultValue={premiumNet ?? undefined}
+                className="w-28"
+              />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="commission_rate_percent">Ποσοστό (%)</Label>

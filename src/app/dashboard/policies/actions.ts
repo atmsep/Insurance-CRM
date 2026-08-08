@@ -55,6 +55,8 @@ export async function createPolicy(
       start_date: str(formData, "start_date") ?? "",
       end_date: str(formData, "end_date") ?? "",
       premium_gross: num(formData, "premium_gross") ?? 0,
+      premium_net: num(formData, "premium_net"),
+      taxes_fees: num(formData, "taxes_fees"),
       payment_frequency: (str(formData, "payment_frequency") ?? "annual") as PaymentFrequency,
       status: "active",
       created_by: agencyUser.id,
@@ -149,6 +151,8 @@ export async function updatePolicyDetails(
       start_date: str(formData, "start_date") ?? undefined,
       end_date: str(formData, "end_date") ?? undefined,
       premium_gross: num(formData, "premium_gross") ?? undefined,
+      premium_net: num(formData, "premium_net"),
+      taxes_fees: num(formData, "taxes_fees"),
       payment_frequency: str(formData, "payment_frequency") ?? undefined,
     })
     .eq("id", policyId);
