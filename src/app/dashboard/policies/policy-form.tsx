@@ -11,7 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { createPolicy, type PolicyFormState } from "./actions";
+import { searchClients } from "../clients/actions";
 import { PremiumFields } from "./premium-fields";
 import type { PaymentFrequency } from "@/lib/database.types";
 
@@ -58,18 +60,18 @@ const PAYMENT_FREQUENCIES: { value: PaymentFrequency; label: string }[] = [
 ];
 
 export function PolicyForm({
-  clients,
   carriers,
   insuranceLines,
   defaultClientId,
+  defaultClientLabel,
   defaultCarrierId,
   defaultLineId,
   renewFrom,
 }: {
-  clients: { id: string; name: string }[];
   carriers: { id: string; name: string }[];
   insuranceLines: InsuranceLine[];
   defaultClientId?: string;
+  defaultClientLabel?: string;
   defaultCarrierId?: string;
   defaultLineId?: string;
   renewFrom?: RenewFromData;
@@ -102,21 +104,14 @@ export function PolicyForm({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label>Πελάτης</Label>
-          <Select value={clientId} onValueChange={(v) => setClientId(v ?? "")}>
-            <SelectTrigger className="w-full">
-              <SelectValue>
-                {(value: string) => clients.find((c) => c.id === value)?.name ?? "Επίλεξε πελάτη"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <input type="hidden" name="client_id" value={clientId} />
+          <Combobox
+            name="client_id"
+            value={clientId}
+            initialLabel={defaultClientLabel}
+            placeholder="Αναζήτηση πελάτη με όνομα, ΑΦΜ ή τηλέφωνο..."
+            searchAction={searchClients}
+            onSelect={(option) => setClientId(option.id)}
+          />
         </div>
 
         <div className="flex flex-col gap-2">

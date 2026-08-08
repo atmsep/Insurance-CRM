@@ -91,6 +91,7 @@ export interface Database {
         Row: {
           id: string;
           client_type: ClientType;
+          display_name: string | null;
           afm: string | null;
           doy: string | null;
           email: string | null;

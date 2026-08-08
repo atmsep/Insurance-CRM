@@ -9,6 +9,23 @@ import { isValidAfm, isValidAmka, isValidEmail } from "@/lib/validation";
 
 export type ClientFormState = { error: string } | undefined;
 
+export async function searchClients(query: string): Promise<{ id: string; label: string }[]> {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  if (!query.trim()) return [];
+
+  const { data } = await supabase
+    .from("clients")
+    .select("id, display_name")
+    .eq("is_active", true)
+    .or(`afm.ilike.%${query}%,phone_mobile.ilike.%${query}%,display_name.ilike.%${query}%`)
+    .order("display_name")
+    .limit(20);
+
+  return (data ?? []).map((c) => ({ id: c.id, label: c.display_name ?? "—" }));
+}
+
 export async function createClientRecord(
   _prevState: ClientFormState,
   formData: FormData,
@@ -76,7 +93,7 @@ export async function createClientRecord(
   }
 
   revalidatePath("/dashboard/clients");
-  redirect(`/dashboard/clients/${client.id}`);
+  redirect(`/dashboard/clients/${client.id}?toast=${encodeURIComponent("Ο πελάτης δημιουργήθηκε.")}`);
 }
 
 export async function updateClientNotes(clientId: string, formData: FormData) {

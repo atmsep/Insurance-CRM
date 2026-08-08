@@ -8,6 +8,39 @@ import type { PaymentFrequency } from "@/lib/database.types";
 
 export type PolicyFormState = { error: string } | undefined;
 
+export async function searchPolicies(query: string): Promise<{ id: string; label: string }[]> {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  if (!query.trim()) return [];
+
+  // PostgREST can't OR a base-table column against an embedded-table column
+  // in one filter tree, so this runs two queries (by policy number, by
+  // client name) and merges/dedupes the results.
+  const [byNumber, byClient] = await Promise.all([
+    supabase
+      .from("policies")
+      .select("id, policy_number, clients(display_name)")
+      .ilike("policy_number", `%${query}%`)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("policies")
+      .select("id, policy_number, clients!inner(display_name)")
+      .ilike("clients.display_name", `%${query}%`)
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ]);
+
+  const merged = new Map<string, { id: string; label: string }>();
+  for (const p of [...(byNumber.data ?? []), ...(byClient.data ?? [])]) {
+    const client = p.clients as unknown as { display_name: string | null } | null;
+    merged.set(p.id, { id: p.id, label: `${p.policy_number} — ${client?.display_name ?? "—"}` });
+  }
+
+  return [...merged.values()].slice(0, 20);
+}
+
 function str(formData: FormData, key: string) {
   const v = formData.get(key);
   return typeof v === "string" && v.length > 0 ? v : null;
@@ -106,7 +139,7 @@ export async function createPolicy(
   }
 
   revalidatePath("/dashboard/policies");
-  redirect(`/dashboard/policies/${policy.id}`);
+  redirect(`/dashboard/policies/${policy.id}?toast=${encodeURIComponent("Το συμβόλαιο δημιουργήθηκε.")}`);
 }
 
 export async function updatePolicyStatus(policyId: string, status: string) {

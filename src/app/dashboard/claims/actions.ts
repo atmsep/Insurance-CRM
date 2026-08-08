@@ -52,7 +52,7 @@ export async function createClaim(
 
   revalidatePath("/dashboard/claims");
   revalidatePath(`/dashboard/policies/${policyId}`);
-  redirect(`/dashboard/claims/${claim.id}`);
+  redirect(`/dashboard/claims/${claim.id}?toast=${encodeURIComponent("Η ζημιά καταχωρήθηκε.")}`);
 }
 
 export async function updateClaimStatus(claimId: string, policyId: string, status: string) {

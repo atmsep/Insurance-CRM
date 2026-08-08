@@ -15,7 +15,7 @@ const links = [
   { href: "/dashboard/settings", label: "Ρυθμίσεις" },
 ];
 
-export function DashboardNav() {
+export function DashboardNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
@@ -28,6 +28,7 @@ export function DashboardNav() {
           <Link
             key={link.href}
             href={link.href}
+            onClick={onNavigate}
             className={cn(
               "rounded-md px-3 py-2 text-sm font-medium transition-colors",
               isActive

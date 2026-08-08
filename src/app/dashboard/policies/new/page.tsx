@@ -2,17 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { PolicyForm, type RenewFromData } from "../policy-form";
 import type { PaymentFrequency } from "@/lib/database.types";
 
-function clientDisplayName(c: {
-  client_type: string;
-  client_individuals: { first_name: string; last_name: string } | null;
-  client_legal_entities: { company_name: string } | null;
-}) {
-  if (c.client_type === "individual" && c.client_individuals) {
-    return `${c.client_individuals.first_name} ${c.client_individuals.last_name}`;
-  }
-  return c.client_legal_entities?.company_name ?? "—";
-}
-
 function addYears(dateStr: string, years: number) {
   const d = new Date(dateStr);
   d.setFullYear(d.getFullYear() + years);
@@ -27,13 +16,7 @@ export default async function NewPolicyPage({
   const { client_id, renew_from } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: clients }, { data: carriers }, { data: insuranceLines }] = await Promise.all([
-    supabase
-      .from("clients")
-      .select("id, client_type, client_individuals(first_name,last_name), client_legal_entities(company_name)")
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-      .limit(200),
+  const [{ data: carriers }, { data: insuranceLines }] = await Promise.all([
     supabase.from("carriers").select("id, name").eq("is_active", true).order("name"),
     supabase
       .from("insurance_lines")
@@ -42,13 +25,9 @@ export default async function NewPolicyPage({
       .order("sort_order"),
   ]);
 
-  const clientOptions = (clients ?? []).map((c) => ({
-    id: c.id,
-    name: clientDisplayName(c as never),
-  }));
-
   let renewFrom: RenewFromData | undefined;
   let defaultClientId = client_id;
+  let defaultClientLabel: string | undefined;
   let defaultCarrierId: string | undefined;
   let defaultLineId: string | undefined;
 
@@ -87,14 +66,23 @@ export default async function NewPolicyPage({
     }
   }
 
+  if (defaultClientId) {
+    const { data: client } = await supabase
+      .from("clients")
+      .select("display_name")
+      .eq("id", defaultClientId)
+      .maybeSingle();
+    defaultClientLabel = client?.display_name ?? undefined;
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">{renewFrom ? "Ανανέωση συμβολαίου" : "Νέο συμβόλαιο"}</h1>
       <PolicyForm
-        clients={clientOptions}
         carriers={carriers ?? []}
         insuranceLines={insuranceLines ?? []}
         defaultClientId={defaultClientId}
+        defaultClientLabel={defaultClientLabel}
         defaultCarrierId={defaultCarrierId}
         defaultLineId={defaultLineId}
         renewFrom={renewFrom}

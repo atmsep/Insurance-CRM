@@ -44,7 +44,7 @@ export default async function ClientsPage({
     query = query.eq("is_active", true);
   }
   if (q) {
-    query = query.or(`afm.ilike.%${q}%`);
+    query = query.or(`afm.ilike.%${q}%,phone_mobile.ilike.%${q}%,display_name.ilike.%${q}%`);
   }
 
   const { data: clients } = await query;
@@ -57,7 +57,12 @@ export default async function ClientsPage({
       </div>
 
       <form className="flex flex-wrap items-end gap-3">
-        <Input name="q" placeholder="Αναζήτηση με ΑΦΜ..." defaultValue={q ?? ""} className="max-w-sm" />
+        <Input
+          name="q"
+          placeholder="Αναζήτηση με όνομα, ΑΦΜ ή τηλέφωνο..."
+          defaultValue={q ?? ""}
+          className="max-w-sm"
+        />
         <label className="flex items-center gap-2 pb-2 text-sm">
           <input type="checkbox" name="show_inactive" value="1" defaultChecked={showInactive} className="size-4" />
           Εμφάνιση ανενεργών

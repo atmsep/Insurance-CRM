@@ -5,21 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { createClaim, type ClaimFormState } from "./actions";
+import { searchPolicies } from "../policies/actions";
 
 export function ClaimForm({
-  policies,
   defaultPolicyId,
+  defaultPolicyLabel,
 }: {
-  policies: { id: string; label: string }[];
   defaultPolicyId?: string;
+  defaultPolicyLabel?: string;
 }) {
   const [state, formAction, pending] = useActionState<ClaimFormState, FormData>(
     createClaim,
@@ -32,23 +27,14 @@ export function ClaimForm({
     <form action={formAction} className="flex max-w-xl flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Label>Συμβόλαιο</Label>
-        <Select value={policyId} onValueChange={(v) => setPolicyId(v ?? "")}>
-          <SelectTrigger className="w-full">
-            <SelectValue>
-              {(value: string) =>
-                policies.find((p) => p.id === value)?.label ?? "Επίλεξε συμβόλαιο"
-              }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {policies.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <input type="hidden" name="policy_id" value={policyId} />
+        <Combobox
+          name="policy_id"
+          value={policyId}
+          initialLabel={defaultPolicyLabel}
+          placeholder="Αναζήτηση συμβολαίου με αριθμό ή πελάτη..."
+          searchAction={searchPolicies}
+          onSelect={(option) => setPolicyId(option.id)}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
