@@ -64,8 +64,8 @@ export default async function ReportsPage() {
     { data: carrierInstallments },
     { data: carrierCommissions },
   ] = await Promise.all([
-    supabase.from("policies").select("status, premium_gross, insurance_lines(name_el)"),
-    supabase.from("policy_installments").select("amount, status"),
+    supabase.from("policies").select("id, status, premium_gross, insurance_lines(name_el)"),
+    supabase.from("policy_installments").select("policy_id, amount, status"),
     supabase.from("claims").select("status, claim_amount_estimated, claim_amount_paid"),
     supabase.from("commissions").select("status, commission_amount"),
     supabase
@@ -89,11 +89,26 @@ export default async function ReportsPage() {
     (p) => p.premium_gross ?? 0,
   );
 
-  const totalBilled = (installments ?? []).reduce((sum, i) => sum + i.amount, 0);
+  // "Billed"/"outstanding" are measured against each policy's actual premium,
+  // not just the installment rows someone happened to create — otherwise a
+  // policy with no (or partial) installments looks fully collected.
+  const paidByPolicy = new Map<string, number>();
+  for (const i of installments ?? []) {
+    if (i.status !== "paid") continue;
+    paidByPolicy.set(i.policy_id, (paidByPolicy.get(i.policy_id) ?? 0) + i.amount);
+  }
+
+  const billablePolicies = (policies ?? []).filter(
+    (p) => p.status !== "draft" && p.status !== "cancelled",
+  );
+  const totalBilled = billablePolicies.reduce((sum, p) => sum + (p.premium_gross ?? 0), 0);
   const totalCollected = (installments ?? [])
     .filter((i) => i.status === "paid")
     .reduce((sum, i) => sum + i.amount, 0);
-  const outstanding = totalBilled - totalCollected;
+  const outstanding = billablePolicies.reduce(
+    (sum, p) => sum + Math.max((p.premium_gross ?? 0) - (paidByPolicy.get(p.id) ?? 0), 0),
+    0,
+  );
 
   const claimsByStatus = groupSum(
     claims ?? [],

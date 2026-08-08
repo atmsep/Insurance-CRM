@@ -58,7 +58,7 @@ export default async function ClientDetailPage({
     await Promise.all([
       supabase
         .from("policies")
-        .select("id, policy_number, status, end_date, insurance_lines(name_el)")
+        .select("id, policy_number, status, end_date, premium_gross, insurance_lines(name_el)")
         .eq("client_id", id)
         .order("end_date", { ascending: false }),
       supabase
@@ -70,15 +70,31 @@ export default async function ClientDetailPage({
       getDocumentsFor("client", id),
       supabase
         .from("policy_installments")
-        .select("amount, status, policies!inner(client_id)")
+        .select("policy_id, amount, status, policies!inner(client_id)")
         .eq("policies.client_id", id),
     ]);
 
-  const totalBilled = (installments ?? []).reduce((sum, i) => sum + i.amount, 0);
+  // "Billed"/"outstanding" are measured against each policy's actual
+  // premium, not just the installment rows someone happened to create —
+  // otherwise a policy with no (or partial) installments looks fully
+  // collected even though most of the premium was never billed as a δόση.
+  const paidByPolicy = new Map<string, number>();
+  for (const i of installments ?? []) {
+    if (i.status !== "paid") continue;
+    paidByPolicy.set(i.policy_id, (paidByPolicy.get(i.policy_id) ?? 0) + i.amount);
+  }
+
+  const billablePolicies = (policies ?? []).filter(
+    (p) => p.status !== "draft" && p.status !== "cancelled",
+  );
+  const totalBilled = billablePolicies.reduce((sum, p) => sum + (p.premium_gross ?? 0), 0);
   const totalPaid = (installments ?? [])
     .filter((i) => i.status === "paid")
     .reduce((sum, i) => sum + i.amount, 0);
-  const outstanding = totalBilled - totalPaid;
+  const outstanding = billablePolicies.reduce(
+    (sum, p) => sum + Math.max((p.premium_gross ?? 0) - (paidByPolicy.get(p.id) ?? 0), 0),
+    0,
+  );
 
   const name = client.client_individuals
     ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
