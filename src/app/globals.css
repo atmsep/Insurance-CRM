@@ -144,6 +144,12 @@
   }
   html {
     @apply font-sans;
+    /* The app has no dark-mode toggle (the .dark tokens above are unused),
+       so without this the OS/browser dark preference alone makes native
+       controls (checkboxes, date pickers, select arrows, scrollbars) render
+       with dark chrome while the rest of the page stays light-styled —
+       stray black artifacts scattered across the UI. */
+    color-scheme: light;
   }
 }
 

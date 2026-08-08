@@ -38,6 +38,8 @@ const NAV_PAGES: { path: string; heading: string }[] = [
   { path: "/dashboard/policies", heading: "Συμβόλαια" },
   { path: "/dashboard/claims", heading: "Ζημιές" },
   { path: "/dashboard/commissions", heading: "Προμήθειες" },
+  { path: "/dashboard/tickets", heading: "Αιτήματα" },
+  { path: "/dashboard/installments", heading: "δόσεις" },
   { path: "/dashboard/tasks", heading: "Υπενθυμίσεις" },
   { path: "/dashboard/tasks/calendar", heading: "Ημερολόγιο" },
   { path: "/dashboard/reports", heading: "Αναφορές" },
