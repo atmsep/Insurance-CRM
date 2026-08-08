@@ -9,7 +9,9 @@ const links = [
   { href: "/dashboard/clients", label: "Πελάτες" },
   { href: "/dashboard/policies", label: "Συμβόλαια" },
   { href: "/dashboard/claims", label: "Ζημιές" },
+  { href: "/dashboard/commissions", label: "Προμήθειες" },
   { href: "/dashboard/tasks", label: "Υπενθυμίσεις" },
+  { href: "/dashboard/reports", label: "Αναφορές" },
   { href: "/dashboard/settings", label: "Ρυθμίσεις" },
 ];
 

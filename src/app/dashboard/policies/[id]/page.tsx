@@ -19,6 +19,8 @@ import { createInstallment, markInstallmentPaid } from "../actions";
 import type { PolicyStatus } from "@/lib/database.types";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
+import { CommissionsSection } from "../../commissions/commissions-section";
+import { getCurrentAgencyUser } from "@/lib/dal";
 
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
   pending: "Εκκρεμεί",
@@ -76,29 +78,45 @@ export default async function PolicyDetailPage({
     ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
     : client?.client_legal_entities?.company_name ?? "—";
 
-  const [{ data: vehicle }, { data: property }, { data: lifeHealth }, { data: installments }, { data: claims }, documents] =
-    await Promise.all([
-      line?.requires_vehicle_details
-        ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
-        : Promise.resolve({ data: null }),
-      line?.requires_property_details
-        ? supabase.from("policy_property_details").select("*").eq("policy_id", id).maybeSingle()
-        : Promise.resolve({ data: null }),
-      line?.requires_life_health_details
-        ? supabase.from("policy_life_health_details").select("*").eq("policy_id", id).maybeSingle()
-        : Promise.resolve({ data: null }),
-      supabase
-        .from("policy_installments")
-        .select("*")
-        .eq("policy_id", id)
-        .order("installment_number", { ascending: true }),
-      supabase
-        .from("claims")
-        .select("id, claim_number, status, date_of_loss, claim_amount_estimated")
-        .eq("policy_id", id)
-        .order("date_of_loss", { ascending: false }),
-      getDocumentsFor("policy", id),
-    ]);
+  const [
+    { data: vehicle },
+    { data: property },
+    { data: lifeHealth },
+    { data: installments },
+    { data: claims },
+    documents,
+    { data: commissions },
+    agencyUser,
+  ] = await Promise.all([
+    line?.requires_vehicle_details
+      ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    line?.requires_property_details
+      ? supabase.from("policy_property_details").select("*").eq("policy_id", id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    line?.requires_life_health_details
+      ? supabase.from("policy_life_health_details").select("*").eq("policy_id", id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("policy_installments")
+      .select("*")
+      .eq("policy_id", id)
+      .order("installment_number", { ascending: true }),
+    supabase
+      .from("claims")
+      .select("id, claim_number, status, date_of_loss, claim_amount_estimated")
+      .eq("policy_id", id)
+      .order("date_of_loss", { ascending: false }),
+    getDocumentsFor("policy", id),
+    supabase
+      .from("commissions")
+      .select("id, commission_type, base_amount, commission_rate_percent, commission_amount, status, period")
+      .eq("policy_id", id)
+      .order("period", { ascending: false }),
+    getCurrentAgencyUser(),
+  ]);
+
+  const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
 
   const addInstallmentAction = createInstallment.bind(null, id);
 
@@ -114,7 +132,14 @@ export default async function PolicyDetailPage({
             · {line?.name_el} · {(policy.carriers as unknown as { name: string } | null)?.name}
           </p>
         </div>
-        <StatusSelect policyId={policy.id} status={policy.status as PolicyStatus} />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href={`/dashboard/policies/new?renew_from=${policy.id}`}>Ανανέωση</Link>}
+          />
+          <StatusSelect policyId={policy.id} status={policy.status as PolicyStatus} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -127,6 +152,17 @@ export default async function PolicyDetailPage({
             <InfoRow label="Λήξη" value={formatDate(policy.end_date)} />
             <InfoRow label="Μικτό ασφάλιστρο" value={`${policy.premium_gross.toFixed(2)} €`} />
             <InfoRow label="Συχνότητα" value={policy.payment_frequency} />
+            {policy.previous_policy_id && (
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Προηγούμενη περίοδος</span>
+                <Link
+                  href={`/dashboard/policies/${policy.previous_policy_id}`}
+                  className="text-right font-medium hover:underline"
+                >
+                  Προβολή
+                </Link>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -285,6 +321,13 @@ export default async function PolicyDetailPage({
           </Table>
         </CardContent>
       </Card>
+
+      <CommissionsSection
+        policyId={id}
+        carrierId={policy.carrier_id}
+        commissions={commissions ?? []}
+        isAdmin={isAdmin}
+      />
 
       <DocumentsSection entityType="policy" entityId={id} documents={documents} />
     </div>

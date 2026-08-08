@@ -23,6 +23,29 @@ type InsuranceLine = {
   requires_life_health_details: boolean;
 };
 
+export type RenewFromData = {
+  policyId: string;
+  policyGroupId: string;
+  policyNumber: string;
+  startDate: string;
+  endDate: string;
+  premiumGross: number;
+  paymentFrequency: PaymentFrequency;
+  vehicle?: {
+    plate_number?: string | null;
+    manufacture_year?: number | null;
+    make?: string | null;
+    model?: string | null;
+  };
+  property?: {
+    address_street?: string | null;
+    address_city?: string | null;
+    square_meters?: number | null;
+    commercial_value?: number | null;
+  };
+  lifeHealth?: { coverage_type?: string | null; sum_insured?: number | null };
+};
+
 const PAYMENT_FREQUENCIES: { value: PaymentFrequency; label: string }[] = [
   { value: "annual", label: "Ετήσια" },
   { value: "semiannual", label: "Εξαμηνιαία" },
@@ -36,20 +59,28 @@ export function PolicyForm({
   carriers,
   insuranceLines,
   defaultClientId,
+  defaultCarrierId,
+  defaultLineId,
+  renewFrom,
 }: {
   clients: { id: string; name: string }[];
   carriers: { id: string; name: string }[];
   insuranceLines: InsuranceLine[];
   defaultClientId?: string;
+  defaultCarrierId?: string;
+  defaultLineId?: string;
+  renewFrom?: RenewFromData;
 }) {
   const [state, formAction, pending] = useActionState<PolicyFormState, FormData>(
     createPolicy,
     undefined,
   );
   const [clientId, setClientId] = useState(defaultClientId ?? "");
-  const [carrierId, setCarrierId] = useState("");
-  const [lineId, setLineId] = useState("");
-  const [frequency, setFrequency] = useState<PaymentFrequency>("annual");
+  const [carrierId, setCarrierId] = useState(defaultCarrierId ?? "");
+  const [lineId, setLineId] = useState(defaultLineId ?? "");
+  const [frequency, setFrequency] = useState<PaymentFrequency>(
+    renewFrom?.paymentFrequency ?? "annual",
+  );
 
   const selectedLine = useMemo(
     () => insuranceLines.find((l) => l.id === lineId),
@@ -58,6 +89,13 @@ export function PolicyForm({
 
   return (
     <form action={formAction} className="flex max-w-2xl flex-col gap-6">
+      {renewFrom && (
+        <>
+          <input type="hidden" name="renew_from_policy_id" value={renewFrom.policyId} />
+          <input type="hidden" name="policy_group_id" value={renewFrom.policyGroupId} />
+        </>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label>Πελάτης</Label>
@@ -118,7 +156,12 @@ export function PolicyForm({
           <input type="hidden" name="insurance_line_id" value={lineId} />
         </div>
 
-        <Field label="Αριθμός συμβολαίου" name="policy_number" required />
+        <Field
+          label="Αριθμός συμβολαίου"
+          name="policy_number"
+          required
+          defaultValue={renewFrom?.policyNumber}
+        />
         <div className="flex flex-col gap-2">
           <Label>Συχνότητα πληρωμής</Label>
           <Select value={frequency} onValueChange={(v) => setFrequency(v as PaymentFrequency)}>
@@ -139,19 +182,30 @@ export function PolicyForm({
           </Select>
           <input type="hidden" name="payment_frequency" value={frequency} />
         </div>
-        <Field label="Έναρξη" name="start_date" type="date" required />
-        <Field label="Λήξη" name="end_date" type="date" required />
-        <Field label="Μικτό ασφάλιστρο (€)" name="premium_gross" type="number" required />
+        <Field label="Έναρξη" name="start_date" type="date" required defaultValue={renewFrom?.startDate} />
+        <Field label="Λήξη" name="end_date" type="date" required defaultValue={renewFrom?.endDate} />
+        <Field
+          label="Μικτό ασφάλιστρο (€)"
+          name="premium_gross"
+          type="number"
+          required
+          defaultValue={renewFrom?.premiumGross}
+        />
       </div>
 
       {selectedLine?.requires_vehicle_details && (
         <fieldset className="flex flex-col gap-4 rounded-md border p-4">
           <legend className="px-1 text-sm font-medium">Στοιχεία οχήματος</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Πινακίδα" name="plate_number" />
-            <Field label="Έτος κατασκευής" name="manufacture_year" type="number" />
-            <Field label="Μάρκα" name="make" />
-            <Field label="Μοντέλο" name="model" />
+            <Field label="Πινακίδα" name="plate_number" defaultValue={renewFrom?.vehicle?.plate_number} />
+            <Field
+              label="Έτος κατασκευής"
+              name="manufacture_year"
+              type="number"
+              defaultValue={renewFrom?.vehicle?.manufacture_year}
+            />
+            <Field label="Μάρκα" name="make" defaultValue={renewFrom?.vehicle?.make} />
+            <Field label="Μοντέλο" name="model" defaultValue={renewFrom?.vehicle?.model} />
           </div>
         </fieldset>
       )}
@@ -160,10 +214,20 @@ export function PolicyForm({
         <fieldset className="flex flex-col gap-4 rounded-md border p-4">
           <legend className="px-1 text-sm font-medium">Στοιχεία ακινήτου</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Οδός" name="address_street" />
-            <Field label="Πόλη" name="address_city" />
-            <Field label="Τετραγωνικά μέτρα" name="square_meters" type="number" />
-            <Field label="Εμπορική αξία (€)" name="commercial_value" type="number" />
+            <Field label="Οδός" name="address_street" defaultValue={renewFrom?.property?.address_street} />
+            <Field label="Πόλη" name="address_city" defaultValue={renewFrom?.property?.address_city} />
+            <Field
+              label="Τετραγωνικά μέτρα"
+              name="square_meters"
+              type="number"
+              defaultValue={renewFrom?.property?.square_meters}
+            />
+            <Field
+              label="Εμπορική αξία (€)"
+              name="commercial_value"
+              type="number"
+              defaultValue={renewFrom?.property?.commercial_value}
+            />
           </div>
         </fieldset>
       )}
@@ -172,8 +236,17 @@ export function PolicyForm({
         <fieldset className="flex flex-col gap-4 rounded-md border p-4">
           <legend className="px-1 text-sm font-medium">Στοιχεία κάλυψης</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Είδος κάλυψης" name="coverage_type" />
-            <Field label="Ασφαλισμένο κεφάλαιο (€)" name="sum_insured" type="number" />
+            <Field
+              label="Είδος κάλυψης"
+              name="coverage_type"
+              defaultValue={renewFrom?.lifeHealth?.coverage_type}
+            />
+            <Field
+              label="Ασφαλισμένο κεφάλαιο (€)"
+              name="sum_insured"
+              type="number"
+              defaultValue={renewFrom?.lifeHealth?.sum_insured}
+            />
           </div>
         </fieldset>
       )}
@@ -181,7 +254,7 @@ export function PolicyForm({
       {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
 
       <Button type="submit" disabled={pending} className="w-fit">
-        {pending ? "Αποθήκευση..." : "Δημιουργία συμβολαίου"}
+        {pending ? "Αποθήκευση..." : renewFrom ? "Δημιουργία ανανέωσης" : "Δημιουργία συμβολαίου"}
       </Button>
     </form>
   );
@@ -192,16 +265,25 @@ function Field({
   name,
   type = "text",
   required,
+  defaultValue,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
+  defaultValue?: string | number | null;
 }) {
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor={name}>{label}</Label>
-      <Input id={name} name={name} type={type} step={type === "number" ? "0.01" : undefined} required={required} />
+      <Input
+        id={name}
+        name={name}
+        type={type}
+        step={type === "number" ? "0.01" : undefined}
+        required={required}
+        defaultValue={defaultValue ?? undefined}
+      />
     </div>
   );
 }

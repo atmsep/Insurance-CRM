@@ -41,6 +41,9 @@ export async function createPolicy(
 
   if (!line) return { error: "Άγνωστος κλάδος ασφάλισης." };
 
+  const renewFromPolicyId = str(formData, "renew_from_policy_id");
+  const policyGroupId = str(formData, "policy_group_id");
+
   const { data: policy, error: policyError } = await supabase
     .from("policies")
     .insert({
@@ -55,6 +58,9 @@ export async function createPolicy(
       payment_frequency: (str(formData, "payment_frequency") ?? "annual") as PaymentFrequency,
       status: "active",
       created_by: agencyUser.id,
+      ...(renewFromPolicyId
+        ? { previous_policy_id: renewFromPolicyId, policy_group_id: policyGroupId, is_renewal: true }
+        : {}),
     })
     .select("id")
     .single();

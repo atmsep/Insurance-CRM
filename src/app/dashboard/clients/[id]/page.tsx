@@ -54,20 +54,31 @@ export default async function ClientDetailPage({
 
   if (!client) notFound();
 
-  const [{ data: policies }, { data: interactions }, documents] = await Promise.all([
-    supabase
-      .from("policies")
-      .select("id, policy_number, status, end_date, insurance_lines(name_el)")
-      .eq("client_id", id)
-      .order("end_date", { ascending: false }),
-    supabase
-      .from("interactions")
-      .select("id, interaction_type, subject, notes, interaction_date, follow_up_needed")
-      .eq("client_id", id)
-      .order("interaction_date", { ascending: false })
-      .limit(20),
-    getDocumentsFor("client", id),
-  ]);
+  const [{ data: policies }, { data: interactions }, documents, { data: installments }] =
+    await Promise.all([
+      supabase
+        .from("policies")
+        .select("id, policy_number, status, end_date, insurance_lines(name_el)")
+        .eq("client_id", id)
+        .order("end_date", { ascending: false }),
+      supabase
+        .from("interactions")
+        .select("id, interaction_type, subject, notes, interaction_date, follow_up_needed")
+        .eq("client_id", id)
+        .order("interaction_date", { ascending: false })
+        .limit(20),
+      getDocumentsFor("client", id),
+      supabase
+        .from("policy_installments")
+        .select("amount, status, policies!inner(client_id)")
+        .eq("policies.client_id", id),
+    ]);
+
+  const totalBilled = (installments ?? []).reduce((sum, i) => sum + i.amount, 0);
+  const totalPaid = (installments ?? [])
+    .filter((i) => i.status === "paid")
+    .reduce((sum, i) => sum + i.amount, 0);
+  const outstanding = totalBilled - totalPaid;
 
   const name = client.client_individuals
     ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
@@ -137,32 +148,58 @@ export default async function ClientDetailPage({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Συμβόλαια</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {policies?.length ? (
-              policies.map((policy) => (
-                <Link
-                  key={policy.id}
-                  href={`/dashboard/policies/${policy.id}`}
-                  className="flex flex-col rounded-md border px-3 py-2 text-sm hover:bg-muted"
+        <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Οικονομική εικόνα</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Χρεωθέν σύνολο</span>
+                <span className="text-right font-medium">{totalBilled.toFixed(2)} €</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Εισπραγμένο</span>
+                <span className="text-right font-medium">{totalPaid.toFixed(2)} €</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Υπόλοιπο</span>
+                <span
+                  className={`text-right font-medium ${outstanding > 0 ? "text-amber-600 dark:text-amber-500" : ""}`}
                 >
-                  <span className="font-medium">{policy.policy_number}</span>
-                  <span className="text-muted-foreground">
-                    {(policy.insurance_lines as unknown as { name_el: string } | null)?.name_el}
-                  </span>
-                  <Badge variant="outline" className="mt-1 w-fit">
-                    {policy.status}
-                  </Badge>
-                </Link>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">Δεν υπάρχουν συμβόλαια ακόμα.</p>
-            )}
-          </CardContent>
-        </Card>
+                  {outstanding.toFixed(2)} €
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Συμβόλαια</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              {policies?.length ? (
+                policies.map((policy) => (
+                  <Link
+                    key={policy.id}
+                    href={`/dashboard/policies/${policy.id}`}
+                    className="flex flex-col rounded-md border px-3 py-2 text-sm hover:bg-muted"
+                  >
+                    <span className="font-medium">{policy.policy_number}</span>
+                    <span className="text-muted-foreground">
+                      {(policy.insurance_lines as unknown as { name_el: string } | null)?.name_el}
+                    </span>
+                    <Badge variant="outline" className="mt-1 w-fit">
+                      {policy.status}
+                    </Badge>
+                  </Link>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">Δεν υπάρχουν συμβόλαια ακόμα.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <Card>
