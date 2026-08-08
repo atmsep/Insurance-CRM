@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { policyStatusVariant } from "@/lib/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +27,15 @@ import { PrintButton } from "@/components/print-button";
 const CLIENT_TYPE_LABELS: Record<string, string> = {
   individual: "Φυσικό πρόσωπο",
   legal_entity: "Νομικό πρόσωπο",
+};
+
+const POLICY_STATUS_LABELS: Record<string, string> = {
+  draft: "Πρόχειρο",
+  active: "Ενεργό",
+  pending_renewal: "Προς ανανέωση",
+  expired: "Ληγμένο",
+  cancelled: "Ακυρωμένο",
+  lapsed: "Διακοπή",
 };
 
 function formatDateTime(value: string) {
@@ -111,7 +122,7 @@ export default async function ClientDetailPage({
           <h1 className="text-2xl font-semibold">{name}</h1>
           <p className="text-sm text-muted-foreground">
             {CLIENT_TYPE_LABELS[client.client_type]} · ΑΦΜ {client.afm ?? "—"}{" "}
-            <Badge variant={client.is_active ? "default" : "outline"} className="ml-2">
+            <Badge variant={client.is_active ? "success" : "outline"} className="ml-2">
               {client.is_active ? "Ενεργός" : "Ανενεργός"}
             </Badge>
           </p>
@@ -132,6 +143,15 @@ export default async function ClientDetailPage({
         </div>
       </div>
 
+      <Tabs defaultValue="details">
+        <TabsList>
+          <TabsTrigger value="details">Στοιχεία</TabsTrigger>
+          <TabsTrigger value="interactions">Επικοινωνία</TabsTrigger>
+          <TabsTrigger value="policies">Συμβόλαια</TabsTrigger>
+          <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="details" className="pt-4">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -176,31 +196,33 @@ export default async function ClientDetailPage({
           </CardContent>
         </Card>
 
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Οικονομική εικόνα</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Χρεωθέν σύνολο</span>
-                <span className="text-right font-medium">{totalBilled.toFixed(2)} €</span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Εισπραγμένο</span>
-                <span className="text-right font-medium">{totalPaid.toFixed(2)} €</span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Υπόλοιπο</span>
-                <span
-                  className={`text-right font-medium ${outstanding > 0 ? "text-amber-600 dark:text-amber-500" : ""}`}
-                >
-                  {outstanding.toFixed(2)} €
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Οικονομική εικόνα</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Χρεωθέν σύνολο</span>
+              <span className="text-right font-medium">{totalBilled.toFixed(2)} €</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Εισπραγμένο</span>
+              <span className="text-right font-medium">{totalPaid.toFixed(2)} €</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Υπόλοιπο</span>
+              <span
+                className={`text-right font-medium ${outstanding > 0 ? "text-warning" : ""}`}
+              >
+                {outstanding.toFixed(2)} €
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+        </TabsContent>
 
+        <TabsContent value="policies" className="pt-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Συμβόλαια</CardTitle>
@@ -217,8 +239,8 @@ export default async function ClientDetailPage({
                     <span className="text-muted-foreground">
                       {(policy.insurance_lines as unknown as { name_el: string } | null)?.name_el}
                     </span>
-                    <Badge variant="outline" className="mt-1 w-fit">
-                      {policy.status}
+                    <Badge variant={policyStatusVariant(policy.status)} className="mt-1 w-fit">
+                      {POLICY_STATUS_LABELS[policy.status] ?? policy.status}
                     </Badge>
                   </Link>
                 ))
@@ -227,9 +249,9 @@ export default async function ClientDetailPage({
               )}
             </CardContent>
           </Card>
-        </div>
-      </div>
+        </TabsContent>
 
+        <TabsContent value="interactions" className="pt-4">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Επικοινωνία</CardTitle>
@@ -293,8 +315,12 @@ export default async function ClientDetailPage({
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="documents" className="pt-4">
       <DocumentsSection entityType="client" entityId={id} documents={documents} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

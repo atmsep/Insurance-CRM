@@ -244,7 +244,7 @@ function StatTile({
     tone === "critical"
       ? "text-destructive"
       : tone === "warning"
-        ? "text-amber-600 dark:text-amber-500"
+        ? "text-warning"
         : "text-foreground";
 
   const content = (

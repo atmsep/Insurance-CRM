@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { COMMISSION_TYPE_LABELS, COMMISSION_STATUS_LABELS } from "./commission-labels";
 import { COMMISSION_DIRECTION_LABELS } from "./direction-labels";
+import { commissionStatusVariant } from "@/lib/status-badge";
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString("el-GR") : "—";
@@ -134,7 +135,7 @@ export default async function CommissionsPage({
                     <TableCell>{c.commission_amount.toFixed(2)} €</TableCell>
                     <TableCell>{formatDate(c.period)}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">
+                      <Badge variant={commissionStatusVariant(c.status)}>
                         {COMMISSION_STATUS_LABELS[c.status] ?? c.status}
                       </Badge>
                     </TableCell>

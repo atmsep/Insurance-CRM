@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
+import { installmentStatusVariant } from "@/lib/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -87,7 +88,9 @@ export default async function InstallmentsPage() {
                     <TableCell>{formatDate(inst.due_date)}</TableCell>
                     <TableCell>{inst.amount.toFixed(2)} €</TableCell>
                     <TableCell>
-                      <Badge variant="destructive">{STATUS_LABELS[inst.status] ?? inst.status}</Badge>
+                      <Badge variant={installmentStatusVariant(inst.status)}>
+                        {STATUS_LABELS[inst.status] ?? inst.status}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <form action={markInstallmentPaid.bind(null, inst.policy_id, inst.id)}>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { policyStatusVariant } from "@/lib/status-badge";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -131,7 +132,9 @@ export default async function PoliciesPage({
                     <TableCell>{formatDate(policy.end_date)}</TableCell>
                     <TableCell>{policy.premium_gross.toFixed(2)} €</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{STATUS_LABELS[policy.status] ?? policy.status}</Badge>
+                      <Badge variant={policyStatusVariant(policy.status)}>
+                        {STATUS_LABELS[policy.status] ?? policy.status}
+                      </Badge>
                     </TableCell>
                   </TableRow>
                 );

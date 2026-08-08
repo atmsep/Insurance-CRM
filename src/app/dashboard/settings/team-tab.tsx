@@ -99,7 +99,7 @@ export function TeamTab({
             <p className="mt-2 text-sm text-destructive">{inviteState.error}</p>
           )}
           {inviteState && "success" in inviteState && (
-            <p className="mt-2 text-sm text-emerald-600 dark:text-emerald-500">
+            <p className="mt-2 text-sm text-success">
               {inviteState.success}
             </p>
           )}

@@ -6,15 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createTask } from "../actions";
+import { taskPriorityVariant } from "@/lib/status-badge";
 
 type DayTask = { id: string; title: string; priority: string };
-
-const PRIORITY_VARIANT: Record<string, "outline" | "default" | "destructive"> = {
-  low: "outline",
-  medium: "outline",
-  high: "default",
-  urgent: "destructive",
-};
 
 export function DayCell({
   day,
@@ -57,7 +51,7 @@ export function DayCell({
         {tasks.map((task) => (
           <Badge
             key={task.id}
-            variant={PRIORITY_VARIANT[task.priority] ?? "outline"}
+            variant={taskPriorityVariant(task.priority)}
             className="block w-full truncate text-left"
             title={task.title}
           >

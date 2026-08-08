@@ -414,7 +414,7 @@ function StatCard({
   value: string;
   tone?: "neutral" | "warning";
 }) {
-  const toneClass = tone === "warning" ? "text-amber-600 dark:text-amber-500" : "text-foreground";
+  const toneClass = tone === "warning" ? "text-warning" : "text-foreground";
   return (
     <Card>
       <CardContent className="pt-6">

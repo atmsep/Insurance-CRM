@@ -37,7 +37,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
           <div className="flex items-center gap-4">
             <MobileNav />
             <BackButton />
-            <div className="text-sm">
+            <div className="hidden text-sm sm:block">
               <p className="font-medium">{agencyUser.full_name}</p>
               <p className="text-muted-foreground">
                 {ROLE_LABELS[agencyUser.role] ?? agencyUser.role}

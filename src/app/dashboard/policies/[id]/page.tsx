@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { claimStatusVariant, installmentStatusVariant } from "@/lib/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -157,6 +159,16 @@ export default async function PolicyDetailPage({
         </div>
       </div>
 
+      <Tabs defaultValue="details">
+        <TabsList>
+          <TabsTrigger value="details">Στοιχεία</TabsTrigger>
+          <TabsTrigger value="installments">Δόσεις</TabsTrigger>
+          <TabsTrigger value="claims">Ζημιές</TabsTrigger>
+          <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
+          <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="details" className="pt-4">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Στοιχεία συμβολαίου</CardTitle>
@@ -277,7 +289,9 @@ export default async function PolicyDetailPage({
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="installments" className="pt-4">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Δόσεις</CardTitle>
@@ -301,7 +315,7 @@ export default async function PolicyDetailPage({
                     <TableCell>{formatDate(inst.due_date)}</TableCell>
                     <TableCell>{inst.amount.toFixed(2)} €</TableCell>
                     <TableCell>
-                      <Badge variant={inst.status === "paid" ? "default" : "outline"}>
+                      <Badge variant={installmentStatusVariant(inst.status)}>
                         {PAYMENT_STATUS_LABELS[inst.status] ?? inst.status}
                       </Badge>
                     </TableCell>
@@ -341,7 +355,9 @@ export default async function PolicyDetailPage({
           </form>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="claims" className="pt-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Ζημιές</CardTitle>
@@ -377,7 +393,7 @@ export default async function PolicyDetailPage({
                         : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">
+                      <Badge variant={claimStatusVariant(claim.status)}>
                         {CLAIM_STATUS_LABELS[claim.status] ?? claim.status}
                       </Badge>
                     </TableCell>
@@ -394,7 +410,9 @@ export default async function PolicyDetailPage({
           </Table>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="commissions" className="pt-4">
       <CommissionsSection
         policyId={id}
         carrierId={policy.carrier_id}
@@ -403,8 +421,12 @@ export default async function PolicyDetailPage({
         premiumNet={policy.premium_net}
         payees={payees ?? []}
       />
+        </TabsContent>
 
+        <TabsContent value="documents" className="pt-4">
       <DocumentsSection entityType="policy" entityId={id} documents={documents} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -42,7 +42,7 @@ export function ProfileTab({ fullName, email }: { fullName: string; email: strin
         </div>
         {state && "error" in state && <p className="text-sm text-destructive">{state.error}</p>}
         {state && "success" in state && (
-          <p className="text-sm text-emerald-600 dark:text-emerald-500">{state.success}</p>
+          <p className="text-sm text-success">{state.success}</p>
         )}
         <Button type="submit" disabled={pending} className="w-fit">
           {pending ? "Αποθήκευση..." : "Αλλαγή κωδικού"}

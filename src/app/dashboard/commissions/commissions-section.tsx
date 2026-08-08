@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -12,6 +13,7 @@ import { StatusSelect } from "./status-select";
 import { AddCommissionForm } from "./add-commission-form";
 import { COMMISSION_TYPE_LABELS, COMMISSION_STATUS_LABELS } from "./commission-labels";
 import { COMMISSION_DIRECTION_LABELS } from "./direction-labels";
+import { commissionStatusVariant } from "@/lib/status-badge";
 import type { CommissionStatus } from "@/lib/database.types";
 
 export type Commission = {
@@ -88,7 +90,9 @@ export function CommissionsSection({
                         status={c.status as CommissionStatus}
                       />
                     ) : (
-                      COMMISSION_STATUS_LABELS[c.status] ?? c.status
+                      <Badge variant={commissionStatusVariant(c.status)}>
+                        {COMMISSION_STATUS_LABELS[c.status] ?? c.status}
+                      </Badge>
                     )}
                   </TableCell>
                 </TableRow>

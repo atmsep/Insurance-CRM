@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
+import { claimStatusVariant } from "@/lib/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -123,7 +124,9 @@ export default async function ClaimsPage({
                         : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{STATUS_LABELS[claim.status] ?? claim.status}</Badge>
+                      <Badge variant={claimStatusVariant(claim.status)}>
+                        {STATUS_LABELS[claim.status] ?? claim.status}
+                      </Badge>
                     </TableCell>
                   </TableRow>
                 );

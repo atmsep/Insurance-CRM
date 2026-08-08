@@ -7,19 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createTask, completeTask } from "./actions";
 import { PrioritySelect } from "./priority-select";
+import { taskPriorityVariant } from "@/lib/status-badge";
 
 const PRIORITY_LABELS: Record<string, string> = {
   low: "Χαμηλή",
   medium: "Μεσαία",
   high: "Υψηλή",
   urgent: "Επείγουσα",
-};
-
-const PRIORITY_VARIANT: Record<string, "outline" | "default" | "destructive"> = {
-  low: "outline",
-  medium: "outline",
-  high: "default",
-  urgent: "destructive",
 };
 
 function formatDate(value: string) {
@@ -76,7 +70,7 @@ export default async function TasksPage() {
                   <p className="text-sm text-muted-foreground">{formatDate(task.due_date)}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant={PRIORITY_VARIANT[task.priority] ?? "outline"}>
+                  <Badge variant={taskPriorityVariant(task.priority)}>
                     {PRIORITY_LABELS[task.priority] ?? task.priority}
                   </Badge>
                   <form action={completeTask.bind(null, task.id)}>

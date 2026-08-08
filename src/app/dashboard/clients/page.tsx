@@ -103,7 +103,7 @@ export default async function ClientsPage({
                   <TableCell>{client.phone_mobile ?? "—"}</TableCell>
                   <TableCell>{client.address_city ?? "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={client.is_active ? "default" : "outline"}>
+                    <Badge variant={client.is_active ? "success" : "outline"}>
                       {client.is_active ? "Ενεργός" : "Ανενεργός"}
                     </Badge>
                   </TableCell>
