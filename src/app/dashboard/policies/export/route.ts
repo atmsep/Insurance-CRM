@@ -11,49 +11,6 @@ const STATUS_LABELS: Record<string, string> = {
   lapsed: "Διακοπή",
 };
 
-function one<T>(v: T | T[] | null | undefined): T | null {
-  return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
-}
-
-function riskLabel(policy: {
-  policy_vehicle_details: unknown;
-  policy_property_details: unknown;
-  policy_life_health_details: unknown;
-}): string {
-  const vehicle = one(
-    policy.policy_vehicle_details as
-      | { plate_number: string | null; make: string | null; model: string | null }
-      | { plate_number: string | null; make: string | null; model: string | null }[]
-      | null,
-  );
-  if (vehicle) {
-    const brand = [vehicle.make, vehicle.model].filter(Boolean).join(" ");
-    if (vehicle.plate_number && brand) return `${vehicle.plate_number} – ${brand}`;
-    return vehicle.plate_number || brand || "—";
-  }
-
-  const property = one(
-    policy.policy_property_details as
-      | { address_street: string | null; address_city: string | null }
-      | { address_street: string | null; address_city: string | null }[]
-      | null,
-  );
-  if (property) {
-    const address = [property.address_street, property.address_city].filter(Boolean).join(", ");
-    return address || "—";
-  }
-
-  const lifeHealth = one(
-    policy.policy_life_health_details as
-      | { coverage_type: string | null }
-      | { coverage_type: string | null }[]
-      | null,
-  );
-  if (lifeHealth) return lifeHealth.coverage_type || "—";
-
-  return "—";
-}
-
 export async function GET(request: Request) {
   await requireAgencyUser();
   const supabase = await createClient();
@@ -63,12 +20,13 @@ export async function GET(request: Request) {
   const line = searchParams.get("line");
   const carrier = searchParams.get("carrier");
   const status = searchParams.get("status");
+  const risk = searchParams.get("risk");
   const expiring = searchParams.get("expiring");
 
   let query = supabase
     .from("policies")
     .select(
-      "policy_number, status, end_date, premium_gross, premium_net, insurance_lines(name_el), carriers(name), clients!inner(display_name), policy_vehicle_details(plate_number, make, model), policy_property_details(address_street, address_city), policy_life_health_details(coverage_type)",
+      "policy_number, status, end_date, premium_gross, premium_net, risk_label, insurance_lines(name_el), carriers(name), clients!inner(display_name)",
     )
     .order("created_at", { ascending: false })
     .limit(5000);
@@ -84,6 +42,7 @@ export async function GET(request: Request) {
   if (line) query = query.eq("insurance_line_id", line);
   if (carrier) query = query.eq("carrier_id", carrier);
   if (status) query = query.eq("status", status);
+  if (risk) query = query.ilike("risk_label", `%${risk}%`);
 
   const { data: policies } = await query;
 
@@ -95,7 +54,7 @@ export async function GET(request: Request) {
       policy_number: p.policy_number,
       client: client?.display_name ?? "",
       line: line?.name_el ?? "",
-      risk: riskLabel(p),
+      risk: p.risk_label ?? "",
       carrier: carrier?.name ?? "",
       end_date: p.end_date,
       premium_gross: p.premium_gross,
