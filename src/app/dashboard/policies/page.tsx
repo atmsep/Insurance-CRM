@@ -29,6 +29,49 @@ function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR");
 }
 
+function one<T>(v: T | T[] | null | undefined): T | null {
+  return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+}
+
+function riskLabel(policy: {
+  policy_vehicle_details: unknown;
+  policy_property_details: unknown;
+  policy_life_health_details: unknown;
+}): string {
+  const vehicle = one(
+    policy.policy_vehicle_details as
+      | { plate_number: string | null; make: string | null; model: string | null }
+      | { plate_number: string | null; make: string | null; model: string | null }[]
+      | null,
+  );
+  if (vehicle) {
+    const brand = [vehicle.make, vehicle.model].filter(Boolean).join(" ");
+    if (vehicle.plate_number && brand) return `${vehicle.plate_number} – ${brand}`;
+    return vehicle.plate_number || brand || "—";
+  }
+
+  const property = one(
+    policy.policy_property_details as
+      | { address_street: string | null; address_city: string | null }
+      | { address_street: string | null; address_city: string | null }[]
+      | null,
+  );
+  if (property) {
+    const address = [property.address_street, property.address_city].filter(Boolean).join(", ");
+    return address || "—";
+  }
+
+  const lifeHealth = one(
+    policy.policy_life_health_details as
+      | { coverage_type: string | null }
+      | { coverage_type: string | null }[]
+      | null,
+  );
+  if (lifeHealth) return lifeHealth.coverage_type || "—";
+
+  return "—";
+}
+
 export default async function PoliciesPage({
   searchParams,
 }: {
@@ -54,7 +97,7 @@ export default async function PoliciesPage({
   let query = supabase
     .from("policies")
     .select(
-      "id, policy_number, status, end_date, premium_gross, insurance_lines(name_el), carriers(name), clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name))",
+      "id, policy_number, status, end_date, premium_gross, insurance_lines(name_el), carriers(name), clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name)), policy_vehicle_details(plate_number, make, model), policy_property_details(address_street, address_city), policy_life_health_details(coverage_type)",
       { count: "exact" },
     );
 
@@ -123,6 +166,7 @@ export default async function PoliciesPage({
               <TableHead>Αριθμός</TableHead>
               <TableHead>Πελάτης</TableHead>
               <TableHead>Κλάδος</TableHead>
+              <TableHead>Κίνδυνος</TableHead>
               <TableHead>Εταιρεία</TableHead>
               <TableHead>Λήξη</TableHead>
               <TableHead>Ασφάλιστρο</TableHead>
@@ -162,6 +206,7 @@ export default async function PoliciesPage({
                   ))}
                 </select>
               </TableHead>
+              <TableHead className="pb-2" />
               <TableHead className="pb-2">
                 <select
                   form="policy-filters"
@@ -219,6 +264,7 @@ export default async function PoliciesPage({
                     <TableCell>
                       {(policy.insurance_lines as unknown as { name_el: string } | null)?.name_el}
                     </TableCell>
+                    <TableCell>{riskLabel(policy)}</TableCell>
                     <TableCell>{(policy.carriers as unknown as { name: string } | null)?.name}</TableCell>
                     <TableCell>{formatDate(policy.end_date)}</TableCell>
                     <TableCell>{policy.premium_gross.toFixed(2)} €</TableCell>
@@ -232,7 +278,7 @@ export default async function PoliciesPage({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   Δεν βρέθηκαν συμβόλαια.
                 </TableCell>
               </TableRow>
