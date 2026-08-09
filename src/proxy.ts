@@ -6,5 +6,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|webp)$).*)"],
+  // /api/cron/* is excluded: it's called by Vercel Cron (no user session,
+  // never a browser) and authenticates itself via CRON_SECRET instead.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/cron|.*\\.(?:svg|png|jpg|jpeg|webp)$).*)"],
 };

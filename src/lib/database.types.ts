@@ -180,6 +180,8 @@ export interface Database {
           cancellation_reason: string | null;
           notes: string | null;
           extra_details: Record<string, unknown>;
+          renewal_notice_30d_sent_at: string | null;
+          renewal_notice_7d_sent_at: string | null;
           created_by: string | null;
           created_at: string;
           updated_at: string;
