@@ -7,6 +7,7 @@ import { TeamTab } from "./team-tab";
 import { PayeesTab } from "./payees-tab";
 import { BrokerOfficesTab } from "./broker-offices-tab";
 import { PaymentMethodsTab } from "./payment-methods-tab";
+import { AutomationsTab } from "./automations-tab";
 
 export default async function SettingsPage() {
   const agencyUser = await requireAgencyUser();
@@ -22,6 +23,7 @@ export default async function SettingsPage() {
     { data: insuranceLines },
     { data: commissionRates },
     { data: paymentMethods },
+    { data: appSettings },
   ] = await Promise.all([
     isAdmin
       ? supabase.from("carriers").select("*").order("name")
@@ -55,6 +57,9 @@ export default async function SettingsPage() {
     isAdmin
       ? supabase.from("payment_methods").select("*").order("sort_order")
       : Promise.resolve({ data: [] }),
+    isAdmin
+      ? supabase.from("app_settings").select("key, enabled").order("key")
+      : Promise.resolve({ data: [] }),
   ]);
 
   const outstandingByAgent = new Map<string, number>();
@@ -77,6 +82,7 @@ export default async function SettingsPage() {
           {isAdmin && <TabsTrigger value="payees">Δικαιούχοι Προμηθειών</TabsTrigger>}
           {isAdmin && <TabsTrigger value="brokers">Συνεργαζόμενα Γραφεία</TabsTrigger>}
           {isAdmin && <TabsTrigger value="payment-methods">Μέθοδοι Πληρωμής</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="automations">Αυτοματισμοί</TabsTrigger>}
         </TabsList>
         <TabsContent value="profile" className="pt-4">
           <ProfileTab fullName={agencyUser.full_name} email={agencyUser.email} />
@@ -113,6 +119,11 @@ export default async function SettingsPage() {
         {isAdmin && (
           <TabsContent value="payment-methods" className="pt-4">
             <PaymentMethodsTab paymentMethods={paymentMethods ?? []} />
+          </TabsContent>
+        )}
+        {isAdmin && (
+          <TabsContent value="automations" className="pt-4">
+            <AutomationsTab settings={appSettings ?? []} />
           </TabsContent>
         )}
       </Tabs>

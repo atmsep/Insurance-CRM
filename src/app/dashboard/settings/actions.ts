@@ -160,6 +160,13 @@ export async function togglePaymentMethodActive(paymentMethodId: string, isActiv
   revalidatePath("/dashboard/settings");
 }
 
+export async function toggleAppSetting(key: string, enabled: boolean) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  await supabase.from("app_settings").update({ enabled }).eq("key", key);
+  revalidatePath("/dashboard/settings");
+}
+
 export async function updateAgencyUserRole(userId: string, role: string) {
   await requireAdmin();
   const supabase = await createSupabaseClient();

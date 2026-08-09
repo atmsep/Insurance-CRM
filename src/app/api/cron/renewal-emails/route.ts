@@ -82,6 +82,16 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
 
+  const { data: setting } = await supabase
+    .from("app_settings")
+    .select("enabled")
+    .eq("key", "renewal_reminder_emails")
+    .maybeSingle();
+
+  if (setting && !setting.enabled) {
+    return Response.json({ skipped: "renewal_reminder_emails is disabled in Settings" });
+  }
+
   const [result30, result7] = await Promise.all([
     sendBatch(supabase, 30, "renewal_notice_30d_sent_at"),
     sendBatch(supabase, 7, "renewal_notice_7d_sent_at"),

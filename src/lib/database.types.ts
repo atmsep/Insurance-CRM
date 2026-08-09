@@ -276,6 +276,17 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["policy_installments"]["Row"]>;
       };
+      app_settings: {
+        Row: {
+          key: string;
+          enabled: boolean;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["app_settings"]["Row"]> & {
+          key: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["app_settings"]["Row"]>;
+      };
       payment_methods: {
         Row: {
           id: string;
