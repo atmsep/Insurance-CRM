@@ -2,7 +2,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { installmentStatusVariant } from "@/lib/status-badge";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -11,7 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { markInstallmentPaid } from "../policies/actions";
+import { collectInstallmentPayment } from "../policies/actions";
+import { CollectPaymentForm } from "../policies/collect-payment-form";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Εκκρεμεί",
@@ -29,15 +29,18 @@ export default async function InstallmentsPage() {
   const supabase = await createClient();
   const today = new Date().toISOString().slice(0, 10);
 
-  const { data: installments } = await supabase
-    .from("policy_installments")
-    .select(
-      "id, policy_id, due_date, amount, status, policies(policy_number, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
-    )
-    .in("status", ["pending", "overdue", "partially_paid"])
-    .lte("due_date", today)
-    .order("due_date", { ascending: true })
-    .limit(100);
+  const [{ data: installments }, { data: paymentMethods }] = await Promise.all([
+    supabase
+      .from("policy_installments")
+      .select(
+        "id, policy_id, due_date, amount, status, policies(policy_number, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
+      )
+      .in("status", ["pending", "overdue", "partially_paid"])
+      .lte("due_date", today)
+      .order("due_date", { ascending: true })
+      .limit(100),
+    supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
+  ]);
 
   const total = (installments ?? []).reduce((sum, i) => sum + i.amount, 0);
 
@@ -93,11 +96,12 @@ export default async function InstallmentsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <form action={markInstallmentPaid.bind(null, inst.policy_id, inst.id)}>
-                        <Button type="submit" size="sm" variant="outline">
-                          Πληρώθηκε
-                        </Button>
-                      </form>
+                      <CollectPaymentForm
+                        installmentId={inst.id}
+                        collectAction={collectInstallmentPayment.bind(null, inst.policy_id, inst.id)}
+                        amount={inst.amount}
+                        paymentMethods={paymentMethods ?? []}
+                      />
                     </TableCell>
                   </TableRow>
                 );

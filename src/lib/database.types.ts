@@ -258,6 +258,12 @@ export interface Database {
           paid_amount: number | null;
           payment_method: string | null;
           receipt_number: string | null;
+          payment_method_id: string | null;
+          paid_by: string | null;
+          paid_at: string | null;
+          cancelled_by: string | null;
+          cancelled_at: string | null;
+          cancellation_reason: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["policy_installments"]["Row"]> & {
           policy_id: string;
@@ -266,6 +272,20 @@ export interface Database {
           amount: number;
         };
         Update: Partial<Database["public"]["Tables"]["policy_installments"]["Row"]>;
+      };
+      payment_methods: {
+        Row: {
+          id: string;
+          name: string;
+          is_active: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["payment_methods"]["Row"]> & {
+          name: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["payment_methods"]["Row"]>;
       };
       commission_payees: {
         Row: {

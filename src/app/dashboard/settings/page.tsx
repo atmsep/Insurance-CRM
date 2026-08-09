@@ -6,6 +6,7 @@ import { CarriersTab } from "./carriers-tab";
 import { TeamTab } from "./team-tab";
 import { PayeesTab } from "./payees-tab";
 import { BrokerOfficesTab } from "./broker-offices-tab";
+import { PaymentMethodsTab } from "./payment-methods-tab";
 
 export default async function SettingsPage() {
   const agencyUser = await requireAgencyUser();
@@ -20,6 +21,7 @@ export default async function SettingsPage() {
     { data: brokerOffices },
     { data: insuranceLines },
     { data: commissionRates },
+    { data: paymentMethods },
   ] = await Promise.all([
     isAdmin
       ? supabase.from("carriers").select("*").order("name")
@@ -50,6 +52,9 @@ export default async function SettingsPage() {
           )
           .order("valid_from", { ascending: false })
       : Promise.resolve({ data: [] }),
+    isAdmin
+      ? supabase.from("payment_methods").select("*").order("sort_order")
+      : Promise.resolve({ data: [] }),
   ]);
 
   const outstandingByAgent = new Map<string, number>();
@@ -71,6 +76,7 @@ export default async function SettingsPage() {
           {isAdmin && <TabsTrigger value="team">Συνεργάτες</TabsTrigger>}
           {isAdmin && <TabsTrigger value="payees">Δικαιούχοι Προμηθειών</TabsTrigger>}
           {isAdmin && <TabsTrigger value="brokers">Συνεργαζόμενα Γραφεία</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="payment-methods">Μέθοδοι Πληρωμής</TabsTrigger>}
         </TabsList>
         <TabsContent value="profile" className="pt-4">
           <ProfileTab fullName={agencyUser.full_name} email={agencyUser.email} />
@@ -102,6 +108,11 @@ export default async function SettingsPage() {
               insuranceLines={insuranceLines ?? []}
               rates={commissionRates ?? []}
             />
+          </TabsContent>
+        )}
+        {isAdmin && (
+          <TabsContent value="payment-methods" className="pt-4">
+            <PaymentMethodsTab paymentMethods={paymentMethods ?? []} />
           </TabsContent>
         )}
       </Tabs>

@@ -17,7 +17,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusSelect } from "../status-select";
-import { createInstallment, markInstallmentPaid, updatePolicyDetails } from "../actions";
+import {
+  createInstallment,
+  collectInstallmentPayment,
+  cancelInstallmentPayment,
+  updatePolicyDetails,
+} from "../actions";
+import { CollectPaymentForm } from "../collect-payment-form";
+import { CancelPaymentForm } from "../cancel-payment-form";
 import { PaymentFrequencySelect } from "../payment-frequency-select";
 import { PremiumFields } from "../premium-fields";
 import type { PolicyStatus } from "@/lib/database.types";
@@ -96,6 +103,7 @@ export default async function PolicyDetailPage({
     agencyUser,
     { data: agents },
     { data: brokerOffices },
+    { data: paymentMethods },
   ] = await Promise.all([
     line?.requires_vehicle_details
       ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
@@ -133,6 +141,7 @@ export default async function PolicyDetailPage({
       .eq("is_active", true)
       .order("is_direct", { ascending: false })
       .order("name"),
+    supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
 
   const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
@@ -344,12 +353,19 @@ export default async function PolicyDetailPage({
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {inst.status !== "paid" && (
-                        <form action={markInstallmentPaid.bind(null, id, inst.id)}>
-                          <Button type="submit" size="sm" variant="outline">
-                            Πληρώθηκε
-                          </Button>
-                        </form>
+                      {(inst.status === "pending" || inst.status === "overdue") && (
+                        <CollectPaymentForm
+                          installmentId={inst.id}
+                          collectAction={collectInstallmentPayment.bind(null, id, inst.id)}
+                          amount={inst.amount}
+                          paymentMethods={paymentMethods ?? []}
+                        />
+                      )}
+                      {isAdmin && (inst.status === "paid" || inst.status === "partially_paid") && (
+                        <CancelPaymentForm
+                          installmentId={inst.id}
+                          cancelAction={cancelInstallmentPayment.bind(null, id, inst.id)}
+                        />
                       )}
                     </TableCell>
                   </TableRow>

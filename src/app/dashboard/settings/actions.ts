@@ -138,6 +138,28 @@ export async function createCarrierCommissionRate(formData: FormData) {
   revalidatePath("/dashboard/settings");
 }
 
+export async function createPaymentMethod(formData: FormData) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = formData.get("name") as string;
+  if (!name) return;
+
+  await supabase.from("payment_methods").insert({ name });
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function togglePaymentMethodActive(paymentMethodId: string, isActive: boolean) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  await supabase
+    .from("payment_methods")
+    .update({ is_active: isActive })
+    .eq("id", paymentMethodId);
+  revalidatePath("/dashboard/settings");
+}
+
 export async function updateAgencyUserRole(userId: string, role: string) {
   await requireAdmin();
   const supabase = await createSupabaseClient();

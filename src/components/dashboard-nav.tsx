@@ -21,6 +21,7 @@ const navItems: NavItem[] = [
     links: [
       { href: "/dashboard/installments", label: "Δόσεις" },
       { href: "/dashboard/commissions", label: "Προμήθειες" },
+      { href: "/dashboard/cash-register", label: "Ταμείο" },
     ],
   },
   { href: "/dashboard/claims", label: "Ζημιές" },

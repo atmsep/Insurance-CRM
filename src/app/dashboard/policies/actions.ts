@@ -268,12 +268,78 @@ export async function updatePolicyDetails(
   revalidatePath(`/dashboard/policies/${policyId}`);
 }
 
-export async function markInstallmentPaid(policyId: string, installmentId: string) {
-  await requireAgencyUser();
+// Records an actual collection: amount received, method, receipt, and who
+// collected it (from the server session, never trusted from the client —
+// the RLS policy on policy_installments independently enforces the same
+// self-attribution and refuses this update once the row is no longer
+// pending/overdue, so this is a defense-in-depth check, not the boundary).
+export async function collectInstallmentPayment(
+  policyId: string,
+  installmentId: string,
+  formData: FormData,
+) {
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
+
+  const { data: installment } = await supabase
+    .from("policy_installments")
+    .select("amount")
+    .eq("id", installmentId)
+    .single();
+  if (!installment) return;
+
+  const paidAmount = Number(formData.get("paid_amount")) || installment.amount;
+  const paymentMethodId = (formData.get("payment_method_id") as string) || null;
+  const receiptNumber = (formData.get("receipt_number") as string) || null;
+  const now = new Date();
+
   await supabase
     .from("policy_installments")
-    .update({ status: "paid", paid_date: new Date().toISOString().slice(0, 10) })
+    .update({
+      status: paidAmount >= installment.amount ? "paid" : "partially_paid",
+      paid_amount: paidAmount,
+      paid_date: now.toISOString().slice(0, 10),
+      paid_at: now.toISOString(),
+      payment_method_id: paymentMethodId,
+      receipt_number: receiptNumber,
+      paid_by: agencyUser.id,
+    })
     .eq("id", installmentId);
+
   revalidatePath(`/dashboard/policies/${policyId}`);
+  revalidatePath("/dashboard/installments");
+  revalidatePath("/dashboard/cash-register");
+}
+
+// Owner/admin only (enforced both here and by RLS). Never touches the
+// original paid_amount/paid_by/paid_at/payment_method_id — the collection
+// stays visible, just flagged cancelled, so a disputed entry remains
+// evidence instead of being erased.
+export async function cancelInstallmentPayment(
+  policyId: string,
+  installmentId: string,
+  formData: FormData,
+) {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const reason = (formData.get("cancellation_reason") as string) || null;
+  if (!reason) return { error: "Η αιτιολογία ακύρωσης είναι υποχρεωτική." };
+
+  await supabase
+    .from("policy_installments")
+    .update({
+      status: "cancelled",
+      cancelled_by: agencyUser.id,
+      cancelled_at: new Date().toISOString(),
+      cancellation_reason: reason,
+    })
+    .eq("id", installmentId);
+
+  revalidatePath(`/dashboard/policies/${policyId}`);
+  revalidatePath("/dashboard/installments");
+  revalidatePath("/dashboard/cash-register");
 }
