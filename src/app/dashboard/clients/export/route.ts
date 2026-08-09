@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { toCsv, csvResponse } from "@/lib/csv";
+import { resolveClientName } from "@/lib/client-name";
 
 export async function GET(request: Request) {
   await requireAgencyUser();
@@ -11,6 +12,7 @@ export async function GET(request: Request) {
   const phone = searchParams.get("phone");
   const city = searchParams.get("city");
   const showInactive = searchParams.get("show_inactive") === "1";
+  const ids = searchParams.get("ids");
 
   let query = supabase
     .from("clients")
@@ -20,26 +22,22 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false })
     .limit(5000);
 
-  if (!showInactive) query = query.eq("is_active", true);
-  if (name) query = query.ilike("display_name", `%${name}%`);
-  if (afm) query = query.ilike("afm", `%${afm}%`);
-  if (phone) query = query.ilike("phone_mobile", `%${phone}%`);
-  if (city) query = query.ilike("address_city", `%${city}%`);
+  if (ids) {
+    query = query.in("id", ids.split(","));
+  } else {
+    if (!showInactive) query = query.eq("is_active", true);
+    if (name) query = query.ilike("display_name", `%${name}%`);
+    if (afm) query = query.ilike("afm", `%${afm}%`);
+    if (phone) query = query.ilike("phone_mobile", `%${phone}%`);
+    if (city) query = query.ilike("address_city", `%${city}%`);
+  }
 
   const { data: clients } = await query;
 
   const rows = (clients ?? []).map((c) => {
-    const individual = c.client_individuals as unknown as {
-      first_name: string;
-      last_name: string;
-    } | null;
-    const legal = c.client_legal_entities as unknown as { company_name: string } | null;
-    const name =
-      c.client_type === "individual" && individual
-        ? `${individual.first_name} ${individual.last_name}`
-        : legal?.company_name ?? "";
+    const name = resolveClientName(c as never);
     return {
-      name,
+      name: name === "—" ? "" : name,
       afm: c.afm ?? "",
       phone: c.phone_mobile ?? "",
       city: c.address_city ?? "",

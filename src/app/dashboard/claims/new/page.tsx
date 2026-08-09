@@ -1,16 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { ClaimForm } from "../claim-form";
-
-function clientDisplayName(c: {
-  client_type: string;
-  client_individuals: { first_name: string; last_name: string } | null;
-  client_legal_entities: { company_name: string } | null;
-}) {
-  if (c.client_type === "individual" && c.client_individuals) {
-    return `${c.client_individuals.first_name} ${c.client_individuals.last_name}`;
-  }
-  return c.client_legal_entities?.company_name ?? "—";
-}
+import { resolveClientName } from "@/lib/client-name";
 
 export default async function NewClaimPage({
   searchParams,
@@ -31,8 +21,7 @@ export default async function NewClaimPage({
       .maybeSingle();
 
     if (policy) {
-      const client = policy.clients as unknown as Parameters<typeof clientDisplayName>[0] | null;
-      defaultPolicyLabel = `${policy.policy_number} — ${client ? clientDisplayName(client) : "—"}`;
+      defaultPolicyLabel = `${policy.policy_number} — ${resolveClientName(policy.clients as never)}`;
     }
   }
 

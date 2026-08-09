@@ -28,6 +28,7 @@ import { PrintButton } from "@/components/print-button";
 import { createTicket } from "../../tickets/actions";
 import { StatusSelect as TicketStatusSelect } from "../../tickets/status-select";
 import type { TicketStatus } from "@/lib/database.types";
+import { resolveClientName } from "@/lib/client-name";
 
 const CLIENT_TYPE_LABELS: Record<string, string> = {
   individual: "Φυσικό πρόσωπο",
@@ -119,9 +120,7 @@ export default async function ClientDetailPage({
     0,
   );
 
-  const name = client.client_individuals
-    ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
-    : client.client_legal_entities?.company_name ?? "—";
+  const name = resolveClientName(client);
 
   const updateAction = updateClientNotes.bind(null, id);
   const addInteractionAction = createInteraction.bind(null, id);

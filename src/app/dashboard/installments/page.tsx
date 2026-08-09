@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { installmentStatusVariant } from "@/lib/status-badge";
+import { resolveClientName } from "@/lib/client-name";
 import {
   Table,
   TableBody,
@@ -75,10 +76,7 @@ export default async function InstallmentsPage() {
                     client_legal_entities: { company_name: string } | null;
                   } | null;
                 } | null;
-                const client = policy?.clients;
-                const name = client?.client_individuals
-                  ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
-                  : client?.client_legal_entities?.company_name ?? "—";
+                const name = resolveClientName(policy?.clients);
 
                 return (
                   <TableRow key={inst.id}>

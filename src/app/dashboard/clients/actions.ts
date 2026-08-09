@@ -269,6 +269,14 @@ export async function toggleClientActive(clientId: string, isActive: boolean) {
   revalidatePath("/dashboard/clients");
 }
 
+export async function deactivateClients(clientIds: string[]) {
+  await requireAgencyUser();
+  if (clientIds.length === 0) return;
+  const supabase = await createSupabaseClient();
+  await supabase.from("clients").update({ is_active: false }).in("id", clientIds);
+  revalidatePath("/dashboard/clients");
+}
+
 export async function createInteraction(clientId: string, formData: FormData) {
   const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();

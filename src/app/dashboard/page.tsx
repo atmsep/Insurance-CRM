@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { resolveClientName } from "@/lib/client-name";
 
 function addDays(days: number) {
   const d = new Date();
@@ -192,9 +193,7 @@ export default async function DashboardPage() {
                   client_individuals: { first_name: string; last_name: string } | null;
                   client_legal_entities: { company_name: string } | null;
                 } | null;
-                const name = client?.client_individuals
-                  ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
-                  : client?.client_legal_entities?.company_name ?? "—";
+                const name = resolveClientName(client);
                 return (
                   <Link
                     key={policy.id}

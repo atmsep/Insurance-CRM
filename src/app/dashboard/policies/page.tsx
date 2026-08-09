@@ -3,8 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { policyStatusVariant } from "@/lib/status-badge";
+import { resolveClientName } from "@/lib/client-name";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
+import { ListPageHeader } from "@/components/list-page-header";
+import { FilterSelect } from "@/components/ui/filter-select";
 import {
   Table,
   TableBody,
@@ -95,29 +98,29 @@ export default async function PoliciesPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Συμβόλαια</h1>
-          {expiring && (
-            <p className="text-sm text-muted-foreground">
-              Ενεργά συμβόλαια που λήγουν εντός {Number(expiring) || 30} ημερών ·{" "}
-              <Link href="/dashboard/policies" className="hover:underline">
-                Καθαρισμός φίλτρου
-              </Link>
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={
-              <a href={`/dashboard/policies/export?${exportParams.toString()}`}>Εξαγωγή</a>
-            }
-          />
-          <Button nativeButton={false} render={<Link href="/dashboard/policies/new">Νέο συμβόλαιο</Link>} />
-        </div>
-      </div>
+      <ListPageHeader
+        title="Συμβόλαια"
+        filterBanner={
+          expiring
+            ? {
+                label: `Ενεργά συμβόλαια που λήγουν εντός ${Number(expiring) || 30} ημερών`,
+                clearHref: "/dashboard/policies",
+              }
+            : undefined
+        }
+        actions={
+          <>
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <a href={`/dashboard/policies/export?${exportParams.toString()}`}>Εξαγωγή</a>
+              }
+            />
+            <Button nativeButton={false} render={<Link href="/dashboard/policies/new">Νέο συμβόλαιο</Link>} />
+          </>
+        }
+      />
 
       <div className="rounded-md border">
         <Table>
@@ -126,7 +129,6 @@ export default async function PoliciesPage({
               <TableHead>Αριθμός</TableHead>
               <TableHead>Πελάτης</TableHead>
               <TableHead>Κλάδος</TableHead>
-              <TableHead>Κίνδυνος</TableHead>
               <TableHead>Εταιρεία</TableHead>
               <TableHead>Λήξη</TableHead>
               <TableHead>Ασφάλιστρο</TableHead>
@@ -151,22 +153,14 @@ export default async function PoliciesPage({
                   className="h-7 text-xs"
                 />
               </TableHead>
-              <TableHead className="pb-2">
-                <select
+              <TableHead className="space-y-1 pb-2">
+                <FilterSelect
                   form="policy-filters"
                   name="line"
                   defaultValue={line ?? ""}
-                  className="h-7 w-full rounded-md border border-input bg-transparent px-1.5 text-xs"
-                >
-                  <option value="">Όλοι</option>
-                  {(insuranceLines ?? []).map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name_el}
-                    </option>
-                  ))}
-                </select>
-              </TableHead>
-              <TableHead className="pb-2">
+                  allLabel="Όλοι οι κλάδοι"
+                  options={(insuranceLines ?? []).map((l) => ({ id: l.id, label: l.name_el }))}
+                />
                 <Input
                   form="policy-filters"
                   name="risk"
@@ -176,38 +170,24 @@ export default async function PoliciesPage({
                 />
               </TableHead>
               <TableHead className="pb-2">
-                <select
+                <FilterSelect
                   form="policy-filters"
                   name="carrier"
                   defaultValue={carrier ?? ""}
-                  className="h-7 w-full rounded-md border border-input bg-transparent px-1.5 text-xs"
-                >
-                  <option value="">Όλες</option>
-                  {(carriers ?? []).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                  allLabel="Όλες οι εταιρείες"
+                  options={(carriers ?? []).map((c) => ({ id: c.id, label: c.name }))}
+                />
               </TableHead>
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
               <TableHead className="pb-2">
-                <div className="flex items-center gap-1">
-                  <select
-                    form="policy-filters"
-                    name="status"
-                    defaultValue={status ?? ""}
-                    className="h-7 w-full rounded-md border border-input bg-transparent px-1.5 text-xs"
-                  >
-                    <option value="">Όλες</option>
-                    {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <FilterSelect
+                  form="policy-filters"
+                  name="status"
+                  defaultValue={status ?? ""}
+                  allLabel="Όλες οι καταστάσεις"
+                  options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ id: value, label }))}
+                />
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -218,11 +198,9 @@ export default async function PoliciesPage({
                   client_individuals: { first_name: string; last_name: string } | null;
                   client_legal_entities: { company_name: string } | null;
                 } | null;
-                const name = client?.client_individuals
-                  ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
-                  : client?.client_legal_entities?.company_name ?? "—";
+                const name = resolveClientName(client);
                 return (
-                  <TableRow key={policy.id}>
+                  <TableRow key={policy.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
                       <Link href={`/dashboard/policies/${policy.id}`} className="hover:underline">
                         {policy.policy_number}
@@ -232,7 +210,6 @@ export default async function PoliciesPage({
                     <TableCell>
                       {(policy.insurance_lines as unknown as { name_el: string } | null)?.name_el}
                     </TableCell>
-                    <TableCell>{policy.risk_label ?? "—"}</TableCell>
                     <TableCell>{(policy.carriers as unknown as { name: string } | null)?.name}</TableCell>
                     <TableCell>{formatDate(policy.end_date)}</TableCell>
                     <TableCell>{policy.premium_gross.toFixed(2)} €</TableCell>
@@ -246,7 +223,7 @@ export default async function PoliciesPage({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   Δεν βρέθηκαν συμβόλαια.
                 </TableCell>
               </TableRow>

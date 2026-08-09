@@ -36,6 +36,7 @@ import { CommissionsSection, type Commission } from "../../commissions/commissio
 import { PrintButton } from "@/components/print-button";
 import { getCurrentAgencyUser } from "@/lib/dal";
 import { EntitySelect } from "@/components/entity-select";
+import { resolveClientName } from "@/lib/client-name";
 
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
   pending: "Εκκρεμεί",
@@ -90,9 +91,7 @@ export default async function PolicyDetailPage({
     client_legal_entities: { company_name: string } | null;
   } | null;
 
-  const clientName = client?.client_individuals
-    ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
-    : client?.client_legal_entities?.company_name ?? "—";
+  const clientName = resolveClientName(client);
 
   const [
     { data: vehicle },

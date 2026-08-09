@@ -11,6 +11,7 @@ import { updateClaimDetails } from "../actions";
 import type { ClaimStatus } from "@/lib/database.types";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
+import { resolveClientName } from "@/lib/client-name";
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR");
@@ -46,9 +47,7 @@ export default async function ClaimDetailPage({
     } | null;
   } | null;
 
-  const clientName = policy?.clients?.client_individuals
-    ? `${policy.clients.client_individuals.first_name} ${policy.clients.client_individuals.last_name}`
-    : policy?.clients?.client_legal_entities?.company_name ?? "—";
+  const clientName = resolveClientName(policy?.clients);
 
   const updateAction = updateClaimDetails.bind(null, id, policy?.id ?? "");
 

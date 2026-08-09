@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { TICKET_STATUS_LABELS } from "./ticket-labels";
 import { ticketStatusVariant, taskPriorityVariant } from "@/lib/status-badge";
+import { resolveClientName } from "@/lib/client-name";
 
 const PRIORITY_LABELS: Record<string, string> = {
   low: "Χαμηλή",
@@ -97,9 +98,7 @@ export default async function TicketsPage({
                   client_legal_entities: { company_name: string } | null;
                 } | null;
                 const agent = ticket.agency_users as unknown as { full_name: string } | null;
-                const name = client?.client_individuals
-                  ? `${client.client_individuals.first_name} ${client.client_individuals.last_name}`
-                  : client?.client_legal_entities?.company_name ?? "—";
+                const name = resolveClientName(client);
 
                 return (
                   <TableRow key={ticket.id}>
