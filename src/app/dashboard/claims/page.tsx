@@ -5,6 +5,9 @@ import { claimStatusVariant } from "@/lib/status-badge";
 import { resolveClientName } from "@/lib/client-name";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
+import { ListPageHeader } from "@/components/list-page-header";
+import { FilterSelect } from "@/components/ui/filter-select";
 import {
   Table,
   TableBody,
@@ -23,6 +26,8 @@ const STATUS_LABELS: Record<string, string> = {
   closed: "Έκλεισε",
 };
 
+const PAGE_SIZE = 20;
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR");
 }
@@ -30,57 +35,50 @@ function formatDate(value: string) {
 export default async function ClaimsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; open?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; open?: string; page?: string }>;
 }) {
-  const { q, status, open } = await searchParams;
+  const { q, status, open, page: pageParam } = await searchParams;
   const supabase = await createClient();
+  const page = Math.max(1, Number(pageParam) || 1);
 
   let query = supabase
     .from("claims")
     .select(
       "id, claim_number, status, date_of_loss, claim_amount_estimated, policies(policy_number, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
+      { count: "exact" },
     )
-    .order("date_of_loss", { ascending: false })
-    .limit(50);
+    .order("date_of_loss", { ascending: false });
 
   if (q) query = query.ilike("claim_number", `%${q}%`);
   if (status) query = query.eq("status", status);
   else if (open) query = query.not("status", "in", "(paid,closed)");
 
-  const { data: claims } = await query;
+  const from = (page - 1) * PAGE_SIZE;
+  query = query.range(from, from + PAGE_SIZE - 1);
+
+  const { data: claims, count } = await query;
+  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+
+  const exportParams = new URLSearchParams();
+  if (q) exportParams.set("q", q);
+  if (status) exportParams.set("status", status);
+  if (open) exportParams.set("open", open);
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Ζημιές</h1>
-        {open && !status && (
-          <p className="text-sm text-muted-foreground">
-            Μόνο ανοιχτές ζημιές ·{" "}
-            <Link href="/dashboard/claims" className="hover:underline">
-              Καθαρισμός φίλτρου
-            </Link>
-          </p>
-        )}
-      </div>
-
-      <form className="flex flex-wrap items-end gap-3">
-        <Input name="q" placeholder="Αναζήτηση με αριθμό ζημιάς..." defaultValue={q ?? ""} className="max-w-xs" />
-        <select
-          name="status"
-          defaultValue={status ?? ""}
-          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
-        >
-          <option value="">Όλες οι καταστάσεις</option>
-          {Object.entries(STATUS_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <Button type="submit" variant="secondary">
-          Φίλτρο
-        </Button>
-      </form>
+      <ListPageHeader
+        title="Ζημιές"
+        filterBanner={
+          open && !status ? { label: "Μόνο ανοιχτές ζημιές", clearHref: "/dashboard/claims" } : undefined
+        }
+        actions={
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<a href={`/dashboard/claims/export?${exportParams.toString()}`}>Εξαγωγή</a>}
+          />
+        }
+      />
 
       <div className="rounded-md border">
         <Table>
@@ -92,6 +90,30 @@ export default async function ClaimsPage({
               <TableHead>Ημ. ζημιάς</TableHead>
               <TableHead>Εκτιμώμενο ποσό</TableHead>
               <TableHead>Κατάσταση</TableHead>
+            </TableRow>
+            <TableRow>
+              <TableHead className="pb-2">
+                <Input
+                  form="claim-filters"
+                  name="q"
+                  placeholder="Αριθμός ζημιάς..."
+                  defaultValue={q ?? ""}
+                  className="h-7 text-xs"
+                />
+              </TableHead>
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2">
+                <FilterSelect
+                  form="claim-filters"
+                  name="status"
+                  defaultValue={status ?? ""}
+                  allLabel="Όλες οι καταστάσεις"
+                  options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ id: value, label }))}
+                />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -107,7 +129,7 @@ export default async function ClaimsPage({
                 const name = resolveClientName(policy?.clients);
 
                 return (
-                  <TableRow key={claim.id}>
+                  <TableRow key={claim.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
                       <Link href={`/dashboard/claims/${claim.id}`} className="hover:underline">
                         {claim.claim_number ?? "—"}
@@ -139,6 +161,19 @@ export default async function ClaimsPage({
           </TableBody>
         </Table>
       </div>
+
+      <form id="claim-filters" className="flex flex-wrap items-center justify-between gap-3">
+        {open && <input type="hidden" name="open" value={open} />}
+        <Button type="submit" variant="secondary" size="sm">
+          Εφαρμογή φίλτρων
+        </Button>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          basePath="/dashboard/claims"
+          searchParams={{ q, status, open }}
+        />
+      </form>
     </div>
   );
 }

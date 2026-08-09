@@ -6,6 +6,7 @@ import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
 import { createTicket } from "../../tickets/actions";
 import { resolveClientName } from "@/lib/client-name";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ClientHeader } from "./_components/client-header";
 import { DetailsTab } from "./_components/details-tab";
 import { PoliciesTab } from "./_components/policies-tab";
@@ -108,6 +109,7 @@ export default async function ClientDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <Breadcrumbs items={[{ label: "Πελάτες", href: "/dashboard/clients" }, { label: name }]} />
       <ClientHeader
         clientId={id}
         name={name}

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { requireAgencyUser } from "@/lib/dal";
 import { signOut } from "@/lib/actions/auth";
-import { DashboardNav } from "@/components/dashboard-nav";
+import { Sidebar } from "@/components/sidebar";
 import { BackButton } from "@/components/back-button";
 import { MobileNav } from "@/components/mobile-nav";
 import { ToastListener } from "@/components/toast-listener";
@@ -28,12 +28,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
       </Suspense>
       <IncomingCallListener />
       <KeyboardShortcuts />
-      <aside className="no-print hidden w-56 shrink-0 flex-col justify-between border-r bg-muted/20 p-4 sm:flex">
-        <div>
-          <p className="mb-6 px-2 text-lg font-semibold">CRM Ασφαλιστικού</p>
-          <DashboardNav />
-        </div>
-      </aside>
+      <Sidebar />
       <div className="flex flex-1 flex-col">
         <header className="no-print flex items-center justify-between border-b px-4 py-3 sm:px-6">
           <div className="flex items-center gap-4">

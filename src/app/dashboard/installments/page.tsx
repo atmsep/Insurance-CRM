@@ -22,6 +22,12 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Ακυρώθηκε",
 };
 
+// This is an operational worklist (today's overdue/pending δόσεις), not a
+// report — real pagination doesn't fit the "clear your queue" workflow, so
+// it stays a single capped list. The cap is generous and the header makes
+// truncation visible instead of silently dropping rows past it.
+const LIST_CAP = 200;
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR");
 }
@@ -30,25 +36,34 @@ export default async function InstallmentsPage() {
   const supabase = await createClient();
   const today = new Date().toISOString().slice(0, 10);
 
-  const [{ data: installments }, { data: paymentMethods }] = await Promise.all([
+  const [{ data: installments, count }, { data: paymentMethods }] = await Promise.all([
     supabase
       .from("policy_installments")
       .select(
         "id, policy_id, due_date, amount, status, policies(policy_number, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
+        { count: "exact" },
       )
       .in("status", ["pending", "overdue", "partially_paid"])
       .lte("due_date", today)
       .order("due_date", { ascending: true })
-      .limit(100),
+      .limit(LIST_CAP),
     supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
 
   const total = (installments ?? []).reduce((sum, i) => sum + i.amount, 0);
+  const isTruncated = (count ?? 0) > LIST_CAP;
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Ληξιπρόθεσμες δόσεις</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">Ληξιπρόθεσμες δόσεις</h1>
+          {isTruncated && (
+            <p className="text-sm text-muted-foreground">
+              Εμφανίζονται {LIST_CAP} από {count} — εξόφλησε τις παλαιότερες για να δεις τις υπόλοιπες.
+            </p>
+          )}
+        </div>
         <p className="text-sm text-muted-foreground">
           Σύνολο: <span className="font-medium text-foreground">{total.toFixed(2)} €</span>
         </p>

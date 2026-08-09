@@ -8,6 +8,7 @@ import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
 import { getCurrentAgencyUser } from "@/lib/dal";
 import { resolveClientName } from "@/lib/client-name";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 import { PolicyHeader } from "./_components/policy-header";
 import { DetailsTab } from "./_components/details-tab";
 import { InstallmentsTab } from "./_components/installments-tab";
@@ -119,6 +120,7 @@ export default async function PolicyDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <Breadcrumbs items={[{ label: "Συμβόλαια", href: "/dashboard/policies" }, { label: policy.policy_number }]} />
       <PolicyHeader
         policyId={id}
         policyNumber={policy.policy_number}
