@@ -276,6 +276,25 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["policy_installments"]["Row"]>;
       };
+      email_templates: {
+        Row: {
+          id: string;
+          key: string | null;
+          name: string;
+          subject: string;
+          body: string;
+          is_system: boolean;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["email_templates"]["Row"]> & {
+          name: string;
+          subject: string;
+          body: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["email_templates"]["Row"]>;
+      };
       app_settings: {
         Row: {
           key: string;

@@ -8,6 +8,7 @@ import { PayeesTab } from "./payees-tab";
 import { BrokerOfficesTab } from "./broker-offices-tab";
 import { PaymentMethodsTab } from "./payment-methods-tab";
 import { AutomationsTab } from "./automations-tab";
+import { EmailTemplatesTab } from "./email-templates-tab";
 
 export default async function SettingsPage() {
   const agencyUser = await requireAgencyUser();
@@ -24,6 +25,7 @@ export default async function SettingsPage() {
     { data: commissionRates },
     { data: paymentMethods },
     { data: appSettings },
+    { data: emailTemplates },
   ] = await Promise.all([
     isAdmin
       ? supabase.from("carriers").select("*").order("name")
@@ -60,6 +62,9 @@ export default async function SettingsPage() {
     isAdmin
       ? supabase.from("app_settings").select("key, enabled").order("key")
       : Promise.resolve({ data: [] }),
+    isAdmin
+      ? supabase.from("email_templates").select("*").order("is_system", { ascending: false }).order("name")
+      : Promise.resolve({ data: [] }),
   ]);
 
   const outstandingByAgent = new Map<string, number>();
@@ -83,6 +88,7 @@ export default async function SettingsPage() {
           {isAdmin && <TabsTrigger value="brokers">Συνεργαζόμενα Γραφεία</TabsTrigger>}
           {isAdmin && <TabsTrigger value="payment-methods">Μέθοδοι Πληρωμής</TabsTrigger>}
           {isAdmin && <TabsTrigger value="automations">Αυτοματισμοί</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="email-templates">Πρότυπα Email</TabsTrigger>}
         </TabsList>
         <TabsContent value="profile" className="pt-4">
           <ProfileTab fullName={agencyUser.full_name} email={agencyUser.email} />
@@ -124,6 +130,11 @@ export default async function SettingsPage() {
         {isAdmin && (
           <TabsContent value="automations" className="pt-4">
             <AutomationsTab settings={appSettings ?? []} />
+          </TabsContent>
+        )}
+        {isAdmin && (
+          <TabsContent value="email-templates" className="pt-4">
+            <EmailTemplatesTab templates={emailTemplates ?? []} />
           </TabsContent>
         )}
       </Tabs>

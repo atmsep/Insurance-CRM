@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
+import { sendEmail } from "@/lib/email";
 import type { PaymentFrequency } from "@/lib/database.types";
 
 export type PolicyFormState = { error: string } | undefined;
+export type SendEmailState = { error: string } | { success: string } | undefined;
 
 export async function searchPolicies(query: string): Promise<{ id: string; label: string }[]> {
   await requireAgencyUser();
@@ -342,4 +344,28 @@ export async function cancelInstallmentPayment(
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/installments");
   revalidatePath("/dashboard/cash-register");
+}
+
+export async function sendPolicyEmail(
+  policyId: string,
+  _prevState: SendEmailState,
+  formData: FormData,
+): Promise<SendEmailState> {
+  await requireAgencyUser();
+
+  const to = formData.get("to") as string;
+  const subject = formData.get("subject") as string;
+  const body = formData.get("body") as string;
+
+  if (!to || !subject || !body) {
+    return { error: "Συμπλήρωσε θέμα και κείμενο." };
+  }
+
+  const result = await sendEmail({ to, subject, html: body });
+  if (!result.ok) {
+    return { error: "Σφάλμα αποστολής: " + result.error };
+  }
+
+  revalidatePath(`/dashboard/policies/${policyId}`);
+  return { success: "Το email στάλθηκε." };
 }

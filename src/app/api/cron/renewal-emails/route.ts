@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendRenewalReminderEmail } from "@/lib/email";
+import { sendEmail, renderTemplate, buildPolicyMergeFields } from "@/lib/email";
 
 type PolicyRow = {
   id: string;
@@ -24,7 +24,18 @@ async function sendBatch(
   supabase: ReturnType<typeof createAdminClient>,
   daysRemaining: 30 | 7,
   sentColumn: "renewal_notice_30d_sent_at" | "renewal_notice_7d_sent_at",
+  templateKey: "renewal_30d" | "renewal_7d",
 ) {
+  const { data: template } = await supabase
+    .from("email_templates")
+    .select("subject, body, is_active")
+    .eq("key", templateKey)
+    .maybeSingle();
+
+  if (!template || !template.is_active) {
+    return { sent: 0, skipped: 0, errors: [`template ${templateKey} missing or inactive`] };
+  }
+
   const today = new Date();
   const cutoff = new Date(today);
   cutoff.setDate(cutoff.getDate() + daysRemaining);
@@ -53,14 +64,19 @@ async function sendBatch(
     const line = one(p.insurance_lines);
     const carrier = one(p.carriers);
 
-    const result = await sendRenewalReminderEmail({
-      to: client.email,
+    const fields = buildPolicyMergeFields({
       clientName: client.display_name ?? "πελάτη",
       policyNumber: p.policy_number,
       lineName: line?.name_el ?? "—",
       carrierName: carrier?.name ?? "—",
       endDate: p.end_date,
       daysRemaining,
+    });
+
+    const result = await sendEmail({
+      to: client.email,
+      subject: renderTemplate(template.subject, fields),
+      html: renderTemplate(template.body, fields),
     });
 
     if (result.ok) {
@@ -93,8 +109,8 @@ export async function GET(request: Request) {
   }
 
   const [result30, result7] = await Promise.all([
-    sendBatch(supabase, 30, "renewal_notice_30d_sent_at"),
-    sendBatch(supabase, 7, "renewal_notice_7d_sent_at"),
+    sendBatch(supabase, 30, "renewal_notice_30d_sent_at", "renewal_30d"),
+    sendBatch(supabase, 7, "renewal_notice_7d_sent_at", "renewal_7d"),
   ]);
 
   return Response.json({ notice30: result30, notice7: result7 });

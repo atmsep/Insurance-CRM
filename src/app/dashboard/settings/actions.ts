@@ -160,6 +160,41 @@ export async function togglePaymentMethodActive(paymentMethodId: string, isActiv
   revalidatePath("/dashboard/settings");
 }
 
+export async function createEmailTemplate(formData: FormData) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = formData.get("name") as string;
+  const subject = formData.get("subject") as string;
+  const body = formData.get("body") as string;
+  if (!name || !subject || !body) return;
+
+  await supabase.from("email_templates").insert({ name, subject, body });
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function updateEmailTemplate(templateId: string, formData: FormData) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = formData.get("name") as string;
+  const subject = formData.get("subject") as string;
+  const body = formData.get("body") as string;
+  if (!name || !subject || !body) return;
+
+  await supabase.from("email_templates").update({ name, subject, body }).eq("id", templateId);
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function toggleEmailTemplateActive(templateId: string, isActive: boolean) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  await supabase.from("email_templates").update({ is_active: isActive }).eq("id", templateId);
+  revalidatePath("/dashboard/settings");
+}
+
 export async function toggleAppSetting(key: string, enabled: boolean) {
   await requireAdmin();
   const supabase = await createSupabaseClient();

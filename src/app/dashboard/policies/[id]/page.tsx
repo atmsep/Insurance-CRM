@@ -25,6 +25,8 @@ import {
 } from "../actions";
 import { CollectPaymentForm } from "../collect-payment-form";
 import { CancelPaymentForm } from "../cancel-payment-form";
+import { SendEmailButton } from "../send-email-button";
+import { buildPolicyMergeFields } from "@/lib/email";
 import { PaymentFrequencySelect } from "../payment-frequency-select";
 import { PremiumFields } from "../premium-fields";
 import type { PolicyStatus } from "@/lib/database.types";
@@ -67,7 +69,7 @@ export default async function PolicyDetailPage({
   const { data: policy } = await supabase
     .from("policies")
     .select(
-      "*, insurance_lines(*), carriers(name), clients(id, client_individuals(first_name,last_name), client_legal_entities(company_name))",
+      "*, insurance_lines(*), carriers(name), clients(id, email, client_individuals(first_name,last_name), client_legal_entities(company_name))",
     )
     .eq("id", id)
     .single();
@@ -83,6 +85,7 @@ export default async function PolicyDetailPage({
 
   const client = policy.clients as unknown as {
     id: string;
+    email: string | null;
     client_individuals: { first_name: string; last_name: string } | null;
     client_legal_entities: { company_name: string } | null;
   } | null;
@@ -104,6 +107,7 @@ export default async function PolicyDetailPage({
     { data: agents },
     { data: brokerOffices },
     { data: paymentMethods },
+    { data: emailTemplates },
   ] = await Promise.all([
     line?.requires_vehicle_details
       ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
@@ -142,9 +146,27 @@ export default async function PolicyDetailPage({
       .order("is_direct", { ascending: false })
       .order("name"),
     supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
+    supabase
+      .from("email_templates")
+      .select("id, name, subject, body")
+      .eq("is_active", true)
+      .order("is_system", { ascending: false })
+      .order("name"),
   ]);
 
   const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
+
+  const daysRemaining = Math.ceil(
+    (new Date(policy.end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24),
+  );
+  const emailMergeFields = buildPolicyMergeFields({
+    clientName,
+    policyNumber: policy.policy_number,
+    lineName: line?.name_el ?? "—",
+    carrierName: (policy.carriers as unknown as { name: string } | null)?.name ?? "—",
+    endDate: policy.end_date,
+    daysRemaining,
+  });
 
   const addInstallmentAction = createInstallment.bind(null, id);
   const updateDetailsAction = updatePolicyDetails.bind(
@@ -168,6 +190,14 @@ export default async function PolicyDetailPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {policy.status === "active" && (
+            <SendEmailButton
+              policyId={id}
+              clientEmail={client?.email ?? null}
+              templates={emailTemplates ?? []}
+              mergeFields={emailMergeFields}
+            />
+          )}
           <PrintButton />
           <Button
             variant="outline"
