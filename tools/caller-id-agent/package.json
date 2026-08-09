@@ -1,0 +1,14 @@
+{
+  "name": "caller-id-agent",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Reads Caller ID from a USB modem on the office analog line and reports it to the CRM.",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^12.0.0",
+    "serialport": "^12.0.0"
+  }
+}

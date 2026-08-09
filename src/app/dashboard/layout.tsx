@@ -5,6 +5,7 @@ import { DashboardNav } from "@/components/dashboard-nav";
 import { BackButton } from "@/components/back-button";
 import { MobileNav } from "@/components/mobile-nav";
 import { ToastListener } from "@/components/toast-listener";
+import { IncomingCallListener } from "@/components/incoming-call-listener";
 import { GlobalSearch } from "@/components/global-search";
 import { QuickCreateMenu } from "@/components/quick-create-menu";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
@@ -25,6 +26,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
       <Suspense fallback={null}>
         <ToastListener />
       </Suspense>
+      <IncomingCallListener />
       <KeyboardShortcuts />
       <aside className="no-print hidden w-56 shrink-0 flex-col justify-between border-r bg-muted/20 p-4 sm:flex">
         <div>

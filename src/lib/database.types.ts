@@ -276,6 +276,19 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["policy_installments"]["Row"]>;
       };
+      incoming_calls: {
+        Row: {
+          id: string;
+          phone_number: string;
+          client_id: string | null;
+          client_name: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["incoming_calls"]["Row"]> & {
+          phone_number: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["incoming_calls"]["Row"]>;
+      };
       email_templates: {
         Row: {
           id: string;
