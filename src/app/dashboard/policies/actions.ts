@@ -43,6 +43,31 @@ export async function searchPolicies(query: string): Promise<{ id: string; label
   return [...merged.values()].slice(0, 20);
 }
 
+export async function getPolicyInstallments(policyId: string) {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+  const [{ data: installments }, { data: paymentMethods }] = await Promise.all([
+    supabase
+      .from("policy_installments")
+      .select("*")
+      .eq("policy_id", policyId)
+      .order("installment_number", { ascending: true }),
+    supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
+  ]);
+  return { installments: installments ?? [], paymentMethods: paymentMethods ?? [] };
+}
+
+export async function getPolicyClaims(policyId: string) {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+  const { data: claims } = await supabase
+    .from("claims")
+    .select("id, claim_number, status, date_of_loss, claim_amount_estimated")
+    .eq("policy_id", policyId)
+    .order("date_of_loss", { ascending: false });
+  return claims ?? [];
+}
+
 export async function getClientAssignedAgent(clientId: string): Promise<string | null> {
   await requireAgencyUser();
   const supabase = await createSupabaseClient();
