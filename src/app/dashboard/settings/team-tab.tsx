@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,7 @@ import {
   toggleAgencyUserActive,
   updateAgencyUserCreditLimit,
   inviteAgencyUser,
+  createAgencyUserDirect,
   type ActionState,
 } from "./actions";
 
@@ -45,6 +46,29 @@ const ROLE_LABELS: Record<string, string> = {
   viewer: "Παρατηρητής",
 };
 
+function RoleSelect({ name, defaultValue }: { name: string; defaultValue: string }) {
+  return (
+    <Select name={name} defaultValue={defaultValue}>
+      <SelectTrigger className="w-40">
+        <SelectValue>{(v: string) => ROLE_LABELS[v] ?? v}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {Object.entries(ROLE_LABELS).map(([value, label]) => (
+          <SelectItem key={value} value={value}>
+            {label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function ActionMessage({ state }: { state: ActionState }) {
+  if (!state) return null;
+  if ("error" in state) return <p className="mt-2 text-sm text-destructive">{state.error}</p>;
+  return <p className="mt-2 text-sm text-success">{state.success}</p>;
+}
+
 export function TeamTab({
   users,
   currentUserId,
@@ -55,6 +79,11 @@ export function TeamTab({
   outstandingByAgent: Record<string, number>;
 }) {
   const [pending, startTransition] = useTransition();
+  const [mode, setMode] = useState<"direct" | "invite">("direct");
+  const [directState, directAction, directPending] = useActionState<ActionState, FormData>(
+    createAgencyUserDirect,
+    undefined,
+  );
   const [inviteState, inviteAction, invitePending] = useActionState<ActionState, FormData>(
     inviteAgencyUser,
     undefined,
@@ -64,44 +93,84 @@ export function TeamTab({
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Πρόσκληση νέου συνεργάτη</CardTitle>
+          <CardTitle className="text-base">Νέος συνεργάτης</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form action={inviteAction} className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="invite_full_name">Ονοματεπώνυμο</Label>
-              <Input id="invite_full_name" name="full_name" required className="w-56" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="invite_email">Email</Label>
-              <Input id="invite_email" name="email" type="email" required className="w-64" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>Ρόλος</Label>
-              <Select name="role" defaultValue="agent">
-                <SelectTrigger className="w-40">
-                  <SelectValue>{(v: string) => ROLE_LABELS[v] ?? v}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="submit" disabled={invitePending}>
-              {invitePending ? "Αποστολή..." : "Αποστολή πρόσκλησης"}
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={mode === "direct" ? "default" : "outline"}
+              onClick={() => setMode("direct")}
+            >
+              Άμεση καταχώρηση
             </Button>
-          </form>
-          {inviteState && "error" in inviteState && (
-            <p className="mt-2 text-sm text-destructive">{inviteState.error}</p>
-          )}
-          {inviteState && "success" in inviteState && (
-            <p className="mt-2 text-sm text-success">
-              {inviteState.success}
-            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant={mode === "invite" ? "default" : "outline"}
+              onClick={() => setMode("invite")}
+            >
+              Πρόσκληση με email
+            </Button>
+          </div>
+
+          {mode === "direct" ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Ο λογαριασμός δημιουργείται αμέσως με τον κωδικό που ορίζεις — χωρίς email πρόσκλησης.
+              </p>
+              <form action={directAction} className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="direct_full_name">Ονοματεπώνυμο</Label>
+                  <Input id="direct_full_name" name="full_name" required className="w-56" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="direct_email">Email</Label>
+                  <Input id="direct_email" name="email" type="email" required className="w-64" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="direct_password">Κωδικός</Label>
+                  <Input
+                    id="direct_password"
+                    name="password"
+                    type="password"
+                    required
+                    minLength={8}
+                    className="w-48"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Ρόλος</Label>
+                  <RoleSelect name="role" defaultValue="agent" />
+                </div>
+                <Button type="submit" disabled={directPending}>
+                  {directPending ? "Καταχώρηση..." : "Καταχώρηση συνεργάτη"}
+                </Button>
+              </form>
+              <ActionMessage state={directState} />
+            </>
+          ) : (
+            <>
+              <form action={inviteAction} className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="invite_full_name">Ονοματεπώνυμο</Label>
+                  <Input id="invite_full_name" name="full_name" required className="w-56" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="invite_email">Email</Label>
+                  <Input id="invite_email" name="email" type="email" required className="w-64" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Ρόλος</Label>
+                  <RoleSelect name="role" defaultValue="agent" />
+                </div>
+                <Button type="submit" disabled={invitePending}>
+                  {invitePending ? "Αποστολή..." : "Αποστολή πρόσκλησης"}
+                </Button>
+              </form>
+              <ActionMessage state={inviteState} />
+            </>
           )}
         </CardContent>
       </Card>

@@ -41,6 +41,28 @@ async function requireAdmin() {
   return agencyUser;
 }
 
+// Δικαιούχοι Προμηθειών ARE the team's own συνεργάτες — every agency_user
+// gets a linked commission_payees row (is_external = false) kept in sync
+// here instead of requiring a separate manual "Προσθήκη δικαιούχου" entry.
+// Genuinely external collaborators (no CRM login) still go through the
+// payees tab's own create form, which never sets agency_user_id.
+async function syncPayeeForAgencyUser(
+  supabase: Awaited<ReturnType<typeof createSupabaseClient>>,
+  agencyUser: { id: string; full_name: string; email: string; phone?: string | null; is_active?: boolean },
+) {
+  await supabase.from("commission_payees").upsert(
+    {
+      agency_user_id: agencyUser.id,
+      name: agencyUser.full_name,
+      email: agencyUser.email,
+      phone: agencyUser.phone ?? null,
+      is_external: false,
+      is_active: agencyUser.is_active ?? true,
+    },
+    { onConflict: "agency_user_id" },
+  );
+}
+
 export async function createCarrier(formData: FormData) {
   await requireAdmin();
   const supabase = await createSupabaseClient();
@@ -268,6 +290,7 @@ export async function toggleAgencyUserActive(userId: string, isActive: boolean) 
   await requireAdmin();
   const supabase = await createSupabaseClient();
   await supabase.from("agency_users").update({ is_active: isActive }).eq("id", userId);
+  await supabase.from("commission_payees").update({ is_active: isActive }).eq("agency_user_id", userId);
   revalidatePath("/dashboard/settings");
 }
 
@@ -305,20 +328,73 @@ export async function inviteAgencyUser(
   }
 
   const supabase = await createSupabaseClient();
-  const { error: insertError } = await supabase.from("agency_users").insert({
-    auth_user_id: data.user.id,
-    full_name: fullName,
-    email,
-    role,
-  });
+  const { data: newUser, error: insertError } = await supabase
+    .from("agency_users")
+    .insert({ auth_user_id: data.user.id, full_name: fullName, email, role })
+    .select("id")
+    .single();
 
-  if (insertError) {
+  if (insertError || !newUser) {
     // Compensate: the invited auth user has no matching profile — remove it
     // rather than leave an orphaned login with no agency_users row.
     await admin.auth.admin.deleteUser(data.user.id);
-    return { error: "Σφάλμα καταχώρησης προφίλ: " + insertError.message };
+    return { error: "Σφάλμα καταχώρησης προφίλ: " + (insertError?.message ?? "") };
   }
+
+  await syncPayeeForAgencyUser(supabase, { id: newUser.id, full_name: fullName, email });
 
   revalidatePath("/dashboard/settings");
   return { success: `Στάλθηκε πρόσκληση στο ${email}.` };
+}
+
+export async function createAgencyUserDirect(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+
+  const email = (formData.get("email") as string) || "";
+  const fullName = (formData.get("full_name") as string) || "";
+  const role = (formData.get("role") as string) || "agent";
+  const password = (formData.get("password") as string) || "";
+
+  if (!isValidEmail(email)) {
+    return { error: "Δώσε ένα έγκυρο email." };
+  }
+  if (!fullName) {
+    return { error: "Δώσε ονοματεπώνυμο." };
+  }
+  if (password.length < 8) {
+    return { error: "Ο κωδικός πρέπει να έχει τουλάχιστον 8 χαρακτήρες." };
+  }
+
+  const admin = createAdminClient();
+  // email_confirm: true — the account is usable immediately with the
+  // password given here, no invite email / confirmation step involved.
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+
+  if (error || !data.user) {
+    return { error: "Σφάλμα δημιουργίας λογαριασμού: " + (error?.message ?? "") };
+  }
+
+  const supabase = await createSupabaseClient();
+  const { data: newUser, error: insertError } = await supabase
+    .from("agency_users")
+    .insert({ auth_user_id: data.user.id, full_name: fullName, email, role })
+    .select("id")
+    .single();
+
+  if (insertError || !newUser) {
+    await admin.auth.admin.deleteUser(data.user.id);
+    return { error: "Σφάλμα καταχώρησης προφίλ: " + (insertError?.message ?? "") };
+  }
+
+  await syncPayeeForAgencyUser(supabase, { id: newUser.id, full_name: fullName, email });
+
+  revalidatePath("/dashboard/settings");
+  return { success: `Ο/Η ${fullName} καταχωρήθηκε — μπορεί να συνδεθεί άμεσα με το email και τον κωδικό.` };
 }
