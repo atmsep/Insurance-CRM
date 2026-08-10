@@ -98,6 +98,7 @@ export async function getCommissionRate(
     .eq("broker_office_id", brokerOfficeId)
     .eq("carrier_id", carrierId)
     .eq("insurance_line_id", insuranceLineId)
+    .eq("is_active", true)
     .lte("valid_from", today)
     .or(`valid_to.is.null,valid_to.gte.${today}`)
     .order("valid_from", { ascending: false })
@@ -153,6 +154,11 @@ export async function createPolicy(
     renewalNumber = (previousTerm?.renewal_number ?? 1) + 1;
   }
 
+  const assignedAgentId = str(formData, "assigned_agent_id") ?? agencyUser.id;
+  const brokerOfficeId = str(formData, "broker_office_id");
+  const premiumNet = num(formData, "premium_net");
+  const startDate = str(formData, "start_date") ?? "";
+
   const { data: policy, error: policyError } = await supabase
     .from("policies")
     .insert({
@@ -160,12 +166,12 @@ export async function createPolicy(
       client_id: clientId,
       carrier_id: carrierId,
       insurance_line_id: insuranceLineId,
-      assigned_agent_id: str(formData, "assigned_agent_id") ?? agencyUser.id,
-      broker_office_id: str(formData, "broker_office_id"),
-      start_date: str(formData, "start_date") ?? "",
+      assigned_agent_id: assignedAgentId,
+      broker_office_id: brokerOfficeId,
+      start_date: startDate,
       end_date: str(formData, "end_date") ?? "",
       premium_gross: num(formData, "premium_gross") ?? 0,
-      premium_net: num(formData, "premium_net"),
+      premium_net: premiumNet,
       taxes_fees: num(formData, "taxes_fees"),
       payment_frequency: (str(formData, "payment_frequency") ?? "annual") as PaymentFrequency,
       status: "active",
@@ -235,6 +241,32 @@ export async function createPolicy(
   if (branchError) {
     await supabase.from("policies").delete().eq("id", policy.id);
     return { error: "Σφάλμα κατά την αποθήκευση στοιχείων κλάδου: " + branchError };
+  }
+
+  // Auto-record the incoming commission owed by the carrier, using whatever
+  // rate is agreed for this broker/carrier/line combination — skipped
+  // (not zeroed) when there's no broker office or no matching agreement,
+  // since commissions have no amount-edit UI today; the admin can still add
+  // one manually via "Προσθήκη προμήθειας" for those cases. Renewals are
+  // tagged "renewal" instead of "new_business" so the commissions list
+  // reflects the actual nature of the sale.
+  if (brokerOfficeId) {
+    const ratePercent = await getCommissionRate(brokerOfficeId, carrierId, insuranceLineId);
+    if (ratePercent != null) {
+      const baseAmount = premiumNet ?? 0;
+      const commissionAmount = Math.round(((baseAmount * ratePercent) / 100) * 100) / 100;
+      await supabase.from("commissions").insert({
+        policy_id: policy.id,
+        agent_id: assignedAgentId,
+        carrier_id: carrierId,
+        commission_type: renewFromPolicyId ? "renewal" : "new_business",
+        direction: "incoming",
+        base_amount: baseAmount,
+        commission_rate_percent: ratePercent,
+        commission_amount: commissionAmount,
+        period: startDate || null,
+      });
+    }
   }
 
   await logActivity(supabase, {
