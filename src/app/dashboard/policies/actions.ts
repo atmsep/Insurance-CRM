@@ -118,6 +118,61 @@ function num(formData: FormData, key: string) {
   return v === null ? null : Number(v);
 }
 
+// How many δόσεις a payment frequency implies over one policy term, and how
+// many months apart they fall (unused when count is 1 — the whole premium
+// is due as a single installment on start_date).
+const INSTALLMENT_COUNTS: Record<PaymentFrequency, number> = {
+  single_premium: 1,
+  annual: 1,
+  semiannual: 2,
+  quarterly: 4,
+  monthly: 12,
+};
+const INSTALLMENT_MONTHS_APART: Record<PaymentFrequency, number> = {
+  single_premium: 0,
+  annual: 0,
+  semiannual: 6,
+  quarterly: 3,
+  monthly: 1,
+};
+
+// Splits premium_gross evenly across the installments a payment frequency
+// implies, due on start_date and every N months after — the last
+// installment absorbs the rounding remainder so the total always matches
+// premium_gross exactly to the cent.
+function buildInstallmentRows(
+  policyId: string,
+  startDate: string,
+  premiumGross: number,
+  frequency: PaymentFrequency,
+) {
+  const count = INSTALLMENT_COUNTS[frequency] ?? 1;
+  const monthsApart = INSTALLMENT_MONTHS_APART[frequency] ?? 0;
+  const base = Math.floor((premiumGross / count) * 100) / 100;
+  const [year, month, day] = startDate.split("-").map(Number);
+
+  const rows: {
+    policy_id: string;
+    installment_number: number;
+    due_date: string;
+    amount: number;
+  }[] = [];
+  let allocated = 0;
+  for (let i = 0; i < count; i++) {
+    const amount =
+      i === count - 1 ? Math.round((premiumGross - allocated) * 100) / 100 : base;
+    allocated += amount;
+    const dueDate = new Date(Date.UTC(year, month - 1 + i * monthsApart, day));
+    rows.push({
+      policy_id: policyId,
+      installment_number: i + 1,
+      due_date: dueDate.toISOString().slice(0, 10),
+      amount,
+    });
+  }
+  return rows;
+}
+
 export async function createPolicy(
   _prevState: PolicyFormState,
   formData: FormData,
@@ -157,6 +212,8 @@ export async function createPolicy(
   const assignedAgentId = str(formData, "assigned_agent_id") ?? agencyUser.id;
   const brokerOfficeId = str(formData, "broker_office_id");
   const premiumNet = num(formData, "premium_net");
+  const premiumGross = num(formData, "premium_gross") ?? 0;
+  const paymentFrequency = (str(formData, "payment_frequency") ?? "annual") as PaymentFrequency;
   const startDate = str(formData, "start_date") ?? "";
 
   const { data: policy, error: policyError } = await supabase
@@ -170,10 +227,10 @@ export async function createPolicy(
       broker_office_id: brokerOfficeId,
       start_date: startDate,
       end_date: str(formData, "end_date") ?? "",
-      premium_gross: num(formData, "premium_gross") ?? 0,
+      premium_gross: premiumGross,
       premium_net: premiumNet,
       taxes_fees: num(formData, "taxes_fees"),
-      payment_frequency: (str(formData, "payment_frequency") ?? "annual") as PaymentFrequency,
+      payment_frequency: paymentFrequency,
       status: "active",
       created_by: agencyUser.id,
       ...(renewFromPolicyId
@@ -242,6 +299,14 @@ export async function createPolicy(
     await supabase.from("policies").delete().eq("id", policy.id);
     return { error: "Σφάλμα κατά την αποθήκευση στοιχείων κλάδου: " + branchError };
   }
+
+  // Auto-generate the δόσεις implied by the payment frequency, so the agent
+  // only ever has to click "Είσπραξη" when money actually comes in instead
+  // of first adding the installment by hand. Applies to renewals too — a
+  // renewed term needs its own fresh installments just like new business.
+  await supabase
+    .from("policy_installments")
+    .insert(buildInstallmentRows(policy.id, startDate, premiumGross, paymentFrequency));
 
   // Auto-record the incoming commission owed by the carrier, using whatever
   // rate is agreed for this broker/carrier/line combination — skipped
