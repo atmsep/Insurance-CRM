@@ -10,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { ReferrerField } from "../../referrer-field";
 import { EntitySelect } from "@/components/entity-select";
 import { useFormValues } from "@/hooks/use-form-values";
-import { REFERRAL_REWARD_STATUS_LABELS } from "../../referral-labels";
 
 type Client = {
   id: string;
@@ -25,8 +24,6 @@ type Client = {
   referral_source: string | null;
   referred_by_client_id: string | null;
   referrer_relationship: string | null;
-  referral_reward_amount: number | null;
-  referral_reward_status: string | null;
   assigned_agent_id: string | null;
   notes: string | null;
   client_individuals: {
@@ -52,6 +49,8 @@ export function DetailsTab({
   totalBilled,
   totalPaid,
   outstanding,
+  referralRewardTotal,
+  referralRewardPolicyCount,
   updateAction,
 }: {
   client: Client;
@@ -60,6 +59,8 @@ export function DetailsTab({
   totalBilled: number;
   totalPaid: number;
   outstanding: number;
+  referralRewardTotal: number;
+  referralRewardPolicyCount: number;
   updateAction: (formData: FormData) => Promise<{ error: string } | undefined>;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -209,12 +210,12 @@ export function DetailsTab({
               <ViewField label="Συστήνων" value={referrerLabel} />
               {client.referred_by_client_id && (
                 <ViewField
-                  label="Ανταπόδοση σύστασης"
+                  label="Προμήθεια σύστασης"
                   value={
-                    client.referral_reward_amount != null
-                      ? `${client.referral_reward_amount.toFixed(2)} € (${
-                          REFERRAL_REWARD_STATUS_LABELS[client.referral_reward_status ?? ""] ?? "—"
-                        })`
+                    referralRewardPolicyCount > 0
+                      ? `${referralRewardTotal.toFixed(2)} € σε ${referralRewardPolicyCount} συμβόλαι${
+                          referralRewardPolicyCount === 1 ? "ο" : "α"
+                        }`
                       : undefined
                   }
                 />

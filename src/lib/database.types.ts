@@ -24,6 +24,7 @@ export type InteractionType = "call" | "email" | "meeting" | "sms" | "note" | "o
 export type CommissionType = "new_business" | "renewal" | "override";
 export type CommissionStatus = "pending" | "invoiced" | "paid" | "cancelled";
 export type ReferralRewardStatus = "pending" | "paid" | "cancelled";
+export type ReferralRewardCalcType = "percent" | "fixed";
 export type CommissionDirection = "incoming" | "outgoing";
 export type ClaimStatus =
   | "reported"
@@ -112,10 +113,6 @@ export interface Database {
           referral_source: string | null;
           referred_by_client_id: string | null;
           referrer_relationship: string | null;
-          referral_reward_amount: number | null;
-          referral_reward_status: ReferralRewardStatus | null;
-          referral_reward_paid_at: string | null;
-          referral_reward_notes: string | null;
           is_active: boolean;
           created_by: string | null;
           created_at: string;
@@ -419,6 +416,34 @@ export interface Database {
           commission_amount: number;
         };
         Update: Partial<Database["public"]["Tables"]["commissions"]["Row"]>;
+      };
+      referral_rewards: {
+        Row: {
+          id: string;
+          referrer_client_id: string;
+          referred_client_id: string;
+          policy_id: string;
+          calc_type: ReferralRewardCalcType;
+          rate_percent: number | null;
+          fixed_amount: number | null;
+          base_amount: number;
+          reward_amount: number;
+          status: ReferralRewardStatus;
+          paid_at: string | null;
+          notes: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["referral_rewards"]["Row"]> & {
+          referrer_client_id: string;
+          referred_client_id: string;
+          policy_id: string;
+          calc_type: ReferralRewardCalcType;
+          base_amount: number;
+          reward_amount: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["referral_rewards"]["Row"]>;
       };
       broker_offices: {
         Row: {

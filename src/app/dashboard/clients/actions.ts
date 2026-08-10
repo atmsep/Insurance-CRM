@@ -303,59 +303,6 @@ export async function updateClientNotes(
   revalidatePath(`/dashboard/clients/${clientId}`);
 }
 
-export async function updateReferralReward(
-  referrerClientId: string,
-  referredClientId: string,
-  formData: FormData,
-): Promise<{ error: string } | undefined> {
-  const agencyUser = await requireAgencyUser();
-  const supabase = await createSupabaseClient();
-
-  const amountRaw = formData.get("referral_reward_amount") as string;
-  const amount = amountRaw ? Number(amountRaw) : null;
-  if (amountRaw && (Number.isNaN(amount) || (amount as number) < 0)) {
-    return { error: "Το ποσό ανταπόδοσης δεν είναι έγκυρο." };
-  }
-  const status = (formData.get("referral_reward_status") as string) || null;
-  const notes = (formData.get("referral_reward_notes") as string) || null;
-
-  // Stamp paid_at the first time the status becomes "paid"; keep it once set
-  // (re-saving while still "paid" shouldn't move the date), clear it if the
-  // status is moved away from "paid".
-  const { data: current } = await supabase
-    .from("clients")
-    .select("referral_reward_paid_at")
-    .eq("id", referredClientId)
-    .single();
-
-  const paidAt = status === "paid" ? (current?.referral_reward_paid_at ?? new Date().toISOString()) : null;
-
-  const { error } = await supabase
-    .from("clients")
-    .update({
-      referral_reward_amount: amount,
-      referral_reward_status: status,
-      referral_reward_paid_at: paidAt,
-      referral_reward_notes: notes,
-    })
-    .eq("id", referredClientId);
-
-  if (error) {
-    return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
-  }
-
-  await logActivity(supabase, {
-    entityType: "client",
-    entityId: referredClientId,
-    action: "referral_reward_updated",
-    description: "Ενημερώθηκε η ανταπόδοση σύστασης.",
-    actorId: agencyUser.id,
-  });
-
-  revalidatePath(`/dashboard/clients/${referrerClientId}`);
-  revalidatePath(`/dashboard/clients/${referredClientId}`);
-}
-
 export async function toggleClientActive(clientId: string, isActive: boolean) {
   const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();

@@ -46,6 +46,7 @@ export default async function ClientDetailPage({
     { data: tasks },
     { data: activity },
     { data: referrals },
+    { data: ownReferralRewards },
   ] = await Promise.all([
     supabase
       .from("policies")
@@ -87,13 +88,20 @@ export default async function ClientDetailPage({
       .eq("entity_id", id)
       .order("created_at", { ascending: false })
       .limit(50),
+    // Every renewal term counts as its own reward-eligible policy, so this
+    // deliberately does NOT filter on is_current_term the way the main
+    // `policies` query above does.
     supabase
       .from("clients")
       .select(
-        "id, client_code, client_type, is_active, created_at, referral_reward_amount, referral_reward_status, referral_reward_notes, client_individuals(first_name,last_name), client_legal_entities(company_name)",
+        "id, client_code, client_type, is_active, created_at, " +
+          "client_individuals(first_name,last_name), client_legal_entities(company_name), " +
+          "policies(id, policy_number, status, premium_net, renewal_number, " +
+          "referral_rewards(calc_type, rate_percent, fixed_amount, reward_amount, status, notes))",
       )
       .eq("referred_by_client_id", id)
       .order("created_at", { ascending: false }),
+    supabase.from("referral_rewards").select("reward_amount, status").eq("referred_client_id", id),
   ]);
 
   // "Billed"/"outstanding" are measured against each policy's actual
@@ -130,6 +138,10 @@ export default async function ClientDetailPage({
   const name = resolveClientName(client);
   const referrerLabel =
     (client.referred_by as unknown as { display_name: string | null } | null)?.display_name ?? undefined;
+
+  const activeOwnRewards = (ownReferralRewards ?? []).filter((r) => r.status !== "cancelled");
+  const referralRewardTotal = activeOwnRewards.reduce((sum, r) => sum + r.reward_amount, 0);
+  const referralRewardPolicyCount = activeOwnRewards.length;
 
   const updateAction = updateClientNotes.bind(null, id);
   const addInteractionAction = createInteraction.bind(null, id);
@@ -168,6 +180,8 @@ export default async function ClientDetailPage({
             totalBilled={totalBilled}
             totalPaid={totalPaid}
             outstanding={outstanding}
+            referralRewardTotal={referralRewardTotal}
+            referralRewardPolicyCount={referralRewardPolicyCount}
             updateAction={updateAction}
           />
         </TabsContent>
