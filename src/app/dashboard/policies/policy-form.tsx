@@ -207,7 +207,14 @@ export function PolicyForm({
           <input type="hidden" name="insurance_line_id" value={lineId} />
         </div>
 
-        <Field label="Αριθμός συμβολαίου" name="policy_number" required field={field} />
+        <Field
+          label="Αριθμός συμβολαίου"
+          name="policy_number"
+          required
+          field={field}
+          invalid={state?.field === "policy_number"}
+          errorMessage={state?.field === "policy_number" ? state.error : undefined}
+        />
         <div className="flex flex-col gap-2">
           <Label>Συχνότητα πληρωμής</Label>
           <Select value={frequency} onValueChange={(v) => setFrequency(v as PaymentFrequency)}>
@@ -282,12 +289,16 @@ function Field({
   type = "text",
   required,
   field,
+  invalid,
+  errorMessage,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
   field: (name: string) => { value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void };
+  invalid?: boolean;
+  errorMessage?: string;
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -298,8 +309,10 @@ function Field({
         type={type}
         step={type === "number" ? "0.01" : undefined}
         required={required}
+        aria-invalid={invalid || undefined}
         {...field(name)}
       />
+      {errorMessage && <p className="text-xs text-destructive">{errorMessage}</p>}
     </div>
   );
 }

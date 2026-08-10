@@ -7,7 +7,7 @@ import { requireAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
 import type { PaymentFrequency } from "@/lib/database.types";
 
-export type PolicyFormState = { error: string } | undefined;
+export type PolicyFormState = { error: string; field?: string } | undefined;
 export type SendEmailState = { error: string } | { success: string } | undefined;
 
 export async function searchPolicies(query: string): Promise<{ id: string; label: string }[]> {
@@ -166,6 +166,12 @@ export async function createPolicy(
     .select("id")
     .single();
 
+  if (policyError?.code === "23505") {
+    return {
+      error: "Υπάρχει ήδη συμβόλαιο με αυτόν τον αριθμό, την ίδια εταιρεία και ημερομηνία έναρξης.",
+      field: "policy_number",
+    };
+  }
   if (policyError || !policy) {
     return { error: "Σφάλμα κατά τη δημιουργία συμβολαίου: " + (policyError?.message ?? "") };
   }
