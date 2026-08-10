@@ -449,7 +449,7 @@ export interface Database {
       };
       referral_reward_default_rule: {
         Row: {
-          key: string;
+          referrer_client_id: string;
           calc_type: ReferralRewardCalcType;
           rate_percent: number | null;
           fixed_amount: number | null;
@@ -457,6 +457,7 @@ export interface Database {
           updated_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["referral_reward_default_rule"]["Row"]> & {
+          referrer_client_id: string;
           calc_type: ReferralRewardCalcType;
         };
         Update: Partial<Database["public"]["Tables"]["referral_reward_default_rule"]["Row"]>;

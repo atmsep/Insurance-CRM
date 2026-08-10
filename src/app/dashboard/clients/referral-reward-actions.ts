@@ -113,12 +113,13 @@ async function requireAdmin() {
   return agencyUser;
 }
 
-// Sets the agency-wide default rule and immediately applies it to every
-// referred client's policy that doesn't already carry a manually-set
-// reward (source = "manual") — those are never touched. Policies already
-// carrying an "auto" reward get their amount refreshed to the new rule;
-// policies with no reward yet get one created. Safe to re-run any time
-// (e.g. after new policies show up) since it always just fills the gaps.
+// Sets this referrer's default rule and immediately applies it to every
+// policy of clients THEY referred that doesn't already carry a
+// manually-set reward (source = "manual") — those are never touched, and
+// other referrers' referrals are untouched too. Policies already carrying
+// an "auto" reward get their amount refreshed to the new rule; policies
+// with no reward yet get one created. Safe to re-run any time (e.g. after
+// new policies show up) since it always just fills the gaps.
 export async function setDefaultReferralRewardRule(
   currentClientId: string,
   formData: FormData,
@@ -149,7 +150,7 @@ export async function setDefaultReferralRewardRule(
   }
 
   const { error: ruleError } = await supabase.from("referral_reward_default_rule").upsert({
-    key: "default",
+    referrer_client_id: currentClientId,
     calc_type: calcType,
     rate_percent: ratePercent,
     fixed_amount: fixedAmount,
@@ -159,13 +160,12 @@ export async function setDefaultReferralRewardRule(
     return { error: "Σφάλμα κατά την αποθήκευση του κανόνα: " + ruleError.message };
   }
 
-  // Every policy belonging to a referred client, together with its (at
-  // most one) existing reward row so we can tell which ones are safe to
-  // overwrite.
+  // Only this referrer's own referred clients' policies — a rule set on
+  // one referrer's page never touches another referrer's referrals.
   const { data: candidates, error: fetchError } = await supabase
     .from("policies")
     .select("id, premium_net, clients!inner(id, referred_by_client_id), referral_rewards(source)")
-    .not("clients.referred_by_client_id", "is", null);
+    .eq("clients.referred_by_client_id", currentClientId);
 
   if (fetchError) {
     return { error: "Σφάλμα κατά την ανάκτηση συμβολαίων: " + fetchError.message };

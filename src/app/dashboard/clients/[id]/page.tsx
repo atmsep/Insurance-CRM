@@ -106,7 +106,11 @@ export default async function ClientDetailPage({
       .eq("referred_by_client_id", id)
       .order("created_at", { ascending: false }),
     supabase.from("referral_rewards").select("reward_amount, status").eq("referred_client_id", id),
-    supabase.from("referral_reward_default_rule").select("calc_type, rate_percent, fixed_amount").eq("key", "default").maybeSingle(),
+    supabase
+      .from("referral_reward_default_rule")
+      .select("calc_type, rate_percent, fixed_amount")
+      .eq("referrer_client_id", id)
+      .maybeSingle(),
   ]);
 
   // "Billed"/"outstanding" are measured against each policy's actual
