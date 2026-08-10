@@ -46,3 +46,9 @@ export function ticketStatusVariant(status: string): StatusBadgeVariant {
   if (status === "resolved") return "success";
   return "outline";
 }
+
+export function referralRewardStatusVariant(status: string): StatusBadgeVariant {
+  if (status === "paid") return "success";
+  if (status === "pending") return "warning";
+  return "outline";
+}

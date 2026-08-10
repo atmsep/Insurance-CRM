@@ -23,6 +23,7 @@ export type PaymentStatus = "pending" | "paid" | "overdue" | "partially_paid" | 
 export type InteractionType = "call" | "email" | "meeting" | "sms" | "note" | "other";
 export type CommissionType = "new_business" | "renewal" | "override";
 export type CommissionStatus = "pending" | "invoiced" | "paid" | "cancelled";
+export type ReferralRewardStatus = "pending" | "paid" | "cancelled";
 export type CommissionDirection = "incoming" | "outgoing";
 export type ClaimStatus =
   | "reported"
@@ -111,6 +112,10 @@ export interface Database {
           referral_source: string | null;
           referred_by_client_id: string | null;
           referrer_relationship: string | null;
+          referral_reward_amount: number | null;
+          referral_reward_status: ReferralRewardStatus | null;
+          referral_reward_paid_at: string | null;
+          referral_reward_notes: string | null;
           is_active: boolean;
           created_by: string | null;
           created_at: string;

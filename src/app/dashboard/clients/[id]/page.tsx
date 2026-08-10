@@ -13,6 +13,7 @@ import { PoliciesTab, type Policy as ClientPolicy } from "./_components/policies
 import { InteractionsTab } from "./_components/interactions-tab";
 import { TicketsTab } from "./_components/tickets-tab";
 import { CommissionsTab, type Commission as ClientCommission } from "./_components/commissions-tab";
+import { ReferralsTab, type ReferredClient } from "./_components/referrals-tab";
 import { TasksTab } from "./_components/tasks-tab";
 import { ActivityFeed, type ActivityEntry } from "@/components/activity-feed";
 
@@ -44,6 +45,7 @@ export default async function ClientDetailPage({
     { data: commissions },
     { data: tasks },
     { data: activity },
+    { data: referrals },
   ] = await Promise.all([
     supabase
       .from("policies")
@@ -85,6 +87,13 @@ export default async function ClientDetailPage({
       .eq("entity_id", id)
       .order("created_at", { ascending: false })
       .limit(50),
+    supabase
+      .from("clients")
+      .select(
+        "id, client_code, client_type, is_active, created_at, referral_reward_amount, referral_reward_status, referral_reward_notes, client_individuals(first_name,last_name), client_legal_entities(company_name)",
+      )
+      .eq("referred_by_client_id", id)
+      .order("created_at", { ascending: false }),
   ]);
 
   // "Billed"/"outstanding" are measured against each policy's actual
@@ -145,6 +154,7 @@ export default async function ClientDetailPage({
           <TabsTrigger value="interactions">Επικοινωνία</TabsTrigger>
           <TabsTrigger value="tickets">Αιτήματα</TabsTrigger>
           <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
+          <TabsTrigger value="referrals">Συστάσεις</TabsTrigger>
           <TabsTrigger value="tasks">Υπενθυμίσεις</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
           <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
@@ -176,6 +186,10 @@ export default async function ClientDetailPage({
 
         <TabsContent value="commissions" className="pt-4">
           <CommissionsTab commissions={(commissions ?? []) as unknown as ClientCommission[]} />
+        </TabsContent>
+
+        <TabsContent value="referrals" className="pt-4">
+          <ReferralsTab referrerClientId={id} referrals={(referrals ?? []) as unknown as ReferredClient[]} />
         </TabsContent>
 
         <TabsContent value="tasks" className="pt-4">

@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ReferrerField } from "../../referrer-field";
 import { EntitySelect } from "@/components/entity-select";
 import { useFormValues } from "@/hooks/use-form-values";
+import { REFERRAL_REWARD_STATUS_LABELS } from "../../referral-labels";
 
 type Client = {
   id: string;
@@ -24,6 +25,8 @@ type Client = {
   referral_source: string | null;
   referred_by_client_id: string | null;
   referrer_relationship: string | null;
+  referral_reward_amount: number | null;
+  referral_reward_status: string | null;
   assigned_agent_id: string | null;
   notes: string | null;
   client_individuals: {
@@ -204,6 +207,18 @@ export function DetailsTab({
               <ViewField label="IBAN" value={client.iban} />
               <ViewField label="Πηγή σύστασης" value={client.referral_source} />
               <ViewField label="Συστήνων" value={referrerLabel} />
+              {client.referred_by_client_id && (
+                <ViewField
+                  label="Ανταπόδοση σύστασης"
+                  value={
+                    client.referral_reward_amount != null
+                      ? `${client.referral_reward_amount.toFixed(2)} € (${
+                          REFERRAL_REWARD_STATUS_LABELS[client.referral_reward_status ?? ""] ?? "—"
+                        })`
+                      : undefined
+                  }
+                />
+              )}
               <ViewField label="Συνεργάτης" value={agentLabel} />
               <div className="col-span-full flex flex-col gap-0.5">
                 <span className="text-xs text-muted-foreground">Σημειώσεις</span>
