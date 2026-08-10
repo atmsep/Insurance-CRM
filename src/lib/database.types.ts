@@ -488,6 +488,7 @@ export interface Database {
           default_commission_percent: number;
           valid_from: string;
           valid_to: string | null;
+          is_active: boolean;
           created_at: string;
           updated_at: string;
         };

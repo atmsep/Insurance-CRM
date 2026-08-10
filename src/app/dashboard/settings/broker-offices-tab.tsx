@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +25,10 @@ import {
   createBrokerOffice,
   toggleBrokerOfficeActive,
   createCarrierCommissionRate,
+  updateCarrierCommissionRate,
+  toggleCarrierCommissionRateActive,
 } from "./actions";
+import { useFormValues } from "@/hooks/use-form-values";
 
 type BrokerOffice = {
   id: string;
@@ -43,6 +47,7 @@ type Rate = {
   default_commission_percent: number;
   valid_from: string;
   valid_to: string | null;
+  is_active: boolean;
   broker_offices: { name: string } | { name: string }[] | null;
   carriers: { name: string } | { name: string }[] | null;
   insurance_lines: { name_el: string } | { name_el: string }[] | null;
@@ -54,6 +59,71 @@ function one<T>(v: T | T[] | null): T | null {
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR");
+}
+
+function EditRateForm({ rate, onDone }: { rate: Rate; onDone: () => void }) {
+  const updateAction = updateCarrierCommissionRate.bind(null, rate.id);
+  const { field } = useFormValues({
+    default_commission_percent: String(rate.default_commission_percent),
+    valid_from: rate.valid_from,
+    valid_to: rate.valid_to ?? "",
+  });
+
+  return (
+    <form
+      action={async (formData) => {
+        const result = await updateAction(formData);
+        if (result?.error) {
+          toast.error(result.error);
+          return;
+        }
+        toast.success("Η σύμβαση ενημερώθηκε.");
+        onDone();
+      }}
+      className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 p-3"
+    >
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={`percent_${rate.id}`}>Ποσοστό (%)</Label>
+        <Input
+          id={`percent_${rate.id}`}
+          name="default_commission_percent"
+          type="number"
+          step="0.01"
+          required
+          {...field("default_commission_percent")}
+          className="w-28"
+        />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={`valid_from_${rate.id}`}>Ισχύει από</Label>
+        <Input
+          id={`valid_from_${rate.id}`}
+          name="valid_from"
+          type="date"
+          {...field("valid_from")}
+          className="w-40"
+        />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={`valid_to_${rate.id}`}>Ισχύει έως</Label>
+        <Input
+          id={`valid_to_${rate.id}`}
+          name="valid_to"
+          type="date"
+          {...field("valid_to")}
+          className="w-40"
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm">
+          Αποθήκευση
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onDone}>
+          Άκυρο
+        </Button>
+      </div>
+    </form>
+  );
 }
 
 export function BrokerOfficesTab({
@@ -68,9 +138,16 @@ export function BrokerOfficesTab({
   rates: Rate[];
 }) {
   const [pending, startTransition] = useTransition();
+  const [editingRateId, setEditingRateId] = useState<string | null>(null);
   const [rateBrokerId, setRateBrokerId] = useState("");
   const [rateCarrierId, setRateCarrierId] = useState("");
   const [rateLineId, setRateLineId] = useState("");
+  const today = new Date().toISOString().slice(0, 10);
+  const { field, setValues } = useFormValues({
+    default_commission_percent: "",
+    valid_from: today,
+    valid_to: "",
+  });
 
   return (
     <div className="flex flex-col gap-10">
@@ -166,23 +243,64 @@ export function BrokerOfficesTab({
                 <TableHead>Ποσοστό</TableHead>
                 <TableHead>Ισχύει από</TableHead>
                 <TableHead>Ισχύει έως</TableHead>
+                <TableHead>Κατάσταση</TableHead>
+                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
               {rates.length ? (
                 rates.map((rate) => (
-                  <TableRow key={rate.id}>
-                    <TableCell>{one(rate.broker_offices)?.name ?? "—"}</TableCell>
-                    <TableCell>{one(rate.carriers)?.name ?? "—"}</TableCell>
-                    <TableCell>{one(rate.insurance_lines)?.name_el ?? "—"}</TableCell>
-                    <TableCell>{rate.default_commission_percent}%</TableCell>
-                    <TableCell>{formatDate(rate.valid_from)}</TableCell>
-                    <TableCell>{rate.valid_to ? formatDate(rate.valid_to) : "—"}</TableCell>
-                  </TableRow>
+                  <Fragment key={rate.id}>
+                    <TableRow>
+                      <TableCell>{one(rate.broker_offices)?.name ?? "—"}</TableCell>
+                      <TableCell>{one(rate.carriers)?.name ?? "—"}</TableCell>
+                      <TableCell>{one(rate.insurance_lines)?.name_el ?? "—"}</TableCell>
+                      <TableCell>{rate.default_commission_percent}%</TableCell>
+                      <TableCell>{formatDate(rate.valid_from)}</TableCell>
+                      <TableCell>{rate.valid_to ? formatDate(rate.valid_to) : "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant={rate.is_active ? "default" : "outline"}>
+                          {rate.is_active ? "Ενεργή" : "Ακυρωμένη"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setEditingRateId(editingRateId === rate.id ? null : rate.id)
+                            }
+                          >
+                            {editingRateId === rate.id ? "Κλείσιμο" : "Επεξεργασία"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={pending}
+                            onClick={() =>
+                              startTransition(() =>
+                                toggleCarrierCommissionRateActive(rate.id, !rate.is_active),
+                              )
+                            }
+                          >
+                            {rate.is_active ? "Ακύρωση" : "Επαναφορά"}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {editingRateId === rate.id && (
+                      <TableRow>
+                        <TableCell colSpan={8}>
+                          <EditRateForm rate={rate} onDone={() => setEditingRateId(null)} />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     Δεν υπάρχουν συμβάσεις προμηθειών.
                   </TableCell>
                 </TableRow>
@@ -191,7 +309,21 @@ export function BrokerOfficesTab({
           </Table>
         </div>
 
-        <form action={createCarrierCommissionRate} className="flex flex-wrap items-end gap-3">
+        <form
+          action={async (formData) => {
+            const result = await createCarrierCommissionRate(formData);
+            if (result?.error) {
+              toast.error(result.error);
+              return;
+            }
+            toast.success("Η σύμβαση προστέθηκε.");
+            setRateBrokerId("");
+            setRateCarrierId("");
+            setRateLineId("");
+            setValues({ default_commission_percent: "", valid_from: today, valid_to: "" });
+          }}
+          className="flex flex-wrap items-end gap-3"
+        >
           <div className="flex flex-col gap-2">
             <Label>Γραφείο</Label>
             <Select value={rateBrokerId} onValueChange={(v) => setRateBrokerId(v ?? "")}>
@@ -263,22 +395,17 @@ export function BrokerOfficesTab({
               type="number"
               step="0.01"
               required
+              {...field("default_commission_percent")}
               className="w-28"
             />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="valid_from">Ισχύει από</Label>
-            <Input
-              id="valid_from"
-              name="valid_from"
-              type="date"
-              defaultValue={new Date().toISOString().slice(0, 10)}
-              className="w-40"
-            />
+            <Input id="valid_from" name="valid_from" type="date" {...field("valid_from")} className="w-40" />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="valid_to">Ισχύει έως</Label>
-            <Input id="valid_to" name="valid_to" type="date" className="w-40" />
+            <Input id="valid_to" name="valid_to" type="date" {...field("valid_to")} className="w-40" />
           </div>
           <Button type="submit">Προσθήκη σύμβασης</Button>
         </form>

@@ -115,7 +115,9 @@ export async function toggleBrokerOfficeActive(brokerOfficeId: string, isActive:
   revalidatePath("/dashboard/settings");
 }
 
-export async function createCarrierCommissionRate(formData: FormData) {
+export async function createCarrierCommissionRate(
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
   await requireAdmin();
   const supabase = await createSupabaseClient();
 
@@ -124,9 +126,11 @@ export async function createCarrierCommissionRate(formData: FormData) {
   const insuranceLineId = formData.get("insurance_line_id") as string;
   const percent = formData.get("default_commission_percent");
 
-  if (!brokerOfficeId || !carrierId || !insuranceLineId || !percent) return;
+  if (!brokerOfficeId || !carrierId || !insuranceLineId || !percent) {
+    return { error: "Συμπλήρωσε γραφείο, εταιρεία, κλάδο και ποσοστό." };
+  }
 
-  await supabase.from("carrier_commission_rates").insert({
+  const { error } = await supabase.from("carrier_commission_rates").insert({
     broker_office_id: brokerOfficeId,
     carrier_id: carrierId,
     insurance_line_id: insuranceLineId,
@@ -135,6 +139,57 @@ export async function createCarrierCommissionRate(formData: FormData) {
     valid_to: (formData.get("valid_to") as string) || null,
   });
 
+  if (error) {
+    if (error.code === "23505") {
+      return {
+        error:
+          "Υπάρχει ήδη ενεργή σύμβαση για αυτό το γραφείο/εταιρεία/κλάδο με την ίδια ημερομηνία έναρξης.",
+      };
+    }
+    return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+  }
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function updateCarrierCommissionRate(
+  rateId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const percent = formData.get("default_commission_percent");
+  if (!percent) {
+    return { error: "Συμπλήρωσε το ποσοστό." };
+  }
+
+  const { error } = await supabase
+    .from("carrier_commission_rates")
+    .update({
+      default_commission_percent: Number(percent),
+      valid_from: (formData.get("valid_from") as string) || undefined,
+      valid_to: (formData.get("valid_to") as string) || null,
+    })
+    .eq("id", rateId);
+
+  if (error) {
+    if (error.code === "23505") {
+      return {
+        error:
+          "Υπάρχει ήδη ενεργή σύμβαση για αυτό το γραφείο/εταιρεία/κλάδο με την ίδια ημερομηνία έναρξης.",
+      };
+    }
+    return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+  }
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function toggleCarrierCommissionRateActive(rateId: string, isActive: boolean) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  await supabase.from("carrier_commission_rates").update({ is_active: isActive }).eq("id", rateId);
   revalidatePath("/dashboard/settings");
 }
 

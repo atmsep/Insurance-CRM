@@ -54,7 +54,7 @@ export default async function SettingsPage() {
       ? supabase
           .from("carrier_commission_rates")
           .select(
-            "id, default_commission_percent, valid_from, valid_to, broker_offices(name), carriers(name), insurance_lines(name_el)",
+            "id, default_commission_percent, valid_from, valid_to, is_active, broker_offices(name), carriers(name), insurance_lines(name_el)",
           )
           .order("valid_from", { ascending: false })
       : Promise.resolve({ data: [] }),
