@@ -142,6 +142,16 @@ export async function createPolicy(
   const renewFromPolicyId = str(formData, "renew_from_policy_id");
   const policyGroupId = str(formData, "policy_group_id");
 
+  let renewalNumber = 1;
+  if (renewFromPolicyId) {
+    const { data: previousTerm } = await supabase
+      .from("policies")
+      .select("renewal_number")
+      .eq("id", renewFromPolicyId)
+      .single();
+    renewalNumber = (previousTerm?.renewal_number ?? 1) + 1;
+  }
+
   const { data: policy, error: policyError } = await supabase
     .from("policies")
     .insert({
@@ -160,7 +170,12 @@ export async function createPolicy(
       status: "active",
       created_by: agencyUser.id,
       ...(renewFromPolicyId
-        ? { previous_policy_id: renewFromPolicyId, policy_group_id: policyGroupId, is_renewal: true }
+        ? {
+            previous_policy_id: renewFromPolicyId,
+            policy_group_id: policyGroupId,
+            is_renewal: true,
+            renewal_number: renewalNumber,
+          }
         : {}),
     })
     .select("id")
@@ -174,6 +189,17 @@ export async function createPolicy(
   }
   if (policyError || !policy) {
     return { error: "Σφάλμα κατά τη δημιουργία συμβολαίου: " + (policyError?.message ?? "") };
+  }
+
+  // The new term is now the current one — the term it renewed no longer is,
+  // so it drops out of policy lists (which filter on is_current_term) while
+  // remaining reachable through the renewal history on the policy detail
+  // page.
+  if (renewFromPolicyId) {
+    await supabase
+      .from("policies")
+      .update({ is_current_term: false })
+      .eq("id", renewFromPolicyId);
   }
 
   let branchError: string | null = null;

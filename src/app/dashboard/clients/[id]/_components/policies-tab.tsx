@@ -30,6 +30,7 @@ type Policy = {
   status: string;
   end_date: string;
   premium_gross: number;
+  renewal_number: number;
   insurance_lines: { name_el: string } | null;
 };
 
@@ -58,6 +59,11 @@ export function PoliciesTab({ policies }: { policies: Policy[] }) {
                     <Link href={`/dashboard/policies/${policy.id}`} className="hover:underline">
                       {policy.policy_number}
                     </Link>
+                    {policy.renewal_number > 1 && (
+                      <Badge variant="outline" className="ml-2">
+                        Ανανέωση #{policy.renewal_number}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>{policy.insurance_lines?.name_el ?? "—"}</TableCell>
                   <TableCell>{formatDate(policy.end_date)}</TableCell>

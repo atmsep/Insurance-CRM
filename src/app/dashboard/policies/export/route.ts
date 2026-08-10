@@ -26,8 +26,9 @@ export async function GET(request: Request) {
   let query = supabase
     .from("policies")
     .select(
-      "policy_number, status, end_date, premium_gross, premium_net, risk_label, insurance_lines(name_el), carriers(name), clients!inner(display_name)",
+      "policy_number, status, end_date, premium_gross, premium_net, risk_label, renewal_number, insurance_lines(name_el), carriers(name), clients!inner(display_name)",
     )
+    .eq("is_current_term", true)
     .order("created_at", { ascending: false })
     .limit(5000);
 
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
     const carrier = p.carriers as unknown as { name: string } | null;
     return {
       policy_number: p.policy_number,
+      renewal_number: p.renewal_number,
       client: client?.display_name ?? "",
       line: line?.name_el ?? "",
       risk: p.risk_label ?? "",
@@ -65,6 +67,7 @@ export async function GET(request: Request) {
 
   const csv = toCsv(rows, [
     { key: "policy_number", label: "Αριθμός" },
+    { key: "renewal_number", label: "Αρ. Ανανέωσης" },
     { key: "client", label: "Πελάτης" },
     { key: "line", label: "Κλάδος" },
     { key: "risk", label: "Κίνδυνος" },

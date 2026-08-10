@@ -177,6 +177,8 @@ export interface Database {
           currency: string;
           commission_rate_percent: number | null;
           is_renewal: boolean;
+          renewal_number: number;
+          is_current_term: boolean;
           cancellation_reason: string | null;
           notes: string | null;
           extra_details: Record<string, unknown>;

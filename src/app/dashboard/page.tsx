@@ -31,7 +31,11 @@ export default async function DashboardPage() {
     { data: todayInstallments },
     { data: todayExpiring },
   ] = await Promise.all([
-    supabase.from("policies").select("id", { count: "exact", head: true }).eq("status", "active"),
+    supabase
+      .from("policies")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .eq("is_current_term", true),
     supabase.from("tasks").select("id", { count: "exact", head: true }).eq("status", "pending"),
     supabase
       .from("claims")
@@ -45,6 +49,7 @@ export default async function DashboardPage() {
       .from("policies")
       .select("id, policy_number, end_date, clients(client_individuals(first_name,last_name), client_legal_entities(company_name))")
       .eq("status", "active")
+      .eq("is_current_term", true)
       .lte("end_date", in30Days)
       .order("end_date", { ascending: true })
       .limit(8),
@@ -76,6 +81,7 @@ export default async function DashboardPage() {
       .from("policies")
       .select("id, policy_number")
       .eq("status", "active")
+      .eq("is_current_term", true)
       .eq("end_date", today),
   ]);
 

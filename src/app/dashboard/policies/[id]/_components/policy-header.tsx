@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { PrintButton } from "@/components/print-button";
 import { StatusSelect } from "../../status-select";
 import { SendEmailButton } from "../../send-email-button";
@@ -16,6 +17,7 @@ export function PolicyHeader({
   lineName,
   carrierName,
   riskLabel,
+  renewalNumber,
   clientEmail,
   emailTemplates,
   emailMergeFields,
@@ -28,6 +30,7 @@ export function PolicyHeader({
   lineName: string | undefined;
   carrierName: string | undefined;
   riskLabel: string | null;
+  renewalNumber: number;
   clientEmail: string | null;
   emailTemplates: EmailTemplate[];
   emailMergeFields: Record<string, string>;
@@ -35,7 +38,14 @@ export function PolicyHeader({
   return (
     <div className="flex items-center justify-between">
       <div>
-        <h1 className="text-2xl font-semibold">{policyNumber}</h1>
+        <h1 className="text-2xl font-semibold">
+          {policyNumber}
+          {renewalNumber > 1 && (
+            <Badge variant="outline" className="ml-2 align-middle">
+              Ανανέωση #{renewalNumber}
+            </Badge>
+          )}
+        </h1>
         <p className="text-sm text-muted-foreground">
           <Link href={`/dashboard/clients/${clientId}`} className="hover:underline">
             {clientName}

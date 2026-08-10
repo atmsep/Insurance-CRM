@@ -59,9 +59,10 @@ export default async function PoliciesPage({
   let query = supabase
     .from("policies")
     .select(
-      "id, policy_number, status, end_date, premium_gross, risk_label, insurance_lines(name_el), carriers(name), clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name))",
+      "id, policy_number, status, end_date, premium_gross, risk_label, renewal_number, insurance_lines(name_el), carriers(name), clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name))",
       { count: "exact" },
-    );
+    )
+    .eq("is_current_term", true);
 
   if (expiring) {
     const days = Number(expiring) || 30;
@@ -210,6 +211,11 @@ export default async function PoliciesPage({
                       <Link href={`/dashboard/policies/${policy.id}`} className="hover:underline">
                         {policy.policy_number}
                       </Link>
+                      {policy.renewal_number > 1 && (
+                        <Badge variant="outline" className="ml-2">
+                          Ανανέωση #{policy.renewal_number}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>{name}</TableCell>
                     <TableCell>{lineName}</TableCell>
@@ -228,6 +234,9 @@ export default async function PoliciesPage({
                         <QuickViewField label="Εταιρεία" value={carrierName} />
                         <QuickViewField label="Λήξη" value={formatDate(policy.end_date)} />
                         <QuickViewField label="Ασφάλιστρο" value={`${policy.premium_gross.toFixed(2)} €`} />
+                        {policy.renewal_number > 1 && (
+                          <QuickViewField label="Αρ. Ανανέωσης" value={policy.renewal_number} />
+                        )}
                         <QuickViewField
                           label="Κατάσταση"
                           value={

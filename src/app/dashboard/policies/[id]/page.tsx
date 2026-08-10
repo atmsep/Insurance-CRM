@@ -14,6 +14,7 @@ import { DetailsTab } from "./_components/details-tab";
 import { InstallmentsTab } from "./_components/installments-tab";
 import { ClaimsTab } from "./_components/claims-tab";
 import { CommissionsTab } from "./_components/commissions-tab";
+import { RenewalHistory } from "./_components/renewal-history";
 import type { PolicyStatus } from "@/lib/database.types";
 
 export default async function PolicyDetailPage({
@@ -67,6 +68,7 @@ export default async function PolicyDetailPage({
     { data: agents },
     { data: brokerOffices },
     { data: emailTemplates },
+    { data: chainTerms },
   ] = await Promise.all([
     line?.requires_vehicle_details
       ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
@@ -100,6 +102,11 @@ export default async function PolicyDetailPage({
       .eq("is_active", true)
       .order("is_system", { ascending: false })
       .order("name"),
+    supabase
+      .from("policies")
+      .select("id, renewal_number, start_date, end_date, status")
+      .eq("policy_group_id", policy.policy_group_id)
+      .order("renewal_number", { ascending: true }),
   ]);
 
   const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
@@ -130,6 +137,7 @@ export default async function PolicyDetailPage({
         lineName={line?.name_el}
         carrierName={(policy.carriers as unknown as { name: string } | null)?.name}
         riskLabel={policy.risk_label}
+        renewalNumber={policy.renewal_number}
         clientEmail={client?.email ?? null}
         emailTemplates={emailTemplates ?? []}
         emailMergeFields={emailMergeFields}
@@ -144,7 +152,7 @@ export default async function PolicyDetailPage({
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="details" className="pt-4">
+        <TabsContent value="details" className="flex flex-col gap-4 pt-4">
           <DetailsTab
             policy={policy}
             vehicle={vehicle}
@@ -154,6 +162,9 @@ export default async function PolicyDetailPage({
             brokerOffices={brokerOffices ?? []}
             updateDetailsAction={updateDetailsAction}
           />
+          {(chainTerms?.length ?? 0) > 1 && (
+            <RenewalHistory currentPolicyId={id} terms={chainTerms ?? []} />
+          )}
         </TabsContent>
 
         <TabsContent value="installments" className="pt-4">
