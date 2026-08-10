@@ -80,6 +80,9 @@ export async function saveReferralReward(
     status: status as "pending" | "paid" | "cancelled",
     paid_at: paidAt,
     notes,
+    // Any save through this per-policy form is a human decision — mark it
+    // "manual" so a future default-rule apply never overwrites it.
+    source: "manual" as const,
   };
 
   const { error } = existing
@@ -100,4 +103,120 @@ export async function saveReferralReward(
 
   revalidatePath(`/dashboard/clients/${referrerClientId}`);
   revalidatePath(`/dashboard/clients/${referredClientId}`);
+}
+
+async function requireAdmin() {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    throw new Error("Δεν έχεις δικαίωμα για αυτή την ενέργεια.");
+  }
+  return agencyUser;
+}
+
+// Sets the agency-wide default rule and immediately applies it to every
+// referred client's policy that doesn't already carry a manually-set
+// reward (source = "manual") — those are never touched. Policies already
+// carrying an "auto" reward get their amount refreshed to the new rule;
+// policies with no reward yet get one created. Safe to re-run any time
+// (e.g. after new policies show up) since it always just fills the gaps.
+export async function setDefaultReferralRewardRule(
+  currentClientId: string,
+  formData: FormData,
+): Promise<{ error: string } | { count: number }> {
+  const agencyUser = await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const calcType = formData.get("calc_type") as ReferralRewardCalcType;
+  if (calcType !== "percent" && calcType !== "fixed") {
+    return { error: "Μη έγκυρος τύπος υπολογισμού." };
+  }
+
+  let ratePercent: number | null = null;
+  let fixedAmount: number | null = null;
+
+  if (calcType === "percent") {
+    const rate = Number(formData.get("rate_percent"));
+    if (!Number.isFinite(rate) || rate < 0) {
+      return { error: "Το ποσοστό δεν είναι έγκυρο." };
+    }
+    ratePercent = rate;
+  } else {
+    const amount = Number(formData.get("fixed_amount"));
+    if (!Number.isFinite(amount) || amount < 0) {
+      return { error: "Το ποσό δεν είναι έγκυρο." };
+    }
+    fixedAmount = amount;
+  }
+
+  const { error: ruleError } = await supabase.from("referral_reward_default_rule").upsert({
+    key: "default",
+    calc_type: calcType,
+    rate_percent: ratePercent,
+    fixed_amount: fixedAmount,
+    updated_by: agencyUser.id,
+  });
+  if (ruleError) {
+    return { error: "Σφάλμα κατά την αποθήκευση του κανόνα: " + ruleError.message };
+  }
+
+  // Every policy belonging to a referred client, together with its (at
+  // most one) existing reward row so we can tell which ones are safe to
+  // overwrite.
+  const { data: candidates, error: fetchError } = await supabase
+    .from("policies")
+    .select("id, premium_net, clients!inner(id, referred_by_client_id), referral_rewards(source)")
+    .not("clients.referred_by_client_id", "is", null);
+
+  if (fetchError) {
+    return { error: "Σφάλμα κατά την ανάκτηση συμβολαίων: " + fetchError.message };
+  }
+
+  type Candidate = {
+    id: string;
+    premium_net: number | null;
+    clients: { id: string; referred_by_client_id: string } | null;
+    referral_rewards: { source: string } | null;
+  };
+
+  const eligible = ((candidates ?? []) as unknown as Candidate[]).filter(
+    (p) => !p.referral_rewards || p.referral_rewards.source === "auto",
+  );
+
+  if (eligible.length === 0) {
+    revalidatePath(`/dashboard/clients/${currentClientId}`);
+    return { count: 0 };
+  }
+
+  const rows = eligible.map((p) => {
+    const baseAmount = p.premium_net ?? 0;
+    const rewardAmount =
+      calcType === "percent"
+        ? Math.round(((baseAmount * (ratePercent ?? 0)) / 100) * 100) / 100
+        : (fixedAmount ?? 0);
+    return {
+      referrer_client_id: p.clients!.referred_by_client_id,
+      referred_client_id: p.clients!.id,
+      policy_id: p.id,
+      calc_type: calcType,
+      rate_percent: ratePercent,
+      fixed_amount: fixedAmount,
+      base_amount: baseAmount,
+      reward_amount: rewardAmount,
+      status: "pending" as const,
+      paid_at: null,
+      source: "auto" as const,
+      created_by: agencyUser.id,
+    };
+  });
+
+  const { error: upsertError } = await supabase
+    .from("referral_rewards")
+    .upsert(rows, { onConflict: "policy_id" });
+
+  if (upsertError) {
+    return { error: "Σφάλμα κατά την εφαρμογή: " + upsertError.message };
+  }
+
+  revalidatePath(`/dashboard/clients/${currentClientId}`);
+  return { count: rows.length };
 }

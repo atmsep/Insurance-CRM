@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAgencyUser } from "@/lib/dal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { updateClientNotes, createInteraction } from "../actions";
 import { DocumentsSection } from "../../documents/documents-section";
@@ -24,6 +25,8 @@ export default async function ClientDetailPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
+  const agencyUser = await getCurrentAgencyUser();
+  const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
 
   const { data: client } = await supabase
     .from("clients")
@@ -47,6 +50,7 @@ export default async function ClientDetailPage({
     { data: activity },
     { data: referrals },
     { data: ownReferralRewards },
+    { data: defaultRule },
   ] = await Promise.all([
     supabase
       .from("policies")
@@ -97,11 +101,12 @@ export default async function ClientDetailPage({
         "id, client_code, client_type, is_active, created_at, " +
           "client_individuals(first_name,last_name), client_legal_entities(company_name), " +
           "policies(id, policy_number, status, premium_net, renewal_number, " +
-          "referral_rewards(calc_type, rate_percent, fixed_amount, reward_amount, status, notes))",
+          "referral_rewards(calc_type, rate_percent, fixed_amount, reward_amount, status, notes, source))",
       )
       .eq("referred_by_client_id", id)
       .order("created_at", { ascending: false }),
     supabase.from("referral_rewards").select("reward_amount, status").eq("referred_client_id", id),
+    supabase.from("referral_reward_default_rule").select("calc_type, rate_percent, fixed_amount").eq("key", "default").maybeSingle(),
   ]);
 
   // "Billed"/"outstanding" are measured against each policy's actual
@@ -203,7 +208,12 @@ export default async function ClientDetailPage({
         </TabsContent>
 
         <TabsContent value="referrals" className="pt-4">
-          <ReferralsTab referrerClientId={id} referrals={(referrals ?? []) as unknown as ReferredClient[]} />
+          <ReferralsTab
+            referrerClientId={id}
+            referrals={(referrals ?? []) as unknown as ReferredClient[]}
+            isAdmin={isAdmin}
+            defaultRule={defaultRule ?? null}
+          />
         </TabsContent>
 
         <TabsContent value="tasks" className="pt-4">

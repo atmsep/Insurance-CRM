@@ -23,6 +23,7 @@ type Reward = {
   reward_amount: number;
   status: string;
   notes: string | null;
+  source: "auto" | "manual";
 };
 
 export function ReferralRewardForm({
@@ -50,6 +51,7 @@ export function ReferralRewardForm({
             <Badge variant={referralRewardStatusVariant(reward.status)}>
               {REFERRAL_REWARD_STATUS_LABELS[reward.status] ?? reward.status}
             </Badge>
+            <Badge variant="outline">{reward.source === "auto" ? "Αυτόματο" : "Χειροκίνητο"}</Badge>
           </>
         ) : (
           <span className="text-sm text-muted-foreground">Δεν έχει οριστεί κανόνας</span>

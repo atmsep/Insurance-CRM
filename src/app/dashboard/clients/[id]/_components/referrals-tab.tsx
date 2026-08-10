@@ -13,7 +13,8 @@ import { resolveClientName } from "@/lib/client-name";
 import { policyStatusVariant } from "@/lib/status-badge";
 import { POLICY_STATUS_LABELS } from "../../../policies/policy-labels";
 import { ReferralRewardForm } from "./referral-reward-form";
-import { saveReferralReward } from "../../referral-reward-actions";
+import { DefaultRewardRuleDialog } from "./default-reward-rule-dialog";
+import { saveReferralReward, setDefaultReferralRewardRule } from "../../referral-reward-actions";
 
 export type ReferredPolicy = {
   id: string;
@@ -28,6 +29,7 @@ export type ReferredPolicy = {
     reward_amount: number;
     status: string;
     notes: string | null;
+    source: "auto" | "manual";
   } | null;
 };
 
@@ -51,9 +53,13 @@ export type ReferredClient = {
 export function ReferralsTab({
   referrerClientId,
   referrals,
+  isAdmin,
+  defaultRule,
 }: {
   referrerClientId: string;
   referrals: ReferredClient[];
+  isAdmin: boolean;
+  defaultRule: { calc_type: "percent" | "fixed"; rate_percent: number | null; fixed_amount: number | null } | null;
 }) {
   const allRewards = referrals.flatMap((r) => r.policies.map((p) => p.referral_rewards).filter((r) => r != null));
   const totalPending = allRewards
@@ -65,16 +71,24 @@ export function ReferralsTab({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-medium">Συστάσεις</h2>
-        <div className="flex gap-4 text-sm text-muted-foreground">
-          <span>
-            Πελάτες: <span className="font-medium text-foreground">{referrals.length}</span>
-          </span>
-          <span>
-            Εκκρεμεί: <span className="font-medium text-foreground">{totalPending.toFixed(2)} €</span>
-          </span>
-          <span>
-            Πληρώθηκε: <span className="font-medium text-foreground">{totalPaid.toFixed(2)} €</span>
-          </span>
+        <div className="flex items-center gap-4">
+          <div className="flex gap-4 text-sm text-muted-foreground">
+            <span>
+              Πελάτες: <span className="font-medium text-foreground">{referrals.length}</span>
+            </span>
+            <span>
+              Εκκρεμεί: <span className="font-medium text-foreground">{totalPending.toFixed(2)} €</span>
+            </span>
+            <span>
+              Πληρώθηκε: <span className="font-medium text-foreground">{totalPaid.toFixed(2)} €</span>
+            </span>
+          </div>
+          {isAdmin && (
+            <DefaultRewardRuleDialog
+              currentRule={defaultRule}
+              applyAction={setDefaultReferralRewardRule.bind(null, referrerClientId)}
+            />
+          )}
         </div>
       </div>
 

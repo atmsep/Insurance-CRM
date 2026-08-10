@@ -25,6 +25,7 @@ export type CommissionType = "new_business" | "renewal" | "override";
 export type CommissionStatus = "pending" | "invoiced" | "paid" | "cancelled";
 export type ReferralRewardStatus = "pending" | "paid" | "cancelled";
 export type ReferralRewardCalcType = "percent" | "fixed";
+export type ReferralRewardSource = "auto" | "manual";
 export type CommissionDirection = "incoming" | "outgoing";
 export type ClaimStatus =
   | "reported"
@@ -431,6 +432,7 @@ export interface Database {
           status: ReferralRewardStatus;
           paid_at: string | null;
           notes: string | null;
+          source: ReferralRewardSource;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -444,6 +446,20 @@ export interface Database {
           reward_amount: number;
         };
         Update: Partial<Database["public"]["Tables"]["referral_rewards"]["Row"]>;
+      };
+      referral_reward_default_rule: {
+        Row: {
+          key: string;
+          calc_type: ReferralRewardCalcType;
+          rate_percent: number | null;
+          fixed_amount: number | null;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["referral_reward_default_rule"]["Row"]> & {
+          calc_type: ReferralRewardCalcType;
+        };
+        Update: Partial<Database["public"]["Tables"]["referral_reward_default_rule"]["Row"]>;
       };
       broker_offices: {
         Row: {
