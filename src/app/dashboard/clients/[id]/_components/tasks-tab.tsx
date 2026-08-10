@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { taskPriorityVariant } from "@/lib/status-badge";
+import { formatDate } from "@/lib/date";
 
 const TASK_STATUS_LABELS: Record<string, string> = {
   pending: "Εκκρεμεί",
@@ -25,10 +26,6 @@ const PRIORITY_LABELS: Record<string, string> = {
   high: "Υψηλή",
   urgent: "Επείγουσα",
 };
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
-}
 
 type Task = {
   id: string;

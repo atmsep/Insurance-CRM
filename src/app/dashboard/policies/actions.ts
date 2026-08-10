@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
-import { logActivity } from "@/lib/activity-log";
+import { logActivity, logActivityBatch } from "@/lib/activity-log";
 import type { PaymentFrequency } from "@/lib/database.types";
 
 export type PolicyFormState = { error: string; field?: string } | undefined;
@@ -248,6 +248,7 @@ export async function createPolicy(
   });
 
   revalidatePath("/dashboard/policies");
+  if (renewFromPolicyId) revalidatePath(`/dashboard/policies/${renewFromPolicyId}`);
   redirect(`/dashboard/policies/${policy.id}?toast=${encodeURIComponent("Το συμβόλαιο δημιουργήθηκε.")}`);
 }
 
@@ -265,27 +266,34 @@ export async function updatePolicyStatus(policyId: string, status: string) {
   revalidatePath(`/dashboard/policies/${policyId}`);
 }
 
-export async function bulkUpdatePolicyStatus(policyIds: string[], status: string) {
+export async function bulkUpdatePolicyStatus(
+  policyIds: string[],
+  status: string,
+): Promise<{ error: string } | undefined> {
   const agencyUser = await requireAgencyUser();
   if (policyIds.length === 0) return;
   const supabase = await createSupabaseClient();
-  await supabase.from("policies").update({ status }).in("id", policyIds);
-  await Promise.all(
-    policyIds.map((policyId) =>
-      logActivity(supabase, {
-        entityType: "policy",
-        entityId: policyId,
-        action: "status_changed",
-        description: `Η κατάσταση άλλαξε σε "${status}" (μαζική ενέργεια).`,
-        actorId: agencyUser.id,
-      }),
-    ),
+
+  const { error } = await supabase.from("policies").update({ status }).in("id", policyIds);
+  if (error) {
+    return { error: "Σφάλμα κατά τη μαζική ενημέρωση: " + error.message };
+  }
+
+  await logActivityBatch(
+    supabase,
+    policyIds.map((policyId) => ({
+      entityType: "policy",
+      entityId: policyId,
+      action: "status_changed",
+      description: `Η κατάσταση άλλαξε σε "${status}" (μαζική ενέργεια).`,
+      actorId: agencyUser.id,
+    })),
   );
   revalidatePath("/dashboard/policies");
 }
 
 export async function createInstallment(policyId: string, formData: FormData) {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
   const { count } = await supabase
@@ -298,6 +306,14 @@ export async function createInstallment(policyId: string, formData: FormData) {
     installment_number: (count ?? 0) + 1,
     due_date: str(formData, "due_date") ?? "",
     amount: num(formData, "amount") ?? 0,
+  });
+
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "installment_created",
+    description: "Προστέθηκε νέα δόση.",
+    actorId: agencyUser.id,
   });
 
   revalidatePath(`/dashboard/policies/${policyId}`);

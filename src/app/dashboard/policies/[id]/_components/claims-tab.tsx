@@ -15,20 +15,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { claimStatusVariant } from "@/lib/status-badge";
+import { formatDate } from "@/lib/date";
 import { getPolicyClaims } from "../../actions";
-
-const CLAIM_STATUS_LABELS: Record<string, string> = {
-  reported: "Αναφέρθηκε",
-  under_review: "Υπό εξέταση",
-  approved: "Εγκρίθηκε",
-  rejected: "Απορρίφθηκε",
-  paid: "Πληρώθηκε",
-  closed: "Έκλεισε",
-};
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
-}
+import { CLAIM_STATUS_LABELS } from "../../../claims/claim-labels";
 
 type Claim = {
   id: string;
@@ -40,9 +29,29 @@ type Claim = {
 
 export function ClaimsTab({ policyId }: { policyId: string }) {
   const [claims, setClaims] = useState<Claim[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  async function refetch() {
+    try {
+      setLoadError(false);
+      setClaims(await getPolicyClaims(policyId));
+    } catch {
+      setLoadError(true);
+    }
+  }
 
   useEffect(() => {
-    getPolicyClaims(policyId).then(setClaims);
+    let cancelled = false;
+    getPolicyClaims(policyId)
+      .then((result) => {
+        if (!cancelled) setClaims(result);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [policyId]);
 
   return (
@@ -56,7 +65,14 @@ export function ClaimsTab({ policyId }: { policyId: string }) {
         />
       </CardHeader>
       <CardContent>
-        {!claims ? (
+        {loadError ? (
+          <div className="flex flex-col items-start gap-2 text-sm">
+            <p className="text-muted-foreground">Δεν ήταν δυνατή η φόρτωση των ζημιών.</p>
+            <Button type="button" variant="outline" size="sm" onClick={refetch}>
+              Δοκίμασε ξανά
+            </Button>
+          </div>
+        ) : !claims ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />

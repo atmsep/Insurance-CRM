@@ -2,15 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { resolveClientName } from "@/lib/client-name";
-
-const STATUS_LABELS: Record<string, string> = {
-  reported: "Αναφέρθηκε",
-  under_review: "Υπό εξέταση",
-  approved: "Εγκρίθηκε",
-  rejected: "Απορρίφθηκε",
-  paid: "Πληρώθηκε",
-  closed: "Έκλεισε",
-};
+import { CLAIM_STATUS_LABELS as STATUS_LABELS } from "../claim-labels";
 
 export async function GET(request: Request) {
   await requireAgencyUser();

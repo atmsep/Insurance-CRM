@@ -6,7 +6,7 @@ import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import type { ClientType, InteractionType } from "@/lib/database.types";
 import { isValidAfm, isValidAmka, isValidEmail } from "@/lib/validation";
-import { logActivity } from "@/lib/activity-log";
+import { logActivity, logActivityBatch } from "@/lib/activity-log";
 
 export type ClientFormState = { error: string; field?: string } | undefined;
 
@@ -309,21 +309,27 @@ export async function toggleClientActive(clientId: string, isActive: boolean) {
   revalidatePath("/dashboard/clients");
 }
 
-export async function deactivateClients(clientIds: string[]) {
+export async function deactivateClients(
+  clientIds: string[],
+): Promise<{ error: string } | undefined> {
   const agencyUser = await requireAgencyUser();
   if (clientIds.length === 0) return;
   const supabase = await createSupabaseClient();
-  await supabase.from("clients").update({ is_active: false }).in("id", clientIds);
-  await Promise.all(
-    clientIds.map((clientId) =>
-      logActivity(supabase, {
-        entityType: "client",
-        entityId: clientId,
-        action: "deactivated",
-        description: "Ο πελάτης απενεργοποιήθηκε (μαζική ενέργεια).",
-        actorId: agencyUser.id,
-      }),
-    ),
+
+  const { error } = await supabase.from("clients").update({ is_active: false }).in("id", clientIds);
+  if (error) {
+    return { error: "Σφάλμα κατά τη μαζική ενημέρωση: " + error.message };
+  }
+
+  await logActivityBatch(
+    supabase,
+    clientIds.map((clientId) => ({
+      entityType: "client",
+      entityId: clientId,
+      action: "deactivated",
+      description: "Ο πελάτης απενεργοποιήθηκε (μαζική ενέργεια).",
+      actorId: agencyUser.id,
+    })),
   );
   revalidatePath("/dashboard/clients");
 }
@@ -344,6 +350,14 @@ export async function createInteraction(clientId: string, formData: FormData) {
     subject,
     notes,
     follow_up_needed: followUpNeeded,
+  });
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: clientId,
+    action: "interaction_created",
+    description: "Καταχωρήθηκε νέα επικοινωνία.",
+    actorId: agencyUser.id,
   });
 
   revalidatePath(`/dashboard/clients/${clientId}`);

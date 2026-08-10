@@ -11,6 +11,7 @@ import { EntitySelect } from "@/components/entity-select";
 import { PremiumFields } from "../../premium-fields";
 import { PaymentFrequencySelect, PAYMENT_FREQUENCY_LABELS } from "../../payment-frequency-select";
 import { useFormValues } from "@/hooks/use-form-values";
+import { formatDate } from "@/lib/date";
 import type { PaymentFrequency } from "@/lib/database.types";
 
 type Vehicle = {
@@ -51,10 +52,6 @@ function ViewField({ label, value }: { label: string; value: string | number | n
       <span className="text-sm">{value ?? "—"}</span>
     </div>
   );
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
 }
 
 export function DetailsTab({

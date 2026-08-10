@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { installmentStatusVariant } from "@/lib/status-badge";
+import { formatDate } from "@/lib/date";
 import {
   getPolicyInstallments,
   createInstallment,
@@ -33,10 +34,6 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   cancelled: "Ακυρώθηκε",
 };
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
-}
-
 type Installment = {
   id: string;
   installment_number: number;
@@ -50,18 +47,34 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
     installments: Installment[];
     paymentMethods: { id: string; name: string }[];
   } | null>(null);
-
-  useEffect(() => {
-    getPolicyInstallments(policyId).then(setData);
-  }, [policyId]);
+  const [loadError, setLoadError] = useState(false);
 
   // The mutations below still call revalidatePath server-side, but that
   // only invalidates Next's router cache for server components — this tab
   // holds its own client-fetched state (that's the point of lazy-loading
   // it), so each action also has to trigger its own refetch afterward.
   async function refetch() {
-    setData(await getPolicyInstallments(policyId));
+    try {
+      setLoadError(false);
+      setData(await getPolicyInstallments(policyId));
+    } catch {
+      setLoadError(true);
+    }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    getPolicyInstallments(policyId)
+      .then((result) => {
+        if (!cancelled) setData(result);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [policyId]);
 
   async function addInstallmentAction(formData: FormData) {
     await createInstallment(policyId, formData);
@@ -74,7 +87,14 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
         <CardTitle className="text-base">Δόσεις</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {!data ? (
+        {loadError ? (
+          <div className="flex flex-col items-start gap-2 text-sm">
+            <p className="text-muted-foreground">Δεν ήταν δυνατή η φόρτωση των δόσεων.</p>
+            <Button type="button" variant="outline" size="sm" onClick={refetch}>
+              Δοκίμασε ξανά
+            </Button>
+          </div>
+        ) : !data ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />

@@ -10,21 +10,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { policyStatusVariant } from "@/lib/status-badge";
+import { formatDate } from "@/lib/date";
+import { POLICY_STATUS_LABELS } from "../../../policies/policy-labels";
 
-const POLICY_STATUS_LABELS: Record<string, string> = {
-  draft: "Πρόχειρο",
-  active: "Ενεργό",
-  pending_renewal: "Προς ανανέωση",
-  expired: "Ληγμένο",
-  cancelled: "Ακυρωμένο",
-  lapsed: "Διακοπή",
-};
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
-}
-
-type Policy = {
+export type Policy = {
   id: string;
   policy_number: string;
   status: string;

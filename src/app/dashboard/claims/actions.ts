@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
-import { logActivity } from "@/lib/activity-log";
+import { logActivity, logActivityBatch } from "@/lib/activity-log";
 
 export type ClaimFormState = { error: string } | undefined;
 
@@ -51,6 +51,14 @@ export async function createClaim(
     return { error: "Σφάλμα κατά τη δημιουργία ζημιάς: " + (error?.message ?? "") };
   }
 
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "claim_created",
+    description: "Καταχωρήθηκε νέα ζημιά.",
+    actorId: agencyUser.id,
+  });
+
   revalidatePath("/dashboard/claims");
   revalidatePath(`/dashboard/policies/${policyId}`);
   redirect(`/dashboard/claims/${claim.id}?toast=${encodeURIComponent("Η ζημιά καταχωρήθηκε.")}`);
@@ -72,25 +80,30 @@ export async function updateClaimStatus(claimId: string, policyId: string, statu
   revalidatePath("/dashboard/claims");
 }
 
-export async function bulkUpdateClaimStatus(claimIds: string[], status: string) {
+export async function bulkUpdateClaimStatus(
+  claimIds: string[],
+  status: string,
+): Promise<{ error: string } | undefined> {
   const agencyUser = await requireAgencyUser();
   if (claimIds.length === 0) return;
   const supabase = await createSupabaseClient();
 
   const { data: claims } = await supabase.from("claims").select("id, policy_id").in("id", claimIds);
 
-  await supabase.from("claims").update({ status }).in("id", claimIds);
+  const { error } = await supabase.from("claims").update({ status }).in("id", claimIds);
+  if (error) {
+    return { error: "Σφάλμα κατά τη μαζική ενημέρωση: " + error.message };
+  }
 
-  await Promise.all(
-    (claims ?? []).map((claim) =>
-      logActivity(supabase, {
-        entityType: "policy",
-        entityId: claim.policy_id,
-        action: "claim_status_changed",
-        description: `Η κατάσταση μιας ζημιάς άλλαξε σε "${status}" (μαζική ενέργεια).`,
-        actorId: agencyUser.id,
-      }),
-    ),
+  await logActivityBatch(
+    supabase,
+    (claims ?? []).map((claim) => ({
+      entityType: "policy",
+      entityId: claim.policy_id,
+      action: "claim_status_changed",
+      description: `Η κατάσταση μιας ζημιάς άλλαξε σε "${status}" (μαζική ενέργεια).`,
+      actorId: agencyUser.id,
+    })),
   );
 
   revalidatePath("/dashboard/claims");
@@ -100,7 +113,7 @@ export async function bulkUpdateClaimStatus(claimIds: string[], status: string) 
 }
 
 export async function updateClaimDetails(claimId: string, policyId: string, formData: FormData) {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
   await supabase
@@ -114,6 +127,14 @@ export async function updateClaimDetails(claimId: string, policyId: string, form
       adjuster_contact: str(formData, "adjuster_contact"),
     })
     .eq("id", claimId);
+
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "claim_updated",
+    description: "Ενημερώθηκαν τα στοιχεία μιας ζημιάς.",
+    actorId: agencyUser.id,
+  });
 
   revalidatePath(`/dashboard/claims/${claimId}`);
   revalidatePath(`/dashboard/policies/${policyId}`);

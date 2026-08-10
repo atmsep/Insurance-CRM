@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { claimStatusVariant } from "@/lib/status-badge";
 import { resolveClientName } from "@/lib/client-name";
+import { formatDate } from "@/lib/date";
+import { CLAIM_STATUS_LABELS as STATUS_LABELS } from "./claim-labels";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
@@ -24,20 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const STATUS_LABELS: Record<string, string> = {
-  reported: "Αναφέρθηκε",
-  under_review: "Υπό εξέταση",
-  approved: "Εγκρίθηκε",
-  rejected: "Απορρίφθηκε",
-  paid: "Πληρώθηκε",
-  closed: "Έκλεισε",
-};
-
 const PAGE_SIZE = 20;
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
-}
 
 export default async function ClaimsPage({
   searchParams,

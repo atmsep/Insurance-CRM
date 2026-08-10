@@ -1,15 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { toCsv, csvResponse } from "@/lib/csv";
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Πρόχειρο",
-  active: "Ενεργό",
-  pending_renewal: "Προς ανανέωση",
-  expired: "Ληγμένο",
-  cancelled: "Ακυρωμένο",
-  lapsed: "Διακοπή",
-};
+import { POLICY_STATUS_LABELS as STATUS_LABELS } from "../policy-labels";
 
 export async function GET(request: Request) {
   await requireAgencyUser();

@@ -6,10 +6,10 @@ import { logClientError } from "@/lib/actions/log-client-error";
 
 export default function DashboardError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     logClientError(error.message, error.digest, window.location.href).catch(() => {
@@ -24,7 +24,7 @@ export default function DashboardError({
         Σημειώσαμε το σφάλμα. Δοκίμασε ξανά — αν συνεχίσει να εμφανίζεται, ενημέρωσε τον
         διαχειριστή του συστήματος.
       </p>
-      <Button onClick={() => reset()}>Δοκίμασε ξανά</Button>
+      <Button onClick={() => retry()}>Δοκίμασε ξανά</Button>
     </div>
   );
 }

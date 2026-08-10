@@ -9,12 +9,12 @@ import { resolveClientName } from "@/lib/client-name";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ClientHeader } from "./_components/client-header";
 import { DetailsTab } from "./_components/details-tab";
-import { PoliciesTab } from "./_components/policies-tab";
+import { PoliciesTab, type Policy as ClientPolicy } from "./_components/policies-tab";
 import { InteractionsTab } from "./_components/interactions-tab";
 import { TicketsTab } from "./_components/tickets-tab";
-import { CommissionsTab } from "./_components/commissions-tab";
+import { CommissionsTab, type Commission as ClientCommission } from "./_components/commissions-tab";
 import { TasksTab } from "./_components/tasks-tab";
-import { ActivityFeed } from "@/components/activity-feed";
+import { ActivityFeed, type ActivityEntry } from "@/components/activity-feed";
 
 export default async function ClientDetailPage({
   params,
@@ -91,8 +91,17 @@ export default async function ClientDetailPage({
   // premium, not just the installment rows someone happened to create —
   // otherwise a policy with no (or partial) installments looks fully
   // collected even though most of the premium was never billed as a δόση.
+  //
+  // The installments query itself isn't scoped to is_current_term (an old
+  // renewed-away term can still have real payment history), so it's scoped
+  // here instead: only installments belonging to a currently-listed policy
+  // count toward these totals, keeping them consistent with totalBilled
+  // (which is already derived from the is_current_term-filtered `policies`).
+  const currentPolicyIds = new Set((policies ?? []).map((p) => p.id));
+  const currentInstallments = (installments ?? []).filter((i) => currentPolicyIds.has(i.policy_id));
+
   const paidByPolicy = new Map<string, number>();
-  for (const i of installments ?? []) {
+  for (const i of currentInstallments) {
     if (i.status !== "paid") continue;
     paidByPolicy.set(i.policy_id, (paidByPolicy.get(i.policy_id) ?? 0) + i.amount);
   }
@@ -101,7 +110,7 @@ export default async function ClientDetailPage({
     (p) => p.status !== "draft" && p.status !== "cancelled",
   );
   const totalBilled = billablePolicies.reduce((sum, p) => sum + (p.premium_gross ?? 0), 0);
-  const totalPaid = (installments ?? [])
+  const totalPaid = currentInstallments
     .filter((i) => i.status === "paid")
     .reduce((sum, i) => sum + i.amount, 0);
   const outstanding = billablePolicies.reduce(
@@ -153,7 +162,7 @@ export default async function ClientDetailPage({
         </TabsContent>
 
         <TabsContent value="policies" className="pt-4">
-          <PoliciesTab policies={(policies ?? []) as never} />
+          <PoliciesTab policies={(policies ?? []) as unknown as ClientPolicy[]} />
         </TabsContent>
 
         <TabsContent value="interactions" className="pt-4">
@@ -165,7 +174,7 @@ export default async function ClientDetailPage({
         </TabsContent>
 
         <TabsContent value="commissions" className="pt-4">
-          <CommissionsTab commissions={(commissions ?? []) as never} />
+          <CommissionsTab commissions={(commissions ?? []) as unknown as ClientCommission[]} />
         </TabsContent>
 
         <TabsContent value="tasks" className="pt-4">
@@ -177,7 +186,7 @@ export default async function ClientDetailPage({
         </TabsContent>
 
         <TabsContent value="activity" className="pt-4">
-          <ActivityFeed entries={(activity ?? []) as never} />
+          <ActivityFeed entries={(activity ?? []) as unknown as ActivityEntry[]} />
         </TabsContent>
       </Tabs>
     </div>

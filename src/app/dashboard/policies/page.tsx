@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { policyStatusVariant } from "@/lib/status-badge";
 import { resolveClientName } from "@/lib/client-name";
+import { formatDate } from "@/lib/date";
+import { POLICY_STATUS_LABELS as STATUS_LABELS } from "./policy-labels";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 import { ListPageHeader } from "@/components/list-page-header";
@@ -25,20 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Πρόχειρο",
-  active: "Ενεργό",
-  pending_renewal: "Προς ανανέωση",
-  expired: "Ληγμένο",
-  cancelled: "Ακυρωμένο",
-  lapsed: "Διακοπή",
-};
-
 const PAGE_SIZE = 20;
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
-}
 
 export default async function PoliciesPage({
   searchParams,

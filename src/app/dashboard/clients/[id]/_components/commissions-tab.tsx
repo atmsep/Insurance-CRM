@@ -12,7 +12,7 @@ import {
 import { commissionStatusVariant } from "@/lib/status-badge";
 import { COMMISSION_TYPE_LABELS, COMMISSION_STATUS_LABELS } from "../../../commissions/commission-labels";
 
-type Commission = {
+export type Commission = {
   id: string;
   commission_type: string;
   commission_amount: number;

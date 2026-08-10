@@ -25,3 +25,27 @@ export async function logActivity(
     actor_id: params.actorId,
   });
 }
+
+// For bulk actions logging one entry per selected row — a single multi-row
+// insert instead of N round trips.
+export async function logActivityBatch(
+  supabase: SupabaseClient,
+  entries: {
+    entityType: string;
+    entityId: string;
+    action: string;
+    description: string;
+    actorId: string;
+  }[],
+) {
+  if (entries.length === 0) return;
+  await supabase.from("activity_log").insert(
+    entries.map((e) => ({
+      entity_type: e.entityType,
+      entity_id: e.entityId,
+      action: e.action,
+      description: e.description,
+      actor_id: e.actorId,
+    })),
+  );
+}

@@ -3,6 +3,7 @@ import { requireAgencyUser } from "@/lib/dal";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { resolveClientName } from "@/lib/client-name";
 import { TICKET_STATUS_LABELS } from "../ticket-labels";
+import { formatDate } from "@/lib/date";
 
 const PRIORITY_LABELS: Record<string, string> = {
   low: "Χαμηλή",
@@ -10,10 +11,6 @@ const PRIORITY_LABELS: Record<string, string> = {
   high: "Υψηλή",
   urgent: "Επείγουσα",
 };
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
-}
 
 export async function GET(request: Request) {
   await requireAgencyUser();

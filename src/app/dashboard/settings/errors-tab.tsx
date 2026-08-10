@@ -7,16 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString("el-GR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+import { formatDateTime } from "@/lib/date";
 
 type ErrorEntry = {
   id: string;

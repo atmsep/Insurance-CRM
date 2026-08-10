@@ -2,19 +2,8 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { policyStatusVariant } from "@/lib/status-badge";
-
-const POLICY_STATUS_LABELS: Record<string, string> = {
-  draft: "Πρόχειρο",
-  active: "Ενεργό",
-  pending_renewal: "Προς ανανέωση",
-  expired: "Ληγμένο",
-  cancelled: "Ακυρωμένο",
-  lapsed: "Διακοπή",
-};
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
-}
+import { formatDate } from "@/lib/date";
+import { POLICY_STATUS_LABELS } from "../../policy-labels";
 
 type Term = {
   id: string;
