@@ -118,59 +118,18 @@ function num(formData: FormData, key: string) {
   return v === null ? null : Number(v);
 }
 
-// How many δόσεις a payment frequency implies over one policy term, and how
-// many months apart they fall (unused when count is 1 — the whole premium
-// is due as a single installment on start_date).
-const INSTALLMENT_COUNTS: Record<PaymentFrequency, number> = {
-  single_premium: 1,
-  annual: 1,
-  semiannual: 2,
-  quarterly: 4,
-  monthly: 12,
-};
-const INSTALLMENT_MONTHS_APART: Record<PaymentFrequency, number> = {
-  single_premium: 0,
-  annual: 0,
-  semiannual: 6,
-  quarterly: 3,
-  monthly: 1,
-};
-
-// Splits premium_gross evenly across the installments a payment frequency
-// implies, due on start_date and every N months after — the last
-// installment absorbs the rounding remainder so the total always matches
-// premium_gross exactly to the cent.
-function buildInstallmentRows(
-  policyId: string,
-  startDate: string,
-  premiumGross: number,
-  frequency: PaymentFrequency,
-) {
-  const count = INSTALLMENT_COUNTS[frequency] ?? 1;
-  const monthsApart = INSTALLMENT_MONTHS_APART[frequency] ?? 0;
-  const base = Math.floor((premiumGross / count) * 100) / 100;
-  const [year, month, day] = startDate.split("-").map(Number);
-
-  const rows: {
-    policy_id: string;
-    installment_number: number;
-    due_date: string;
-    amount: number;
-  }[] = [];
-  let allocated = 0;
-  for (let i = 0; i < count; i++) {
-    const amount =
-      i === count - 1 ? Math.round((premiumGross - allocated) * 100) / 100 : base;
-    allocated += amount;
-    const dueDate = new Date(Date.UTC(year, month - 1 + i * monthsApart, day));
-    rows.push({
+// Every policy — whatever its payment_frequency or duration — is billed as
+// exactly ONE installment for the full gross premium, due on start_date.
+// payment_frequency is informational only; it does not split the billing.
+function buildInstallmentRows(policyId: string, startDate: string, premiumGross: number) {
+  return [
+    {
       policy_id: policyId,
-      installment_number: i + 1,
-      due_date: dueDate.toISOString().slice(0, 10),
-      amount,
-    });
-  }
-  return rows;
+      installment_number: 1,
+      due_date: startDate,
+      amount: premiumGross,
+    },
+  ];
 }
 
 export async function createPolicy(
@@ -300,13 +259,13 @@ export async function createPolicy(
     return { error: "Σφάλμα κατά την αποθήκευση στοιχείων κλάδου: " + branchError };
   }
 
-  // Auto-generate the δόσεις implied by the payment frequency, so the agent
+  // Auto-generate the single δόση for the full gross premium, so the agent
   // only ever has to click "Είσπραξη" when money actually comes in instead
   // of first adding the installment by hand. Applies to renewals too — a
-  // renewed term needs its own fresh installments just like new business.
+  // renewed term needs its own fresh installment just like new business.
   await supabase
     .from("policy_installments")
-    .insert(buildInstallmentRows(policy.id, startDate, premiumGross, paymentFrequency));
+    .insert(buildInstallmentRows(policy.id, startDate, premiumGross));
 
   // Auto-record the incoming commission owed by the carrier, using whatever
   // rate is agreed for this broker/carrier/line combination — skipped
