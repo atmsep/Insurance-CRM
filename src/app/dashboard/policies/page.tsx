@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 import { ListPageHeader } from "@/components/list-page-header";
 import { FilterSelect } from "@/components/ui/filter-select";
+import { QuickView, QuickViewField } from "@/components/quick-view";
 import {
   Table,
   TableBody,
@@ -133,6 +134,7 @@ export default async function PoliciesPage({
               <TableHead>Λήξη</TableHead>
               <TableHead>Ασφάλιστρο</TableHead>
               <TableHead>Κατάσταση</TableHead>
+              <TableHead className="w-8" />
             </TableRow>
             <TableRow>
               <TableHead className="pb-2">
@@ -189,6 +191,7 @@ export default async function PoliciesPage({
                   options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ id: value, label }))}
                 />
               </TableHead>
+              <TableHead className="pb-2" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -199,6 +202,8 @@ export default async function PoliciesPage({
                   client_legal_entities: { company_name: string } | null;
                 } | null;
                 const name = resolveClientName(client);
+                const lineName = (policy.insurance_lines as unknown as { name_el: string } | null)?.name_el;
+                const carrierName = (policy.carriers as unknown as { name: string } | null)?.name;
                 return (
                   <TableRow key={policy.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
@@ -207,10 +212,8 @@ export default async function PoliciesPage({
                       </Link>
                     </TableCell>
                     <TableCell>{name}</TableCell>
-                    <TableCell>
-                      {(policy.insurance_lines as unknown as { name_el: string } | null)?.name_el}
-                    </TableCell>
-                    <TableCell>{(policy.carriers as unknown as { name: string } | null)?.name}</TableCell>
+                    <TableCell>{lineName}</TableCell>
+                    <TableCell>{carrierName}</TableCell>
                     <TableCell>{formatDate(policy.end_date)}</TableCell>
                     <TableCell>{policy.premium_gross.toFixed(2)} €</TableCell>
                     <TableCell>
@@ -218,12 +221,29 @@ export default async function PoliciesPage({
                         {STATUS_LABELS[policy.status] ?? policy.status}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      <QuickView title={policy.policy_number} fullHref={`/dashboard/policies/${policy.id}`}>
+                        <QuickViewField label="Πελάτης" value={name} />
+                        <QuickViewField label="Κλάδος" value={lineName} />
+                        <QuickViewField label="Εταιρεία" value={carrierName} />
+                        <QuickViewField label="Λήξη" value={formatDate(policy.end_date)} />
+                        <QuickViewField label="Ασφάλιστρο" value={`${policy.premium_gross.toFixed(2)} €`} />
+                        <QuickViewField
+                          label="Κατάσταση"
+                          value={
+                            <Badge variant={policyStatusVariant(policy.status)}>
+                              {STATUS_LABELS[policy.status] ?? policy.status}
+                            </Badge>
+                          }
+                        />
+                      </QuickView>
+                    </TableCell>
                   </TableRow>
                 );
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   Δεν βρέθηκαν συμβόλαια.
                 </TableCell>
               </TableRow>

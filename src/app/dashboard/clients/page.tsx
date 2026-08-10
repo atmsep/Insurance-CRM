@@ -21,6 +21,7 @@ import {
   BulkActionsBar,
 } from "./bulk-actions-bar";
 import { deactivateClients } from "./actions";
+import { QuickView, QuickViewField } from "@/components/quick-view";
 
 const PAGE_SIZE = 20;
 
@@ -104,6 +105,7 @@ export default async function ClientsPage({
                 <TableHead>Τηλέφωνο</TableHead>
                 <TableHead>Πόλη</TableHead>
                 <TableHead>Κατάσταση</TableHead>
+                <TableHead className="w-8" />
               </TableRow>
               <TableRow>
                 <TableHead className="pb-2" />
@@ -156,33 +158,52 @@ export default async function ClientsPage({
                     Ανενεργοί
                   </label>
                 </TableHead>
+                <TableHead className="pb-2" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {clients?.length ? (
-                clients.map((client) => (
-                  <TableRow key={client.id} className="cursor-pointer">
-                    <TableCell>
-                      <BulkSelectCheckbox id={client.id} />
-                    </TableCell>
-                    <TableCell>
-                      <Link href={`/dashboard/clients/${client.id}`} className="hover:underline">
-                        {resolveClientName(client as never)}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{client.afm ?? "—"}</TableCell>
-                    <TableCell>{client.phone_mobile ?? "—"}</TableCell>
-                    <TableCell>{client.address_city ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant={client.is_active ? "success" : "outline"}>
-                        {client.is_active ? "Ενεργός" : "Ανενεργός"}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))
+                clients.map((client) => {
+                  const name = resolveClientName(client as never);
+                  return (
+                    <TableRow key={client.id} className="cursor-pointer">
+                      <TableCell>
+                        <BulkSelectCheckbox id={client.id} />
+                      </TableCell>
+                      <TableCell>
+                        <Link href={`/dashboard/clients/${client.id}`} className="hover:underline">
+                          {name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>{client.afm ?? "—"}</TableCell>
+                      <TableCell>{client.phone_mobile ?? "—"}</TableCell>
+                      <TableCell>{client.address_city ?? "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant={client.is_active ? "success" : "outline"}>
+                          {client.is_active ? "Ενεργός" : "Ανενεργός"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <QuickView title={name} fullHref={`/dashboard/clients/${client.id}`}>
+                          <QuickViewField label="ΑΦΜ" value={client.afm} />
+                          <QuickViewField label="Τηλέφωνο" value={client.phone_mobile} />
+                          <QuickViewField label="Πόλη" value={client.address_city} />
+                          <QuickViewField
+                            label="Κατάσταση"
+                            value={
+                              <Badge variant={client.is_active ? "success" : "outline"}>
+                                {client.is_active ? "Ενεργός" : "Ανενεργός"}
+                              </Badge>
+                            }
+                          />
+                        </QuickView>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     Δεν βρέθηκαν πελάτες.
                   </TableCell>
                 </TableRow>
