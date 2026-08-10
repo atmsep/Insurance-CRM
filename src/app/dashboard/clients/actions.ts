@@ -7,7 +7,7 @@ import { requireAgencyUser } from "@/lib/dal";
 import type { ClientType, InteractionType } from "@/lib/database.types";
 import { isValidAfm, isValidAmka, isValidEmail } from "@/lib/validation";
 
-export type ClientFormState = { error: string } | undefined;
+export type ClientFormState = { error: string; field?: string } | undefined;
 
 export async function searchClients(
   query: string,
@@ -46,13 +46,13 @@ export async function createClientRecord(
   const amka = (formData.get("amka") as string) || null;
 
   if (afm && !isValidAfm(afm)) {
-    return { error: "Το ΑΦΜ δεν είναι έγκυρο (9 ψηφία, λάθος ψηφίο ελέγχου)." };
+    return { error: "Το ΑΦΜ δεν είναι έγκυρο (9 ψηφία, λάθος ψηφίο ελέγχου).", field: "afm" };
   }
   if (email && !isValidEmail(email)) {
-    return { error: "Το email δεν είναι έγκυρο." };
+    return { error: "Το email δεν είναι έγκυρο.", field: "email" };
   }
   if (amka && !isValidAmka(amka)) {
-    return { error: "Το ΑΜΚΑ πρέπει να έχει ακριβώς 11 ψηφία." };
+    return { error: "Το ΑΜΚΑ πρέπει να έχει ακριβώς 11 ψηφία.", field: "amka" };
   }
 
   const common = {
@@ -227,14 +227,22 @@ async function afmExists(
   return !!data;
 }
 
-export async function updateClientNotes(clientId: string, formData: FormData) {
+export async function updateClientNotes(
+  clientId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
   await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
-  await supabase
+  const email = (formData.get("email") as string) || null;
+  if (email && !isValidEmail(email)) {
+    return { error: "Το email δεν είναι έγκυρο." };
+  }
+
+  const { error: clientError } = await supabase
     .from("clients")
     .update({
-      email: (formData.get("email") as string) || null,
+      email,
       phone_mobile: (formData.get("phone_mobile") as string) || null,
       phone_landline: (formData.get("phone_landline") as string) || null,
       address_city: (formData.get("address_city") as string) || null,
@@ -247,8 +255,12 @@ export async function updateClientNotes(clientId: string, formData: FormData) {
     })
     .eq("id", clientId);
 
+  if (clientError) {
+    return { error: "Σφάλμα κατά την αποθήκευση: " + clientError.message };
+  }
+
   if (formData.get("client_type") === "individual") {
-    await supabase
+    const { error: individualError } = await supabase
       .from("client_individuals")
       .update({
         father_name: (formData.get("father_name") as string) || null,
@@ -256,6 +268,10 @@ export async function updateClientNotes(clientId: string, formData: FormData) {
         occupation: (formData.get("occupation") as string) || null,
       })
       .eq("client_id", clientId);
+
+    if (individualError) {
+      return { error: "Σφάλμα κατά την αποθήκευση: " + individualError.message };
+    }
   }
 
   revalidatePath(`/dashboard/clients/${clientId}`);

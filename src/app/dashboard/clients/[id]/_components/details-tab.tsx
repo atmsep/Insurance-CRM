@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ReferrerField } from "../../referrer-field";
 import { EntitySelect } from "@/components/entity-select";
+import { useFormValues } from "@/hooks/use-form-values";
 
 type Client = {
   id: string;
@@ -53,10 +55,24 @@ export function DetailsTab({
   totalBilled: number;
   totalPaid: number;
   outstanding: number;
-  updateAction: (formData: FormData) => void | Promise<void>;
+  updateAction: (formData: FormData) => Promise<{ error: string } | undefined>;
 }) {
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const agentLabel = agents.find((a) => a.id === client.assigned_agent_id)?.full_name;
+
+  const { field } = useFormValues({
+    father_name: client.client_individuals?.father_name ?? "",
+    date_of_birth: client.client_individuals?.date_of_birth ?? "",
+    occupation: client.client_individuals?.occupation ?? "",
+    email: client.email ?? "",
+    phone_mobile: client.phone_mobile ?? "",
+    phone_landline: client.phone_landline ?? "",
+    address_city: client.address_city ?? "",
+    iban: client.iban ?? "",
+    referral_source: client.referral_source ?? "",
+    notes: client.notes ?? "",
+  });
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -73,8 +89,15 @@ export function DetailsTab({
           {isEditing ? (
             <form
               action={async (formData) => {
-                await updateAction(formData);
-                setIsEditing(false);
+                setIsSaving(true);
+                const result = await updateAction(formData);
+                setIsSaving(false);
+                if (result?.error) {
+                  toast.error(result.error);
+                } else {
+                  toast.success("Οι αλλαγές αποθηκεύτηκαν.");
+                  setIsEditing(false);
+                }
               }}
               className="flex flex-col gap-4"
             >
@@ -83,55 +106,38 @@ export function DetailsTab({
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="father_name">Πατρώνυμο</Label>
-                    <Input
-                      id="father_name"
-                      name="father_name"
-                      defaultValue={client.client_individuals?.father_name ?? ""}
-                    />
+                    <Input id="father_name" name="father_name" {...field("father_name")} />
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="date_of_birth">Ημερομηνία γέννησης</Label>
-                    <Input
-                      id="date_of_birth"
-                      name="date_of_birth"
-                      type="date"
-                      defaultValue={client.client_individuals?.date_of_birth ?? ""}
-                    />
+                    <Input id="date_of_birth" name="date_of_birth" type="date" {...field("date_of_birth")} />
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="occupation">Επάγγελμα</Label>
-                    <Input
-                      id="occupation"
-                      name="occupation"
-                      defaultValue={client.client_individuals?.occupation ?? ""}
-                    />
+                    <Input id="occupation" name="occupation" {...field("occupation")} />
                   </div>
                 </div>
               )}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" name="email" type="email" defaultValue={client.email ?? ""} />
+                  <Input id="email" name="email" type="email" {...field("email")} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="phone_mobile">Κινητό τηλέφωνο</Label>
-                  <Input id="phone_mobile" name="phone_mobile" defaultValue={client.phone_mobile ?? ""} />
+                  <Input id="phone_mobile" name="phone_mobile" {...field("phone_mobile")} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="phone_landline">Σταθερό τηλέφωνο</Label>
-                  <Input
-                    id="phone_landline"
-                    name="phone_landline"
-                    defaultValue={client.phone_landline ?? ""}
-                  />
+                  <Input id="phone_landline" name="phone_landline" {...field("phone_landline")} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="address_city">Πόλη</Label>
-                  <Input id="address_city" name="address_city" defaultValue={client.address_city ?? ""} />
+                  <Input id="address_city" name="address_city" {...field("address_city")} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="iban">IBAN</Label>
-                  <Input id="iban" name="iban" defaultValue={client.iban ?? ""} />
+                  <Input id="iban" name="iban" {...field("iban")} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="referral_source">Πηγή σύστασης</Label>
@@ -139,7 +145,7 @@ export function DetailsTab({
                     id="referral_source"
                     name="referral_source"
                     placeholder="π.χ. Facebook, Google..."
-                    defaultValue={client.referral_source ?? ""}
+                    {...field("referral_source")}
                   />
                 </div>
                 <ReferrerField
@@ -158,10 +164,10 @@ export function DetailsTab({
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="notes">Σημειώσεις</Label>
-                <Textarea id="notes" name="notes" rows={3} defaultValue={client.notes ?? ""} />
+                <Textarea id="notes" name="notes" rows={3} {...field("notes")} />
               </div>
-              <Button type="submit" className="w-fit">
-                Αποθήκευση
+              <Button type="submit" disabled={isSaving} className="w-fit">
+                {isSaving ? "Αποθήκευση..." : "Αποθήκευση"}
               </Button>
             </form>
           ) : (

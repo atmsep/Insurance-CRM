@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,7 @@ import {
 import { createClientRecord, type ClientFormState } from "./actions";
 import { ReferrerField } from "./referrer-field";
 import { EntitySelect } from "@/components/entity-select";
+import { useFormValues } from "@/hooks/use-form-values";
 
 export function ClientForm({ agents }: { agents: { id: string; full_name: string }[] }) {
   const [state, formAction, pending] = useActionState<ClientFormState, FormData>(
@@ -22,6 +24,11 @@ export function ClientForm({ agents }: { agents: { id: string; full_name: string
     undefined,
   );
   const [clientType, setClientType] = useState<"individual" | "legal_entity">("individual");
+  const { field } = useFormValues();
+
+  useEffect(() => {
+    if (state?.error) toast.error(state.error);
+  }, [state]);
 
   return (
     <form action={formAction} className="flex max-w-2xl flex-col gap-6">
@@ -46,30 +53,49 @@ export function ClientForm({ agents }: { agents: { id: string; full_name: string
 
       {clientType === "individual" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Όνομα" name="first_name" required />
-          <Field label="Επώνυμο" name="last_name" required />
-          <Field label="Πατρώνυμο" name="father_name" />
-          <Field label="Ημερομηνία γέννησης" name="date_of_birth" type="date" />
-          <Field label="Επάγγελμα" name="occupation" />
-          <Field label="ΑΜΚΑ" name="amka" />
+          <Field label="Όνομα" name="first_name" required field={field} />
+          <Field label="Επώνυμο" name="last_name" required field={field} />
+          <Field label="Πατρώνυμο" name="father_name" field={field} />
+          <Field label="Ημερομηνία γέννησης" name="date_of_birth" type="date" field={field} />
+          <Field label="Επάγγελμα" name="occupation" field={field} />
+          <Field
+            label="ΑΜΚΑ"
+            name="amka"
+            field={field}
+            invalid={state?.field === "amka"}
+            errorMessage={state?.field === "amka" ? state.error : undefined}
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Επωνυμία" name="company_name" required className="sm:col-span-2" />
-          <Field label="ΚΑΔ" name="kad" />
-          <Field label="Νόμιμος εκπρόσωπος" name="legal_representative_name" />
+          <Field label="Επωνυμία" name="company_name" required className="sm:col-span-2" field={field} />
+          <Field label="ΚΑΔ" name="kad" field={field} />
+          <Field label="Νόμιμος εκπρόσωπος" name="legal_representative_name" field={field} />
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="ΑΦΜ" name="afm" />
-        <Field label="ΔΟΥ" name="doy" />
-        <Field label="Email" name="email" type="email" />
-        <Field label="Κινητό τηλέφωνο" name="phone_mobile" />
-        <Field label="Σταθερό τηλέφωνο" name="phone_landline" />
-        <Field label="Πόλη" name="address_city" />
-        <Field label="IBAN" name="iban" />
-        <Field label="Πηγή σύστασης" name="referral_source" />
+        <Field
+          label="ΑΦΜ"
+          name="afm"
+          field={field}
+          invalid={state?.field === "afm"}
+          errorMessage={state?.field === "afm" ? state.error : undefined}
+        />
+        <Field label="ΔΟΥ" name="doy" field={field} />
+        <Field
+          label="Email"
+          name="email"
+          type="email"
+          field={field}
+          invalid={state?.field === "email"}
+          errorMessage={state?.field === "email" ? state.error : undefined}
+        />
+        <Field label="Κινητό τηλέφωνο" name="phone_mobile" field={field} />
+        <Field label="Σταθερό τηλέφωνο" name="phone_landline" field={field} />
+        <Field label="Πόλη" name="address_city" field={field} />
+        <Field label="IBAN" name="iban" field={field} />
+        <Field label="Πηγή σύστασης" name="referral_source" field={field} />
         <ReferrerField />
         <EntitySelect
           label="Συνεργάτης"
@@ -81,7 +107,7 @@ export function ClientForm({ agents }: { agents: { id: string; full_name: string
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="notes">Σημειώσεις</Label>
-        <Textarea id="notes" name="notes" rows={3} />
+        <Textarea id="notes" name="notes" rows={3} {...field("notes")} />
       </div>
 
       {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
@@ -99,17 +125,31 @@ function Field({
   type = "text",
   required,
   className,
+  field,
+  invalid,
+  errorMessage,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
   className?: string;
+  field: (name: string) => { value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void };
+  invalid?: boolean;
+  errorMessage?: string;
 }) {
   return (
     <div className={`flex flex-col gap-2 ${className ?? ""}`}>
       <Label htmlFor={name}>{label}</Label>
-      <Input id={name} name={name} type={type} required={required} />
+      <Input
+        id={name}
+        name={name}
+        type={type}
+        required={required}
+        aria-invalid={invalid || undefined}
+        {...field(name)}
+      />
+      {errorMessage && <p className="text-xs text-destructive">{errorMessage}</p>}
     </div>
   );
 }

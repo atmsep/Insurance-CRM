@@ -240,11 +240,11 @@ export async function updatePolicyDetails(
   hasProperty: boolean,
   hasLifeHealth: boolean,
   formData: FormData,
-) {
+): Promise<{ error: string } | undefined> {
   await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
-  await supabase
+  const { error: policyError } = await supabase
     .from("policies")
     .update({
       start_date: str(formData, "start_date") ?? undefined,
@@ -258,8 +258,12 @@ export async function updatePolicyDetails(
     })
     .eq("id", policyId);
 
+  if (policyError) {
+    return { error: "Σφάλμα κατά την αποθήκευση: " + policyError.message };
+  }
+
   if (hasVehicle) {
-    await supabase
+    const { error } = await supabase
       .from("policy_vehicle_details")
       .update({
         plate_number: str(formData, "plate_number"),
@@ -268,10 +272,11 @@ export async function updatePolicyDetails(
         manufacture_year: num(formData, "manufacture_year"),
       })
       .eq("policy_id", policyId);
+    if (error) return { error: "Σφάλμα κατά την αποθήκευση στοιχείων οχήματος: " + error.message };
   }
 
   if (hasProperty) {
-    await supabase
+    const { error } = await supabase
       .from("policy_property_details")
       .update({
         address_street: str(formData, "address_street"),
@@ -280,16 +285,18 @@ export async function updatePolicyDetails(
         commercial_value: num(formData, "commercial_value"),
       })
       .eq("policy_id", policyId);
+    if (error) return { error: "Σφάλμα κατά την αποθήκευση στοιχείων ακινήτου: " + error.message };
   }
 
   if (hasLifeHealth) {
-    await supabase
+    const { error } = await supabase
       .from("policy_life_health_details")
       .update({
         coverage_type: str(formData, "coverage_type"),
         sum_insured: num(formData, "sum_insured"),
       })
       .eq("policy_id", policyId);
+    if (error) return { error: "Σφάλμα κατά την αποθήκευση στοιχείων κάλυψης: " + error.message };
   }
 
   revalidatePath(`/dashboard/policies/${policyId}`);
