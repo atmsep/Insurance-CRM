@@ -291,6 +291,40 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["incoming_calls"]["Row"]>;
       };
+      error_log: {
+        Row: {
+          id: string;
+          context: string;
+          message: string;
+          stack: string | null;
+          url: string | null;
+          actor_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["error_log"]["Row"]> & {
+          context: string;
+          message: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["error_log"]["Row"]>;
+      };
+      activity_log: {
+        Row: {
+          id: string;
+          entity_type: string;
+          entity_id: string;
+          action: string;
+          description: string;
+          actor_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["activity_log"]["Row"]> & {
+          entity_type: string;
+          entity_id: string;
+          action: string;
+          description: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["activity_log"]["Row"]>;
+      };
       email_templates: {
         Row: {
           id: string;
