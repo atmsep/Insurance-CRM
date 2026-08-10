@@ -9,6 +9,13 @@ import { Pagination } from "@/components/ui/pagination";
 import { ListPageHeader } from "@/components/list-page-header";
 import { FilterSelect } from "@/components/ui/filter-select";
 import {
+  BulkSelectionProvider,
+  BulkSelectCheckbox,
+  BulkSelectAllCheckbox,
+} from "@/components/bulk-selection";
+import { BulkStatusBar } from "@/components/bulk-status-bar";
+import { bulkUpdateClaimStatus } from "./actions";
+import {
   Table,
   TableBody,
   TableCell,
@@ -80,10 +87,14 @@ export default async function ClaimsPage({
         }
       />
 
+      <BulkSelectionProvider>
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                <BulkSelectAllCheckbox ids={(claims ?? []).map((c) => c.id)} />
+              </TableHead>
               <TableHead>Αριθμός ζημιάς</TableHead>
               <TableHead>Συμβόλαιο</TableHead>
               <TableHead>Πελάτης</TableHead>
@@ -92,6 +103,7 @@ export default async function ClaimsPage({
               <TableHead>Κατάσταση</TableHead>
             </TableRow>
             <TableRow>
+              <TableHead className="pb-2" />
               <TableHead className="pb-2">
                 <Input
                   form="claim-filters"
@@ -131,6 +143,9 @@ export default async function ClaimsPage({
                 return (
                   <TableRow key={claim.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
+                      <BulkSelectCheckbox id={claim.id} />
+                    </TableCell>
+                    <TableCell>
                       <Link href={`/dashboard/claims/${claim.id}`} className="hover:underline">
                         {claim.claim_number ?? "—"}
                       </Link>
@@ -153,7 +168,7 @@ export default async function ClaimsPage({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   Δεν βρέθηκαν ζημιές.
                 </TableCell>
               </TableRow>
@@ -161,6 +176,13 @@ export default async function ClaimsPage({
           </TableBody>
         </Table>
       </div>
+
+      <BulkStatusBar
+        statusOptions={Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))}
+        applyAction={bulkUpdateClaimStatus}
+        exportBasePath="/dashboard/claims/export"
+      />
+      </BulkSelectionProvider>
 
       <form id="claim-filters" className="flex flex-wrap items-center justify-between gap-3">
         {open && <input type="hidden" name="open" value={open} />}

@@ -10,6 +10,13 @@ import { ListPageHeader } from "@/components/list-page-header";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { QuickView, QuickViewField } from "@/components/quick-view";
 import {
+  BulkSelectionProvider,
+  BulkSelectCheckbox,
+  BulkSelectAllCheckbox,
+} from "@/components/bulk-selection";
+import { BulkStatusBar } from "@/components/bulk-status-bar";
+import { bulkUpdatePolicyStatus } from "./actions";
+import {
   Table,
   TableBody,
   TableCell,
@@ -124,10 +131,14 @@ export default async function PoliciesPage({
         }
       />
 
+      <BulkSelectionProvider>
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                <BulkSelectAllCheckbox ids={(policies ?? []).map((p) => p.id)} />
+              </TableHead>
               <TableHead>Αριθμός</TableHead>
               <TableHead>Πελάτης</TableHead>
               <TableHead>Κλάδος</TableHead>
@@ -138,6 +149,7 @@ export default async function PoliciesPage({
               <TableHead className="w-8" />
             </TableRow>
             <TableRow>
+              <TableHead className="pb-2" />
               <TableHead className="pb-2">
                 <Input
                   form="policy-filters"
@@ -208,6 +220,9 @@ export default async function PoliciesPage({
                 return (
                   <TableRow key={policy.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
+                      <BulkSelectCheckbox id={policy.id} />
+                    </TableCell>
+                    <TableCell>
                       <Link href={`/dashboard/policies/${policy.id}`} className="hover:underline">
                         {policy.policy_number}
                       </Link>
@@ -252,7 +267,7 @@ export default async function PoliciesPage({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
                   Δεν βρέθηκαν συμβόλαια.
                 </TableCell>
               </TableRow>
@@ -260,6 +275,13 @@ export default async function PoliciesPage({
           </TableBody>
         </Table>
       </div>
+
+      <BulkStatusBar
+        statusOptions={Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))}
+        applyAction={bulkUpdatePolicyStatus}
+        exportBasePath="/dashboard/policies/export"
+      />
+      </BulkSelectionProvider>
 
       <form id="policy-filters" className="flex flex-wrap items-center justify-between gap-3">
         {expiring && <input type="hidden" name="expiring" value={expiring} />}

@@ -21,6 +21,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
   const open = searchParams.get("open");
+  const ids = searchParams.get("ids");
 
   let query = supabase
     .from("client_tickets")
@@ -30,8 +31,12 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false })
     .limit(5000);
 
-  if (status) query = query.eq("status", status);
-  else if (open) query = query.not("status", "in", "(resolved,closed)");
+  if (ids) {
+    query = query.in("id", ids.split(","));
+  } else {
+    if (status) query = query.eq("status", status);
+    else if (open) query = query.not("status", "in", "(resolved,closed)");
+  }
 
   const { data: tickets } = await query;
 

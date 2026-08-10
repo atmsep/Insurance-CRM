@@ -6,6 +6,13 @@ import { Pagination } from "@/components/ui/pagination";
 import { ListPageHeader } from "@/components/list-page-header";
 import { FilterSelect } from "@/components/ui/filter-select";
 import {
+  BulkSelectionProvider,
+  BulkSelectCheckbox,
+  BulkSelectAllCheckbox,
+} from "@/components/bulk-selection";
+import { BulkStatusBar } from "@/components/bulk-status-bar";
+import { bulkUpdateTicketStatus } from "./actions";
+import {
   Table,
   TableBody,
   TableCell,
@@ -76,10 +83,14 @@ export default async function TicketsPage({
         }
       />
 
+      <BulkSelectionProvider>
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                <BulkSelectAllCheckbox ids={(tickets ?? []).map((t) => t.id)} />
+              </TableHead>
               <TableHead>Πελάτης</TableHead>
               <TableHead>Θέμα</TableHead>
               <TableHead>Ανάθεση</TableHead>
@@ -88,6 +99,7 @@ export default async function TicketsPage({
               <TableHead>Κατάσταση</TableHead>
             </TableRow>
             <TableRow>
+              <TableHead className="pb-2" />
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
@@ -117,6 +129,9 @@ export default async function TicketsPage({
                 return (
                   <TableRow key={ticket.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
+                      <BulkSelectCheckbox id={ticket.id} />
+                    </TableCell>
+                    <TableCell>
                       <Link href={`/dashboard/clients/${ticket.client_id}`} className="hover:underline">
                         {name}
                       </Link>
@@ -139,7 +154,7 @@ export default async function TicketsPage({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   Δεν υπάρχουν αιτήματα.
                 </TableCell>
               </TableRow>
@@ -147,6 +162,13 @@ export default async function TicketsPage({
           </TableBody>
         </Table>
       </div>
+
+      <BulkStatusBar
+        statusOptions={Object.entries(TICKET_STATUS_LABELS).map(([value, label]) => ({ value, label }))}
+        applyAction={bulkUpdateTicketStatus}
+        exportBasePath="/dashboard/tickets/export"
+      />
+      </BulkSelectionProvider>
 
       <form id="ticket-filters" className="flex flex-wrap items-center justify-between gap-3">
         {open && <input type="hidden" name="open" value={open} />}

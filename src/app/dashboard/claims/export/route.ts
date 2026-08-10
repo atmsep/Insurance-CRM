@@ -19,6 +19,7 @@ export async function GET(request: Request) {
   const q = searchParams.get("q");
   const status = searchParams.get("status");
   const open = searchParams.get("open");
+  const ids = searchParams.get("ids");
 
   let query = supabase
     .from("claims")
@@ -28,9 +29,13 @@ export async function GET(request: Request) {
     .order("date_of_loss", { ascending: false })
     .limit(5000);
 
-  if (q) query = query.ilike("claim_number", `%${q}%`);
-  if (status) query = query.eq("status", status);
-  else if (open) query = query.not("status", "in", "(paid,closed)");
+  if (ids) {
+    query = query.in("id", ids.split(","));
+  } else {
+    if (q) query = query.ilike("claim_number", `%${q}%`);
+    if (status) query = query.eq("status", status);
+    else if (open) query = query.not("status", "in", "(paid,closed)");
+  }
 
   const { data: claims } = await query;
 

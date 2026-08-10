@@ -22,6 +22,7 @@ export async function GET(request: Request) {
   const status = searchParams.get("status");
   const risk = searchParams.get("risk");
   const expiring = searchParams.get("expiring");
+  const ids = searchParams.get("ids");
 
   let query = supabase
     .from("policies")
@@ -32,18 +33,22 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false })
     .limit(5000);
 
-  if (expiring) {
-    const days = Number(expiring) || 30;
-    const until = new Date();
-    until.setDate(until.getDate() + days);
-    query = query.eq("status", "active").lte("end_date", until.toISOString().slice(0, 10));
+  if (ids) {
+    query = query.in("id", ids.split(","));
+  } else {
+    if (expiring) {
+      const days = Number(expiring) || 30;
+      const until = new Date();
+      until.setDate(until.getDate() + days);
+      query = query.eq("status", "active").lte("end_date", until.toISOString().slice(0, 10));
+    }
+    if (q) query = query.ilike("policy_number", `%${q}%`);
+    if (client) query = query.ilike("clients.display_name", `%${client}%`);
+    if (line) query = query.eq("insurance_line_id", line);
+    if (carrier) query = query.eq("carrier_id", carrier);
+    if (status) query = query.eq("status", status);
+    if (risk) query = query.ilike("risk_label", `%${risk}%`);
   }
-  if (q) query = query.ilike("policy_number", `%${q}%`);
-  if (client) query = query.ilike("clients.display_name", `%${client}%`);
-  if (line) query = query.eq("insurance_line_id", line);
-  if (carrier) query = query.eq("carrier_id", carrier);
-  if (status) query = query.eq("status", status);
-  if (risk) query = query.ilike("risk_label", `%${risk}%`);
 
   const { data: policies } = await query;
 
