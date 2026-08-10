@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
+import { logActivity } from "@/lib/activity-log";
 import type { PaymentFrequency } from "@/lib/database.types";
 
 export type PolicyFormState = { error: string; field?: string } | undefined;
@@ -236,15 +237,51 @@ export async function createPolicy(
     return { error: "Σφάλμα κατά την αποθήκευση στοιχείων κλάδου: " + branchError };
   }
 
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policy.id,
+    action: renewFromPolicyId ? "renewed" : "created",
+    description: renewFromPolicyId
+      ? `Ανανεώθηκε το συμβόλαιο (περίοδος #${renewalNumber}).`
+      : "Δημιουργήθηκε το συμβόλαιο.",
+    actorId: agencyUser.id,
+  });
+
   revalidatePath("/dashboard/policies");
   redirect(`/dashboard/policies/${policy.id}?toast=${encodeURIComponent("Το συμβόλαιο δημιουργήθηκε.")}`);
 }
 
 export async function updatePolicyStatus(policyId: string, status: string) {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
   await supabase.from("policies").update({ status }).eq("id", policyId);
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "status_changed",
+    description: `Η κατάσταση άλλαξε σε "${status}".`,
+    actorId: agencyUser.id,
+  });
   revalidatePath(`/dashboard/policies/${policyId}`);
+}
+
+export async function bulkUpdatePolicyStatus(policyIds: string[], status: string) {
+  const agencyUser = await requireAgencyUser();
+  if (policyIds.length === 0) return;
+  const supabase = await createSupabaseClient();
+  await supabase.from("policies").update({ status }).in("id", policyIds);
+  await Promise.all(
+    policyIds.map((policyId) =>
+      logActivity(supabase, {
+        entityType: "policy",
+        entityId: policyId,
+        action: "status_changed",
+        description: `Η κατάσταση άλλαξε σε "${status}" (μαζική ενέργεια).`,
+        actorId: agencyUser.id,
+      }),
+    ),
+  );
+  revalidatePath("/dashboard/policies");
 }
 
 export async function createInstallment(policyId: string, formData: FormData) {
@@ -273,7 +310,7 @@ export async function updatePolicyDetails(
   hasLifeHealth: boolean,
   formData: FormData,
 ): Promise<{ error: string } | undefined> {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
   const { error: policyError } = await supabase
@@ -331,6 +368,14 @@ export async function updatePolicyDetails(
     if (error) return { error: "Σφάλμα κατά την αποθήκευση στοιχείων κάλυψης: " + error.message };
   }
 
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "updated",
+    description: "Ενημερώθηκαν τα στοιχεία του συμβολαίου.",
+    actorId: agencyUser.id,
+  });
+
   revalidatePath(`/dashboard/policies/${policyId}`);
 }
 
@@ -372,6 +417,14 @@ export async function collectInstallmentPayment(
     })
     .eq("id", installmentId);
 
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "payment_collected",
+    description: `Εισπράχθηκαν ${paidAmount.toFixed(2)} € δόσης.`,
+    actorId: agencyUser.id,
+  });
+
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/installments");
   revalidatePath("/dashboard/cash-register");
@@ -404,6 +457,14 @@ export async function cancelInstallmentPayment(
       cancellation_reason: reason,
     })
     .eq("id", installmentId);
+
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "payment_cancelled",
+    description: `Ακυρώθηκε είσπραξη δόσης: ${reason}`,
+    actorId: agencyUser.id,
+  });
 
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/installments");

@@ -15,6 +15,7 @@ import { InstallmentsTab } from "./_components/installments-tab";
 import { ClaimsTab } from "./_components/claims-tab";
 import { CommissionsTab } from "./_components/commissions-tab";
 import { RenewalHistory } from "./_components/renewal-history";
+import { ActivityFeed } from "@/components/activity-feed";
 import type { PolicyStatus } from "@/lib/database.types";
 
 export default async function PolicyDetailPage({
@@ -69,6 +70,7 @@ export default async function PolicyDetailPage({
     { data: brokerOffices },
     { data: emailTemplates },
     { data: chainTerms },
+    { data: activity },
   ] = await Promise.all([
     line?.requires_vehicle_details
       ? supabase.from("policy_vehicle_details").select("*").eq("policy_id", id).maybeSingle()
@@ -107,6 +109,13 @@ export default async function PolicyDetailPage({
       .select("id, renewal_number, start_date, end_date, status")
       .eq("policy_group_id", policy.policy_group_id)
       .order("renewal_number", { ascending: true }),
+    supabase
+      .from("activity_log")
+      .select("id, description, created_at, agency_users(full_name)")
+      .eq("entity_type", "policy")
+      .eq("entity_id", id)
+      .order("created_at", { ascending: false })
+      .limit(50),
   ]);
 
   const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
@@ -150,6 +159,7 @@ export default async function PolicyDetailPage({
           <TabsTrigger value="claims">Ζημιές</TabsTrigger>
           <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
+          <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="flex flex-col gap-4 pt-4">
@@ -190,6 +200,10 @@ export default async function PolicyDetailPage({
 
         <TabsContent value="documents" className="pt-4">
           <DocumentsSection entityType="policy" entityId={id} documents={documents} />
+        </TabsContent>
+
+        <TabsContent value="activity" className="pt-4">
+          <ActivityFeed entries={(activity ?? []) as never} />
         </TabsContent>
       </Tabs>
     </div>

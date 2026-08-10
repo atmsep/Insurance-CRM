@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
+import { logActivity } from "@/lib/activity-log";
 
 export type ClaimFormState = { error: string } | undefined;
 
@@ -56,12 +57,46 @@ export async function createClaim(
 }
 
 export async function updateClaimStatus(claimId: string, policyId: string, status: string) {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
   await supabase.from("claims").update({ status }).eq("id", claimId);
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "claim_status_changed",
+    description: `Η κατάσταση μιας ζημιάς άλλαξε σε "${status}".`,
+    actorId: agencyUser.id,
+  });
   revalidatePath(`/dashboard/claims/${claimId}`);
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/claims");
+}
+
+export async function bulkUpdateClaimStatus(claimIds: string[], status: string) {
+  const agencyUser = await requireAgencyUser();
+  if (claimIds.length === 0) return;
+  const supabase = await createSupabaseClient();
+
+  const { data: claims } = await supabase.from("claims").select("id, policy_id").in("id", claimIds);
+
+  await supabase.from("claims").update({ status }).in("id", claimIds);
+
+  await Promise.all(
+    (claims ?? []).map((claim) =>
+      logActivity(supabase, {
+        entityType: "policy",
+        entityId: claim.policy_id,
+        action: "claim_status_changed",
+        description: `Η κατάσταση μιας ζημιάς άλλαξε σε "${status}" (μαζική ενέργεια).`,
+        actorId: agencyUser.id,
+      }),
+    ),
+  );
+
+  revalidatePath("/dashboard/claims");
+  for (const claim of claims ?? []) {
+    revalidatePath(`/dashboard/policies/${claim.policy_id}`);
+  }
 }
 
 export async function updateClaimDetails(claimId: string, policyId: string, formData: FormData) {

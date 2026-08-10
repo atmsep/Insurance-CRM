@@ -6,6 +6,7 @@ import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import type { ClientType, InteractionType } from "@/lib/database.types";
 import { isValidAfm, isValidAmka, isValidEmail } from "@/lib/validation";
+import { logActivity } from "@/lib/activity-log";
 
 export type ClientFormState = { error: string; field?: string } | undefined;
 
@@ -105,6 +106,14 @@ export async function createClientRecord(
     await supabase.from("clients").delete().eq("id", client.id);
     return { error: "Σφάλμα κατά την αποθήκευση στοιχείων: " + subtypeResult.error.message };
   }
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: client.id,
+    action: "created",
+    description: "Δημιουργήθηκε ο πελάτης.",
+    actorId: agencyUser.id,
+  });
 
   revalidatePath("/dashboard/clients");
   redirect(`/dashboard/clients/${client.id}?toast=${encodeURIComponent("Ο πελάτης δημιουργήθηκε.")}`);
@@ -231,7 +240,7 @@ export async function updateClientNotes(
   clientId: string,
   formData: FormData,
 ): Promise<{ error: string } | undefined> {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
   const email = (formData.get("email") as string) || null;
@@ -274,22 +283,48 @@ export async function updateClientNotes(
     }
   }
 
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: clientId,
+    action: "updated",
+    description: "Ενημερώθηκαν τα στοιχεία επικοινωνίας.",
+    actorId: agencyUser.id,
+  });
+
   revalidatePath(`/dashboard/clients/${clientId}`);
 }
 
 export async function toggleClientActive(clientId: string, isActive: boolean) {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
   await supabase.from("clients").update({ is_active: isActive }).eq("id", clientId);
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: clientId,
+    action: isActive ? "activated" : "deactivated",
+    description: isActive ? "Ο πελάτης ενεργοποιήθηκε." : "Ο πελάτης απενεργοποιήθηκε.",
+    actorId: agencyUser.id,
+  });
   revalidatePath(`/dashboard/clients/${clientId}`);
   revalidatePath("/dashboard/clients");
 }
 
 export async function deactivateClients(clientIds: string[]) {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   if (clientIds.length === 0) return;
   const supabase = await createSupabaseClient();
   await supabase.from("clients").update({ is_active: false }).in("id", clientIds);
+  await Promise.all(
+    clientIds.map((clientId) =>
+      logActivity(supabase, {
+        entityType: "client",
+        entityId: clientId,
+        action: "deactivated",
+        description: "Ο πελάτης απενεργοποιήθηκε (μαζική ενέργεια).",
+        actorId: agencyUser.id,
+      }),
+    ),
+  );
   revalidatePath("/dashboard/clients");
 }
 

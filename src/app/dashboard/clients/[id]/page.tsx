@@ -14,6 +14,7 @@ import { InteractionsTab } from "./_components/interactions-tab";
 import { TicketsTab } from "./_components/tickets-tab";
 import { CommissionsTab } from "./_components/commissions-tab";
 import { TasksTab } from "./_components/tasks-tab";
+import { ActivityFeed } from "@/components/activity-feed";
 
 export default async function ClientDetailPage({
   params,
@@ -42,6 +43,7 @@ export default async function ClientDetailPage({
     { data: agents },
     { data: commissions },
     { data: tasks },
+    { data: activity },
   ] = await Promise.all([
     supabase
       .from("policies")
@@ -76,6 +78,13 @@ export default async function ClientDetailPage({
       .select("id, title, due_date, status, priority")
       .eq("client_id", id)
       .order("due_date", { ascending: true }),
+    supabase
+      .from("activity_log")
+      .select("id, description, created_at, agency_users(full_name)")
+      .eq("entity_type", "client")
+      .eq("entity_id", id)
+      .order("created_at", { ascending: false })
+      .limit(50),
   ]);
 
   // "Billed"/"outstanding" are measured against each policy's actual
@@ -128,6 +137,7 @@ export default async function ClientDetailPage({
           <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
           <TabsTrigger value="tasks">Υπενθυμίσεις</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
+          <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="pt-4">
@@ -164,6 +174,10 @@ export default async function ClientDetailPage({
 
         <TabsContent value="documents" className="pt-4">
           <DocumentsSection entityType="client" entityId={id} documents={documents} />
+        </TabsContent>
+
+        <TabsContent value="activity" className="pt-4">
+          <ActivityFeed entries={(activity ?? []) as never} />
         </TabsContent>
       </Tabs>
     </div>
