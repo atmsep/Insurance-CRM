@@ -17,6 +17,7 @@ import {
 } from "@/components/bulk-selection";
 import { BulkStatusBar } from "@/components/bulk-status-bar";
 import { bulkUpdateClaimStatus } from "./actions";
+import { ClickableRow } from "@/components/clickable-row";
 import {
   Table,
   TableBody,
@@ -130,7 +131,7 @@ export default async function ClaimsPage({
                 const name = resolveClientName(policy?.clients);
 
                 return (
-                  <TableRow key={claim.id} className="cursor-pointer hover:bg-muted/50">
+                  <ClickableRow key={claim.id} href={`/dashboard/claims/${claim.id}`}>
                     <TableCell>
                       <BulkSelectCheckbox id={claim.id} />
                     </TableCell>
@@ -152,7 +153,7 @@ export default async function ClaimsPage({
                         {STATUS_LABELS[claim.status] ?? claim.status}
                       </Badge>
                     </TableCell>
-                  </TableRow>
+                  </ClickableRow>
                 );
               })
             ) : (

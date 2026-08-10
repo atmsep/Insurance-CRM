@@ -23,6 +23,7 @@ import {
 } from "./bulk-actions-bar";
 import { deactivateClients } from "./actions";
 import { QuickView, QuickViewField } from "@/components/quick-view";
+import { ClickableRow } from "@/components/clickable-row";
 import { AdvancedSearchSheet } from "./_components/advanced-search-sheet";
 import { PageSizeSelect } from "./_components/page-size-select";
 import { parseClientFilters, applyClientFilters, needsIndividualJoin, parsePerPage } from "./filters";
@@ -208,7 +209,7 @@ export default async function ClientsPage({
                 clients.map((client) => {
                   const name = resolveClientName(client as never);
                   return (
-                    <TableRow key={client.id} className="cursor-pointer">
+                    <ClickableRow key={client.id} href={`/dashboard/clients/${client.id}`}>
                       <TableCell>
                         <BulkSelectCheckbox id={client.id} />
                       </TableCell>
@@ -242,7 +243,7 @@ export default async function ClientsPage({
                           />
                         </QuickView>
                       </TableCell>
-                    </TableRow>
+                    </ClickableRow>
                   );
                 })
               ) : (

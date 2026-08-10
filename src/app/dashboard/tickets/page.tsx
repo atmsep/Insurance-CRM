@@ -12,6 +12,7 @@ import {
 } from "@/components/bulk-selection";
 import { BulkStatusBar } from "@/components/bulk-status-bar";
 import { bulkUpdateTicketStatus } from "./actions";
+import { ClickableRow } from "@/components/clickable-row";
 import {
   Table,
   TableBody,
@@ -127,7 +128,7 @@ export default async function TicketsPage({
                 const name = resolveClientName(client);
 
                 return (
-                  <TableRow key={ticket.id} className="cursor-pointer hover:bg-muted/50">
+                  <ClickableRow key={ticket.id} href={`/dashboard/clients/${ticket.client_id}`}>
                     <TableCell>
                       <BulkSelectCheckbox id={ticket.id} />
                     </TableCell>
@@ -149,7 +150,7 @@ export default async function TicketsPage({
                         {TICKET_STATUS_LABELS[ticket.status] ?? ticket.status}
                       </Badge>
                     </TableCell>
-                  </TableRow>
+                  </ClickableRow>
                 );
               })
             ) : (

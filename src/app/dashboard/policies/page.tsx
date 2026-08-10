@@ -11,6 +11,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { ListPageHeader } from "@/components/list-page-header";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { QuickView, QuickViewField } from "@/components/quick-view";
+import { ClickableRow } from "@/components/clickable-row";
 import {
   BulkSelectionProvider,
   BulkSelectCheckbox,
@@ -221,7 +222,7 @@ export default async function PoliciesPage({
                 const carrierName = (policy.carriers as unknown as { name: string } | null)?.name;
                 const outstanding = outstandingByPolicy.get(policy.id);
                 return (
-                  <TableRow key={policy.id} className="cursor-pointer hover:bg-muted/50">
+                  <ClickableRow key={policy.id} href={`/dashboard/policies/${policy.id}`}>
                     <TableCell>
                       <BulkSelectCheckbox id={policy.id} />
                     </TableCell>
@@ -286,7 +287,7 @@ export default async function PoliciesPage({
                         />
                       </QuickView>
                     </TableCell>
-                  </TableRow>
+                  </ClickableRow>
                 );
               })
             ) : (
