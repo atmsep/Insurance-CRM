@@ -131,6 +131,7 @@ export default async function ClientDetailPage({
       <Breadcrumbs items={[{ label: "Πελάτες", href: "/dashboard/clients" }, { label: name }]} />
       <ClientHeader
         clientId={id}
+        clientCode={client.client_code}
         name={name}
         clientType={client.client_type}
         afm={client.afm}

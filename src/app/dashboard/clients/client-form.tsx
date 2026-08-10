@@ -94,6 +94,8 @@ export function ClientForm({ agents }: { agents: { id: string; full_name: string
         <Field label="Κινητό τηλέφωνο" name="phone_mobile" field={field} />
         <Field label="Σταθερό τηλέφωνο" name="phone_landline" field={field} />
         <Field label="Πόλη" name="address_city" field={field} />
+        <Field label="Νομός" name="address_region" field={field} />
+        <Field label="ΤΚ" name="address_postal_code" field={field} />
         <Field label="IBAN" name="iban" field={field} />
         <Field label="Πηγή σύστασης" name="referral_source" field={field} />
         <ReferrerField />

@@ -3,20 +3,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PrintButton } from "@/components/print-button";
 import { toggleClientActive } from "../../actions";
-
-const CLIENT_TYPE_LABELS: Record<string, string> = {
-  individual: "Φυσικό πρόσωπο",
-  legal_entity: "Νομικό πρόσωπο",
-};
+import { CLIENT_TYPE_LABELS } from "../../client-labels";
 
 export function ClientHeader({
   clientId,
+  clientCode,
   name,
   clientType,
   afm,
   isActive,
 }: {
   clientId: string;
+  clientCode: number;
   name: string;
   clientType: string;
   afm: string | null;
@@ -27,7 +25,7 @@ export function ClientHeader({
       <div>
         <h1 className="text-2xl font-semibold">{name}</h1>
         <p className="text-sm text-muted-foreground">
-          {CLIENT_TYPE_LABELS[clientType]} · ΑΦΜ {afm ?? "—"}{" "}
+          #{clientCode} · {CLIENT_TYPE_LABELS[clientType]} · ΑΦΜ {afm ?? "—"}{" "}
           <Badge variant={isActive ? "success" : "outline"} className="ml-2">
             {isActive ? "Ενεργός" : "Ανενεργός"}
           </Badge>

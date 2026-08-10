@@ -91,6 +91,7 @@ export interface Database {
       clients: {
         Row: {
           id: string;
+          client_code: number;
           client_type: ClientType;
           display_name: string | null;
           afm: string | null;

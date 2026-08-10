@@ -18,6 +18,8 @@ type Client = {
   phone_mobile: string | null;
   phone_landline: string | null;
   address_city: string | null;
+  address_region: string | null;
+  address_postal_code: string | null;
   iban: string | null;
   referral_source: string | null;
   referred_by_client_id: string | null;
@@ -69,6 +71,8 @@ export function DetailsTab({
     phone_mobile: client.phone_mobile ?? "",
     phone_landline: client.phone_landline ?? "",
     address_city: client.address_city ?? "",
+    address_region: client.address_region ?? "",
+    address_postal_code: client.address_postal_code ?? "",
     iban: client.iban ?? "",
     referral_source: client.referral_source ?? "",
     notes: client.notes ?? "",
@@ -136,6 +140,18 @@ export function DetailsTab({
                   <Input id="address_city" name="address_city" {...field("address_city")} />
                 </div>
                 <div className="flex flex-col gap-2">
+                  <Label htmlFor="address_region">Νομός</Label>
+                  <Input id="address_region" name="address_region" {...field("address_region")} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="address_postal_code">ΤΚ</Label>
+                  <Input
+                    id="address_postal_code"
+                    name="address_postal_code"
+                    {...field("address_postal_code")}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
                   <Label htmlFor="iban">IBAN</Label>
                   <Input id="iban" name="iban" {...field("iban")} />
                 </div>
@@ -183,6 +199,8 @@ export function DetailsTab({
               <ViewField label="Κινητό τηλέφωνο" value={client.phone_mobile} />
               <ViewField label="Σταθερό τηλέφωνο" value={client.phone_landline} />
               <ViewField label="Πόλη" value={client.address_city} />
+              <ViewField label="Νομός" value={client.address_region} />
+              <ViewField label="ΤΚ" value={client.address_postal_code} />
               <ViewField label="IBAN" value={client.iban} />
               <ViewField label="Πηγή σύστασης" value={client.referral_source} />
               <ViewField label="Συστήνων" value={referrerLabel} />
