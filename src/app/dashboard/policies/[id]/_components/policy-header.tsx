@@ -12,6 +12,7 @@ export function PolicyHeader({
   policyId,
   policyNumber,
   status,
+  statusAutoManaged,
   clientId,
   clientName,
   lineName,
@@ -25,6 +26,7 @@ export function PolicyHeader({
   policyId: string;
   policyNumber: string;
   status: PolicyStatus;
+  statusAutoManaged: boolean;
   clientId: string | undefined;
   clientName: string;
   lineName: string | undefined;
@@ -69,7 +71,7 @@ export function PolicyHeader({
           nativeButton={false}
           render={<Link href={`/dashboard/policies/new?renew_from=${policyId}`}>Ανανέωση</Link>}
         />
-        <StatusSelect policyId={policyId} status={status} />
+        <StatusSelect policyId={policyId} status={status} statusAutoManaged={statusAutoManaged} />
       </div>
     </div>
   );

@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       const days = Number(expiring) || 30;
       const until = new Date();
       until.setDate(until.getDate() + days);
-      query = query.eq("status", "active").lte("end_date", until.toISOString().slice(0, 10));
+      query = query.in("status", ["active", "pending_renewal"]).lte("end_date", until.toISOString().slice(0, 10));
     }
     if (q) query = query.ilike("policy_number", `%${q}%`);
     if (client) query = query.ilike("clients.display_name", `%${client}%`);

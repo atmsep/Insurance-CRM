@@ -67,7 +67,7 @@ export default async function PoliciesPage({
     const until = new Date();
     until.setDate(until.getDate() + days);
     query = query
-      .eq("status", "active")
+      .in("status", ["active", "pending_renewal"])
       .lte("end_date", until.toISOString().slice(0, 10))
       .order("end_date", { ascending: true });
   } else {

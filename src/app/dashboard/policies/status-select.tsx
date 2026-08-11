@@ -1,6 +1,8 @@
 "use client";
 
 import { useTransition } from "react";
+import { RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -8,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { updatePolicyStatus } from "./actions";
+import { updatePolicyStatus, resetPolicyStatusToAuto } from "./actions";
 import type { PolicyStatus } from "@/lib/database.types";
 
 const STATUS_OPTIONS: { value: PolicyStatus; label: string }[] = [
@@ -20,31 +22,57 @@ const STATUS_OPTIONS: { value: PolicyStatus; label: string }[] = [
   { value: "lapsed", label: "Διακοπή" },
 ];
 
-export function StatusSelect({ policyId, status }: { policyId: string; status: PolicyStatus }) {
+export function StatusSelect({
+  policyId,
+  status,
+  statusAutoManaged,
+}: {
+  policyId: string;
+  status: PolicyStatus;
+  statusAutoManaged: boolean;
+}) {
   const [pending, startTransition] = useTransition();
 
   return (
-    <Select
-      value={status}
-      disabled={pending}
-      onValueChange={(value) => {
-        if (value) startTransition(() => updatePolicyStatus(policyId, value));
-      }}
-    >
-      <SelectTrigger className="w-44">
-        <SelectValue>
-          {(value: PolicyStatus) =>
-            STATUS_OPTIONS.find((s) => s.value === value)?.label ?? value
+    <div className="flex items-center gap-1">
+      <Select
+        value={status}
+        disabled={pending}
+        onValueChange={(value) => {
+          if (value) startTransition(() => updatePolicyStatus(policyId, value));
+        }}
+      >
+        <SelectTrigger className="w-44">
+          <SelectValue>
+            {(value: PolicyStatus) =>
+              STATUS_OPTIONS.find((s) => s.value === value)?.label ?? value
+            }
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {STATUS_OPTIONS.map((s) => (
+            <SelectItem key={s.value} value={s.value}>
+              {s.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {!statusAutoManaged && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={pending}
+          title="Επαναφορά σε αυτόματη διαχείριση κατάστασης"
+          onClick={() =>
+            startTransition(async () => {
+              await resetPolicyStatusToAuto(policyId);
+            })
           }
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        {STATUS_OPTIONS.map((s) => (
-          <SelectItem key={s.value} value={s.value}>
-            {s.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+        >
+          <RotateCcw className="size-4" />
+        </Button>
+      )}
+    </div>
   );
 }

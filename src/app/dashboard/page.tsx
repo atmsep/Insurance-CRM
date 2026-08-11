@@ -48,7 +48,7 @@ export default async function DashboardPage() {
     supabase
       .from("policies")
       .select("id, policy_number, end_date, clients(client_individuals(first_name,last_name), client_legal_entities(company_name))")
-      .eq("status", "active")
+      .in("status", ["active", "pending_renewal"])
       .eq("is_current_term", true)
       .lte("end_date", in30Days)
       .order("end_date", { ascending: true })
@@ -82,7 +82,7 @@ export default async function DashboardPage() {
     supabase
       .from("policies")
       .select("id, policy_number")
-      .eq("status", "active")
+      .in("status", ["active", "pending_renewal"])
       .eq("is_current_term", true)
       .eq("end_date", today),
   ]);

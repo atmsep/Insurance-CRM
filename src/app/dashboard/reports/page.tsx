@@ -67,7 +67,10 @@ export default async function ReportsPage() {
     { data: carrierCommissions },
     { data: clients },
   ] = await Promise.all([
-    supabase.from("policies").select("id, status, premium_gross, insurance_lines(name_el)"),
+    supabase
+      .from("policies")
+      .select("id, status, premium_gross, insurance_lines(name_el)")
+      .eq("is_current_term", true),
     supabase.from("policy_installments").select("policy_id, amount, status, paid_amount"),
     supabase.from("claims").select("status, claim_amount_estimated, claim_amount_paid"),
     supabase.from("commissions").select("status, commission_amount, direction"),

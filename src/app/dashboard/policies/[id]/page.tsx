@@ -141,6 +141,7 @@ export default async function PolicyDetailPage({
         policyId={id}
         policyNumber={policy.policy_number}
         status={policy.status as PolicyStatus}
+        statusAutoManaged={policy.status_auto_managed}
         clientId={client?.id}
         clientName={clientName}
         lineName={line?.name_el}

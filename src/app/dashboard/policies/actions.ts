@@ -8,6 +8,7 @@ import { sendEmail } from "@/lib/email";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
 import type { PaymentFrequency } from "@/lib/database.types";
 import { installmentRemaining } from "./balance";
+import { POLICY_STATUS_LABELS } from "./policy-labels";
 
 export type PolicyFormState = { error: string; field?: string } | undefined;
 export type SendEmailState = { error: string } | { success: string } | undefined;
@@ -189,12 +190,14 @@ export async function createPolicy(
   const policyGroupId = str(formData, "policy_group_id");
 
   let renewalNumber = 1;
+  let previousTerm: { renewal_number: number; status: string; status_auto_managed: boolean } | null = null;
   if (renewFromPolicyId) {
-    const { data: previousTerm } = await supabase
+    const { data } = await supabase
       .from("policies")
-      .select("renewal_number")
+      .select("renewal_number, status, status_auto_managed")
       .eq("id", renewFromPolicyId)
       .single();
+    previousTerm = data;
     renewalNumber = (previousTerm?.renewal_number ?? 1) + 1;
   }
 
@@ -247,11 +250,22 @@ export async function createPolicy(
   // The new term is now the current one — the term it renewed no longer is,
   // so it drops out of policy lists (which filter on is_current_term) while
   // remaining reachable through the renewal history on the policy detail
-  // page.
+  // page. Also expire the old term's status immediately (rather than
+  // leaving it stale until tonight's automatic recompute) — but only if
+  // it's still auto-managed and not already in a terminal manual state, so
+  // a manually-set 'cancelled'/'lapsed' term is never silently overwritten.
   if (renewFromPolicyId) {
+    const shouldExpireOldTerm =
+      previousTerm?.status_auto_managed !== false &&
+      previousTerm?.status !== "cancelled" &&
+      previousTerm?.status !== "lapsed";
+
     await supabase
       .from("policies")
-      .update({ is_current_term: false })
+      .update({
+        is_current_term: false,
+        ...(shouldExpireOldTerm ? { status: "expired" } : {}),
+      })
       .eq("id", renewFromPolicyId);
   }
 
@@ -341,7 +355,9 @@ export async function createPolicy(
 export async function updatePolicyStatus(policyId: string, status: string) {
   const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
-  await supabase.from("policies").update({ status }).eq("id", policyId);
+  // A manual status choice sticks "μέχρι νεωτέρας" — the daily automatic
+  // recompute only ever touches status_auto_managed = true rows.
+  await supabase.from("policies").update({ status, status_auto_managed: false }).eq("id", policyId);
   await logActivity(supabase, {
     entityType: "policy",
     entityId: policyId,
@@ -360,7 +376,10 @@ export async function bulkUpdatePolicyStatus(
   if (policyIds.length === 0) return;
   const supabase = await createSupabaseClient();
 
-  const { error } = await supabase.from("policies").update({ status }).in("id", policyIds);
+  const { error } = await supabase
+    .from("policies")
+    .update({ status, status_auto_managed: false })
+    .in("id", policyIds);
   if (error) {
     return { error: "Σφάλμα κατά τη μαζική ενημέρωση: " + error.message };
   }
@@ -376,6 +395,35 @@ export async function bulkUpdatePolicyStatus(
     })),
   );
   revalidatePath("/dashboard/policies");
+}
+
+// Undoes a manual pin (see updatePolicyStatus/bulkUpdatePolicyStatus) and
+// recomputes the status immediately from current data, instead of waiting
+// for tonight's automatic recompute. The RPC runs as the calling user (not
+// security definer), so it's still bound by the same policies_update RLS
+// policy that already protects the plain status dropdown.
+export async function resetPolicyStatusToAuto(
+  policyId: string,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const { data: newStatus, error } = await supabase.rpc("reset_policy_status_to_auto", {
+    p_policy_id: policyId,
+  });
+  if (error) {
+    return { error: "Σφάλμα κατά την επαναφορά σε αυτόματη διαχείριση: " + error.message };
+  }
+
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "status_changed",
+    description: `Η κατάσταση επανήλθε σε αυτόματη διαχείριση (${POLICY_STATUS_LABELS[newStatus as string] ?? newStatus}).`,
+    actorId: agencyUser.id,
+  });
+
+  revalidatePath(`/dashboard/policies/${policyId}`);
 }
 
 export async function createInstallment(policyId: string, formData: FormData) {

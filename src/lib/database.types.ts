@@ -183,6 +183,7 @@ export interface Database {
           is_renewal: boolean;
           renewal_number: number;
           is_current_term: boolean;
+          status_auto_managed: boolean;
           cancellation_reason: string | null;
           notes: string | null;
           extra_details: Record<string, unknown>;
