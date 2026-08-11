@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { installmentStatusVariant } from "@/lib/status-badge";
 import { resolveClientName } from "@/lib/client-name";
+import { installmentRemaining } from "../policies/balance";
 import {
   Table,
   TableBody,
@@ -40,7 +41,7 @@ export default async function InstallmentsPage() {
     supabase
       .from("policy_installments")
       .select(
-        "id, policy_id, due_date, amount, status, policies(policy_number, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
+        "id, policy_id, due_date, amount, status, paid_amount, policies(policy_number, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
         { count: "exact" },
       )
       .in("status", ["pending", "overdue", "partially_paid"])
@@ -50,7 +51,7 @@ export default async function InstallmentsPage() {
     supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
 
-  const total = (installments ?? []).reduce((sum, i) => sum + i.amount, 0);
+  const total = (installments ?? []).reduce((sum, i) => sum + installmentRemaining(i), 0);
   const isTruncated = (count ?? 0) > LIST_CAP;
 
   return (
@@ -92,6 +93,7 @@ export default async function InstallmentsPage() {
                   } | null;
                 } | null;
                 const name = resolveClientName(policy?.clients);
+                const remaining = installmentRemaining(inst);
 
                 return (
                   <TableRow key={inst.id}>
@@ -102,7 +104,14 @@ export default async function InstallmentsPage() {
                     </TableCell>
                     <TableCell>{name}</TableCell>
                     <TableCell>{formatDate(inst.due_date)}</TableCell>
-                    <TableCell>{inst.amount.toFixed(2)} €</TableCell>
+                    <TableCell>
+                      <div>{remaining.toFixed(2)} €</div>
+                      {inst.status === "partially_paid" && (
+                        <div className="text-xs text-muted-foreground">
+                          Δόθηκαν {(inst.paid_amount ?? 0).toFixed(2)} € από {inst.amount.toFixed(2)} €
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={installmentStatusVariant(inst.status)}>
                         {STATUS_LABELS[inst.status] ?? inst.status}
@@ -113,6 +122,7 @@ export default async function InstallmentsPage() {
                         installmentId={inst.id}
                         collectAction={collectInstallmentPayment.bind(null, inst.policy_id, inst.id)}
                         amount={inst.amount}
+                        alreadyPaid={inst.paid_amount ?? 0}
                         paymentMethods={paymentMethods ?? []}
                       />
                     </TableCell>

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
+import { installmentRemaining } from "../policies/balance";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileTab } from "./profile-tab";
 import { CarriersTab } from "./carriers-tab";
@@ -38,7 +39,7 @@ export default async function SettingsPage() {
     isAdmin
       ? supabase
           .from("policy_installments")
-          .select("amount, status, policies!inner(assigned_agent_id)")
+          .select("amount, status, paid_amount, policies!inner(assigned_agent_id)")
           .in("status", ["pending", "overdue", "partially_paid"])
       : Promise.resolve({ data: [] }),
     isAdmin
@@ -81,7 +82,10 @@ export default async function SettingsPage() {
     const agentId = (row.policies as unknown as { assigned_agent_id: string | null } | null)
       ?.assigned_agent_id;
     if (!agentId) continue;
-    outstandingByAgent.set(agentId, (outstandingByAgent.get(agentId) ?? 0) + row.amount);
+    outstandingByAgent.set(
+      agentId,
+      (outstandingByAgent.get(agentId) ?? 0) + installmentRemaining(row),
+    );
   }
 
   return (

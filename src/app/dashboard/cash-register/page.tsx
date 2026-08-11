@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { installmentTip } from "../policies/balance";
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString("el-GR", { hour: "2-digit", minute: "2-digit" });
@@ -41,7 +42,7 @@ export default async function CashRegisterPage({
   let collectionsQuery = supabase
     .from("policy_installments")
     .select(
-      "id, policy_id, paid_amount, paid_at, receipt_number, payment_methods(name), paid_by, agency_users!policy_installments_paid_by_fkey(full_name), policies(policy_number, clients(display_name))",
+      "id, policy_id, amount, status, paid_amount, paid_at, receipt_number, payment_methods(name), paid_by, agency_users!policy_installments_paid_by_fkey(full_name), policies(policy_number, clients(display_name))",
     )
     .eq("paid_date", selectedDate)
     .in("status", ["paid", "partially_paid"])
@@ -69,6 +70,7 @@ export default async function CashRegisterPage({
 
   const byMethod = new Map<string, number>();
   let grandTotal = 0;
+  let tipsTotal = 0;
   for (const c of collections ?? []) {
     const methodRow = c.payment_methods as unknown as { name: string } | { name: string }[] | null;
     const methodName = Array.isArray(methodRow) ? methodRow[0]?.name : methodRow?.name;
@@ -76,6 +78,7 @@ export default async function CashRegisterPage({
     const amount = c.paid_amount ?? 0;
     byMethod.set(key, (byMethod.get(key) ?? 0) + amount);
     grandTotal += amount;
+    tipsTotal += installmentTip(c);
   }
 
   return (
@@ -127,6 +130,12 @@ export default async function CashRegisterPage({
           <p className="text-xs text-muted-foreground">Σύνολο ημέρας</p>
           <p className="text-lg font-semibold">{grandTotal.toFixed(2)} €</p>
         </div>
+        {tipsTotal > 0 && (
+          <div className="rounded-md border px-4 py-2">
+            <p className="text-xs text-muted-foreground">Φιλοδωρήματα ημέρας</p>
+            <p className="text-lg font-semibold">{tipsTotal.toFixed(2)} €</p>
+          </div>
+        )}
       </div>
 
       <div className="rounded-md border">
@@ -165,7 +174,14 @@ export default async function CashRegisterPage({
                       </Link>
                     </TableCell>
                     <TableCell>{client}</TableCell>
-                    <TableCell>{(c.paid_amount ?? 0).toFixed(2)} €</TableCell>
+                    <TableCell>
+                      <div>{(c.paid_amount ?? 0).toFixed(2)} €</div>
+                      {installmentTip(c) > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          + {installmentTip(c).toFixed(2)} € tip
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell>{method?.name ?? "—"}</TableCell>
                     <TableCell>{c.receipt_number ?? "—"}</TableCell>
                     {isAdmin && <TableCell>{collector?.full_name ?? "—"}</TableCell>}

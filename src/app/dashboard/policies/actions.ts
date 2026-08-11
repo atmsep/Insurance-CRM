@@ -466,12 +466,22 @@ export async function collectInstallmentPayment(
 
   const { data: installment } = await supabase
     .from("policy_installments")
-    .select("amount")
+    .select("amount, status, paid_amount")
     .eq("id", installmentId)
     .single();
   if (!installment) return;
 
-  const paidAmount = Number(formData.get("paid_amount")) || installment.amount;
+  // A δόση already partially_paid keeps its running total — this call adds
+  // to it rather than overwriting it, so a second collection tops up toward
+  // the balance still owed instead of erasing what was already received.
+  const alreadyPaid = installment.status === "partially_paid" ? (installment.paid_amount ?? 0) : 0;
+  const remainingDue = Math.max(installment.amount - alreadyPaid, 0);
+  const enteredRaw = formData.get("paid_amount");
+  const entered = enteredRaw !== null && enteredRaw !== "" ? Number(enteredRaw) : NaN;
+  const newPayment = Number.isFinite(entered) && entered > 0 ? entered : remainingDue;
+  const totalPaid = Math.round((alreadyPaid + newPayment) * 100) / 100;
+  const tip = Math.max(Math.round((totalPaid - installment.amount) * 100) / 100, 0);
+
   const paymentMethodId = (formData.get("payment_method_id") as string) || null;
   const receiptNumber = (formData.get("receipt_number") as string) || null;
   const now = new Date();
@@ -479,8 +489,8 @@ export async function collectInstallmentPayment(
   await supabase
     .from("policy_installments")
     .update({
-      status: paidAmount >= installment.amount ? "paid" : "partially_paid",
-      paid_amount: paidAmount,
+      status: totalPaid >= installment.amount ? "paid" : "partially_paid",
+      paid_amount: totalPaid,
       paid_date: now.toISOString().slice(0, 10),
       paid_at: now.toISOString(),
       payment_method_id: paymentMethodId,
@@ -489,11 +499,12 @@ export async function collectInstallmentPayment(
     })
     .eq("id", installmentId);
 
+  const tipNote = tip > 0 ? ` (εκ των οποίων ${tip.toFixed(2)} € tip)` : "";
   await logActivity(supabase, {
     entityType: "policy",
     entityId: policyId,
     action: "payment_collected",
-    description: `Εισπράχθηκαν ${paidAmount.toFixed(2)} € δόσης.`,
+    description: `Εισπράχθηκαν ${newPayment.toFixed(2)} € δόσης${tipNote}.`,
     actorId: agencyUser.id,
   });
 

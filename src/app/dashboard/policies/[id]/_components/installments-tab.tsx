@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { installmentStatusVariant } from "@/lib/status-badge";
 import { formatDate } from "@/lib/date";
+import { installmentTip, installmentRemaining } from "../../balance";
 import {
   getPolicyInstallments,
   createInstallment,
@@ -40,6 +41,7 @@ type Installment = {
   due_date: string;
   amount: number;
   status: string;
+  paid_amount: number | null;
 };
 
 export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdmin: boolean }) {
@@ -114,40 +116,60 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
               </TableHeader>
               <TableBody>
                 {data.installments.length ? (
-                  data.installments.map((inst) => (
-                    <TableRow key={inst.id}>
-                      <TableCell>{inst.installment_number}</TableCell>
-                      <TableCell>{formatDate(inst.due_date)}</TableCell>
-                      <TableCell>{inst.amount.toFixed(2)} €</TableCell>
-                      <TableCell>
-                        <Badge variant={installmentStatusVariant(inst.status)}>
-                          {PAYMENT_STATUS_LABELS[inst.status] ?? inst.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {(inst.status === "pending" || inst.status === "overdue") && (
-                          <CollectPaymentForm
-                            installmentId={inst.id}
-                            collectAction={async (formData) => {
-                              await collectInstallmentPayment(policyId, inst.id, formData);
-                              await refetch();
-                            }}
-                            amount={inst.amount}
-                            paymentMethods={data.paymentMethods}
-                          />
-                        )}
-                        {isAdmin && (inst.status === "paid" || inst.status === "partially_paid") && (
-                          <CancelPaymentForm
-                            installmentId={inst.id}
-                            cancelAction={async (formData) => {
-                              await cancelInstallmentPayment(policyId, inst.id, formData);
-                              await refetch();
-                            }}
-                          />
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  data.installments.map((inst) => {
+                    const remaining = installmentRemaining(inst);
+                    const tip = installmentTip(inst);
+                    return (
+                      <TableRow key={inst.id}>
+                        <TableCell>{inst.installment_number}</TableCell>
+                        <TableCell>{formatDate(inst.due_date)}</TableCell>
+                        <TableCell>
+                          <div>{inst.amount.toFixed(2)} €</div>
+                          {inst.status === "partially_paid" && (
+                            <div className="text-xs text-muted-foreground">
+                              Δόθηκαν {(inst.paid_amount ?? 0).toFixed(2)} € — υπόλοιπο{" "}
+                              {remaining.toFixed(2)} €
+                            </div>
+                          )}
+                          {tip > 0 && (
+                            <div className="text-xs text-muted-foreground">
+                              + {tip.toFixed(2)} € tip
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={installmentStatusVariant(inst.status)}>
+                            {PAYMENT_STATUS_LABELS[inst.status] ?? inst.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {(inst.status === "pending" ||
+                            inst.status === "overdue" ||
+                            inst.status === "partially_paid") && (
+                            <CollectPaymentForm
+                              installmentId={inst.id}
+                              collectAction={async (formData) => {
+                                await collectInstallmentPayment(policyId, inst.id, formData);
+                                await refetch();
+                              }}
+                              amount={inst.amount}
+                              alreadyPaid={inst.paid_amount ?? 0}
+                              paymentMethods={data.paymentMethods}
+                            />
+                          )}
+                          {isAdmin && (inst.status === "paid" || inst.status === "partially_paid") && (
+                            <CancelPaymentForm
+                              installmentId={inst.id}
+                              cancelAction={async (formData) => {
+                                await cancelInstallmentPayment(policyId, inst.id, formData);
+                                await refetch();
+                              }}
+                            />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 ) : (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center text-muted-foreground">

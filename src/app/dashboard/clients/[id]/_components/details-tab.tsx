@@ -48,6 +48,7 @@ export function DetailsTab({
   referrerLabel,
   totalBilled,
   totalPaid,
+  totalTips,
   outstanding,
   referralRewardTotal,
   referralRewardPolicyCount,
@@ -58,6 +59,7 @@ export function DetailsTab({
   referrerLabel: string | undefined;
   totalBilled: number;
   totalPaid: number;
+  totalTips: number;
   outstanding: number;
   referralRewardTotal: number;
   referralRewardPolicyCount: number;
@@ -243,6 +245,12 @@ export function DetailsTab({
             <span className="text-muted-foreground">Εισπραγμένο</span>
             <span className="text-right font-medium">{totalPaid.toFixed(2)} €</span>
           </div>
+          {totalTips > 0 && (
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Φιλοδωρήματα</span>
+              <span className="text-right font-medium">{totalTips.toFixed(2)} €</span>
+            </div>
+          )}
           <div className="flex justify-between gap-4">
             <span className="text-muted-foreground">Υπόλοιπο</span>
             <span className={`text-right font-medium ${outstanding > 0 ? "text-warning" : ""}`}>

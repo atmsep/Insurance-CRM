@@ -17,6 +17,7 @@ import { CommissionsTab, type Commission as ClientCommission } from "./_componen
 import { ReferralsTab, type ReferredClient } from "./_components/referrals-tab";
 import { TasksTab } from "./_components/tasks-tab";
 import { ActivityFeed, type ActivityEntry } from "@/components/activity-feed";
+import { installmentApplied, installmentTip } from "../../policies/balance";
 
 export default async function ClientDetailPage({
   params,
@@ -67,7 +68,7 @@ export default async function ClientDetailPage({
     getDocumentsFor("client", id),
     supabase
       .from("policy_installments")
-      .select("policy_id, amount, status, policies!inner(client_id)")
+      .select("policy_id, amount, status, paid_amount, policies!inner(client_id)")
       .eq("policies.client_id", id),
     supabase
       .from("client_tickets")
@@ -128,8 +129,8 @@ export default async function ClientDetailPage({
 
   const paidByPolicy = new Map<string, number>();
   for (const i of currentInstallments) {
-    if (i.status !== "paid") continue;
-    paidByPolicy.set(i.policy_id, (paidByPolicy.get(i.policy_id) ?? 0) + i.amount);
+    if (i.status !== "paid" && i.status !== "partially_paid") continue;
+    paidByPolicy.set(i.policy_id, (paidByPolicy.get(i.policy_id) ?? 0) + installmentApplied(i));
   }
 
   const billablePolicies = (policies ?? []).filter(
@@ -137,8 +138,9 @@ export default async function ClientDetailPage({
   );
   const totalBilled = billablePolicies.reduce((sum, p) => sum + (p.premium_gross ?? 0), 0);
   const totalPaid = currentInstallments
-    .filter((i) => i.status === "paid")
-    .reduce((sum, i) => sum + i.amount, 0);
+    .filter((i) => i.status === "paid" || i.status === "partially_paid")
+    .reduce((sum, i) => sum + installmentApplied(i), 0);
+  const totalTips = currentInstallments.reduce((sum, i) => sum + installmentTip(i), 0);
   const outstanding = billablePolicies.reduce(
     (sum, p) => sum + Math.max((p.premium_gross ?? 0) - (paidByPolicy.get(p.id) ?? 0), 0),
     0,
@@ -188,6 +190,7 @@ export default async function ClientDetailPage({
             referrerLabel={referrerLabel}
             totalBilled={totalBilled}
             totalPaid={totalPaid}
+            totalTips={totalTips}
             outstanding={outstanding}
             referralRewardTotal={referralRewardTotal}
             referralRewardPolicyCount={referralRewardPolicyCount}

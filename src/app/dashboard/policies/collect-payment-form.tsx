@@ -18,15 +18,18 @@ export function CollectPaymentForm({
   installmentId,
   collectAction,
   amount,
+  alreadyPaid = 0,
   paymentMethods,
 }: {
   installmentId: string;
   collectAction: (formData: FormData) => void;
   amount: number;
+  alreadyPaid?: number;
   paymentMethods: PaymentMethod[];
 }) {
   const [open, setOpen] = useState(false);
   const [methodId, setMethodId] = useState("");
+  const remaining = Math.max(amount - alreadyPaid, 0);
 
   if (!open) {
     return (
@@ -40,14 +43,14 @@ export function CollectPaymentForm({
     <form action={collectAction} className="flex flex-wrap items-end gap-2">
       <div className="flex flex-col gap-1">
         <Label htmlFor={`paid_amount_${installmentId}`} className="text-xs">
-          Ποσό
+          Ποσό {alreadyPaid > 0 && <span className="text-muted-foreground">(υπόλοιπο)</span>}
         </Label>
         <Input
           id={`paid_amount_${installmentId}`}
           name="paid_amount"
           type="number"
           step="0.01"
-          defaultValue={amount}
+          defaultValue={remaining}
           className="h-7 w-24 text-xs"
         />
       </div>

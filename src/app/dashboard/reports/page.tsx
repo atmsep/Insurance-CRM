@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { COMMISSION_DIRECTION_LABELS } from "../commissions/direction-labels";
+import { installmentApplied, installmentTip } from "../policies/balance";
 
 const POLICY_STATUS_LABELS: Record<string, string> = {
   draft: "Πρόχειρο",
@@ -67,12 +68,12 @@ export default async function ReportsPage() {
     { data: clients },
   ] = await Promise.all([
     supabase.from("policies").select("id, status, premium_gross, insurance_lines(name_el)"),
-    supabase.from("policy_installments").select("policy_id, amount, status"),
+    supabase.from("policy_installments").select("policy_id, amount, status, paid_amount"),
     supabase.from("claims").select("status, claim_amount_estimated, claim_amount_paid"),
     supabase.from("commissions").select("status, commission_amount, direction"),
     supabase
       .from("policy_installments")
-      .select("amount, status, policies!inner(carrier_id, carriers(name))"),
+      .select("amount, status, paid_amount, policies!inner(carrier_id, carriers(name))"),
     supabase
       .from("commissions")
       .select("carrier_id, commission_amount, status, carriers(name)")
@@ -100,8 +101,8 @@ export default async function ReportsPage() {
   // policy with no (or partial) installments looks fully collected.
   const paidByPolicy = new Map<string, number>();
   for (const i of installments ?? []) {
-    if (i.status !== "paid") continue;
-    paidByPolicy.set(i.policy_id, (paidByPolicy.get(i.policy_id) ?? 0) + i.amount);
+    if (i.status !== "paid" && i.status !== "partially_paid") continue;
+    paidByPolicy.set(i.policy_id, (paidByPolicy.get(i.policy_id) ?? 0) + installmentApplied(i));
   }
 
   const billablePolicies = (policies ?? []).filter(
@@ -109,8 +110,9 @@ export default async function ReportsPage() {
   );
   const totalBilled = billablePolicies.reduce((sum, p) => sum + (p.premium_gross ?? 0), 0);
   const totalCollected = (installments ?? [])
-    .filter((i) => i.status === "paid")
-    .reduce((sum, i) => sum + i.amount, 0);
+    .filter((i) => i.status === "paid" || i.status === "partially_paid")
+    .reduce((sum, i) => sum + installmentApplied(i), 0);
+  const totalTips = (installments ?? []).reduce((sum, i) => sum + installmentTip(i), 0);
   const outstanding = billablePolicies.reduce(
     (sum, p) => sum + Math.max((p.premium_gross ?? 0) - (paidByPolicy.get(p.id) ?? 0), 0),
     0,
@@ -160,7 +162,7 @@ export default async function ReportsPage() {
   const carrierMap = new Map<string, CarrierAgg>();
 
   for (const i of carrierInstallments ?? []) {
-    if (i.status !== "paid") continue;
+    if (i.status !== "paid" && i.status !== "partially_paid") continue;
     const p = i.policies as unknown as { carrier_id: string; carriers: { name: string } | null } | null;
     if (!p) continue;
     const entry = carrierMap.get(p.carrier_id) ?? {
@@ -169,7 +171,7 @@ export default async function ReportsPage() {
       commissionTotal: 0,
       commissionPending: 0,
     };
-    entry.collected += i.amount;
+    entry.collected += installmentApplied(i);
     carrierMap.set(p.carrier_id, entry);
   }
 
@@ -192,10 +194,11 @@ export default async function ReportsPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Αναφορές</h1>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <StatCard label="Ενεργό ασφάλιστρο" value={`${activePremium.toFixed(2)} €`} />
         <StatCard label="Χρεωθέν σύνολο δόσεων" value={`${totalBilled.toFixed(2)} €`} />
         <StatCard label="Εισπραγμένο" value={`${totalCollected.toFixed(2)} €`} />
+        <StatCard label="Φιλοδωρήματα" value={`${totalTips.toFixed(2)} €`} />
         <StatCard
           label="Ανείσπρακτο υπόλοιπο"
           value={`${outstanding.toFixed(2)} €`}
