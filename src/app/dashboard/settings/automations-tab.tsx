@@ -24,6 +24,14 @@ const LABELS: Record<string, { title: string; description: string }> = {
     title: "Email ειδοποίησης ανανέωσης στον πελάτη",
     description: "Στέλνει αυτόματα email στον πελάτη 30 και 7 ημέρες πριν τη λήξη του συμβολαίου του.",
   },
+  celebration_tasks: {
+    title: "Εσωτερικές υπενθυμίσεις γιορτής/γενεθλίων",
+    description: "Δημιουργεί καθημερινά υπενθύμιση στον συνεργάτη όταν πελάτης γιορτάζει ή έχει γενέθλια.",
+  },
+  celebration_emails: {
+    title: "Email ευχών γιορτής/γενεθλίων στον πελάτη",
+    description: "Στέλνει αυτόματα email με ευχές στον πελάτη τη μέρα της γιορτής ή των γενεθλίων του.",
+  },
 };
 
 export function AutomationsTab({ settings }: { settings: AppSetting[] }) {

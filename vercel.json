@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/renewal-emails",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/celebrations",
+      "schedule": "0 6 * * *"
     }
   ]
 }

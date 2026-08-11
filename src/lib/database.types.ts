@@ -382,6 +382,23 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["app_settings"]["Row"]>;
       };
+      client_celebrations_log: {
+        Row: {
+          id: string;
+          client_id: string;
+          celebration_type: string;
+          celebration_date: string;
+          task_id: string | null;
+          email_sent: boolean;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["client_celebrations_log"]["Row"]> & {
+          client_id: string;
+          celebration_type: string;
+          celebration_date: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["client_celebrations_log"]["Row"]>;
+      };
       payment_methods: {
         Row: {
           id: string;
