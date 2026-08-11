@@ -6,10 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export function CancelPaymentForm({
-  installmentId,
+  id,
   cancelAction,
 }: {
-  installmentId: string;
+  id: string;
   cancelAction: (formData: FormData) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -25,11 +25,11 @@ export function CancelPaymentForm({
   return (
     <form action={cancelAction} className="flex flex-wrap items-end gap-2">
       <div className="flex flex-col gap-1">
-        <Label htmlFor={`cancellation_reason_${installmentId}`} className="text-xs">
+        <Label htmlFor={`cancellation_reason_${id}`} className="text-xs">
           Αιτιολογία
         </Label>
         <Input
-          id={`cancellation_reason_${installmentId}`}
+          id={`cancellation_reason_${id}`}
           name="cancellation_reason"
           required
           className="h-7 w-40 text-xs"

@@ -17,12 +17,13 @@ import {
 } from "@/components/ui/table";
 import { installmentStatusVariant } from "@/lib/status-badge";
 import { formatDate } from "@/lib/date";
-import { installmentTip, installmentRemaining, installmentAlreadyCollected } from "../../balance";
+import { installmentRemaining } from "../../balance";
 import {
   getPolicyInstallments,
   createInstallment,
   collectInstallmentPayment,
-  cancelInstallmentPayment,
+  reverseInstallmentPayment,
+  type InstallmentWithPayments,
 } from "../../actions";
 import { CollectPaymentForm } from "../../collect-payment-form";
 import { CancelPaymentForm } from "../../cancel-payment-form";
@@ -32,18 +33,23 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   paid: "Πληρώθηκε",
   overdue: "Ληξιπρόθεσμη",
   partially_paid: "Μερική πληρωμή",
-  cancelled: "Ακυρώθηκε",
 };
 
-type Installment = {
-  id: string;
-  installment_number: number;
-  due_date: string;
-  amount: number;
-  status: string;
-  paid_amount: number | null;
-  cancellation_reason: string | null;
-};
+type Installment = InstallmentWithPayments;
+
+function one<T>(v: T | T[] | null): T | null {
+  return Array.isArray(v) ? (v[0] ?? null) : v;
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdmin: boolean }) {
   const [data, setData] = useState<{
@@ -84,12 +90,18 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
     await refetch();
   }
 
+  const payments = (data?.installments ?? [])
+    .flatMap((inst) =>
+      (inst.installment_payments ?? []).map((p) => ({ ...p, installmentNumber: inst.installment_number })),
+    )
+    .sort((a, b) => new Date(b.paid_at).getTime() - new Date(a.paid_at).getTime());
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Εισπράξεις</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className="flex flex-col gap-6">
         {loadError ? (
           <div className="flex flex-col items-start gap-2 text-sm">
             <p className="text-muted-foreground">Δεν ήταν δυνατή η φόρτωση των εισπράξεων.</p>
@@ -119,7 +131,6 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                 {data.installments.length ? (
                   data.installments.map((inst) => {
                     const remaining = installmentRemaining(inst);
-                    const tip = installmentTip(inst);
                     return (
                       <TableRow key={inst.id}>
                         <TableCell>{inst.installment_number}</TableCell>
@@ -132,17 +143,6 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                               {remaining.toFixed(2)} €
                             </div>
                           )}
-                          {tip > 0 && (
-                            <div className="text-xs text-muted-foreground">
-                              + {tip.toFixed(2)} € tip
-                            </div>
-                          )}
-                          {inst.status === "cancelled" && (
-                            <div className="text-xs text-muted-foreground">
-                              Ακυρώθηκε προηγούμενη είσπραξη
-                              {inst.cancellation_reason ? `: ${inst.cancellation_reason}` : ""}
-                            </div>
-                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant={installmentStatusVariant(inst.status)}>
@@ -152,8 +152,7 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                         <TableCell>
                           {(inst.status === "pending" ||
                             inst.status === "overdue" ||
-                            inst.status === "partially_paid" ||
-                            (isAdmin && inst.status === "cancelled")) && (
+                            inst.status === "partially_paid") && (
                             <CollectPaymentForm
                               installmentId={inst.id}
                               collectAction={async (formData) => {
@@ -161,17 +160,8 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                                 await refetch();
                               }}
                               amount={inst.amount}
-                              alreadyPaid={installmentAlreadyCollected(inst)}
+                              alreadyPaid={inst.paid_amount ?? 0}
                               paymentMethods={data.paymentMethods}
-                            />
-                          )}
-                          {isAdmin && (inst.status === "paid" || inst.status === "partially_paid") && (
-                            <CancelPaymentForm
-                              installmentId={inst.id}
-                              cancelAction={async (formData) => {
-                                await cancelInstallmentPayment(policyId, inst.id, formData);
-                                await refetch();
-                              }}
                             />
                           )}
                         </TableCell>
@@ -201,6 +191,67 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                 Προσθήκη είσπραξης
               </Button>
             </form>
+
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-medium text-muted-foreground">Κινήσεις</h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ημερομηνία</TableHead>
+                    <TableHead>Ποσό</TableHead>
+                    <TableHead>Μέθοδος</TableHead>
+                    <TableHead>Απόδειξη</TableHead>
+                    <TableHead>Εισπράκτορας</TableHead>
+                    <TableHead>Κατάσταση</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {payments.length ? (
+                    payments.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell>{formatDateTime(p.paid_at)}</TableCell>
+                        <TableCell>{p.amount.toFixed(2)} €</TableCell>
+                        <TableCell>{one(p.payment_methods)?.name ?? "—"}</TableCell>
+                        <TableCell>{p.receipt_number ?? "—"}</TableCell>
+                        <TableCell>{one(p.agency_users)?.full_name ?? "—"}</TableCell>
+                        <TableCell>
+                          {p.is_reversed ? (
+                            <div>
+                              <Badge variant="destructive">Ακυρώθηκε</Badge>
+                              {p.reversal_reason && (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {p.reversal_reason}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <Badge variant="success">Ενεργή</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isAdmin && !p.is_reversed && (
+                            <CancelPaymentForm
+                              id={p.id}
+                              cancelAction={async (formData) => {
+                                await reverseInstallmentPayment(policyId, p.id, formData);
+                                await refetch();
+                              }}
+                            />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        Δεν υπάρχουν κινήσεις ακόμα.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </>
         )}
       </CardContent>

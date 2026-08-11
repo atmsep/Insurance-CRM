@@ -282,6 +282,28 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["policy_installments"]["Row"]>;
       };
+      installment_payments: {
+        Row: {
+          id: string;
+          installment_id: string;
+          amount: number;
+          payment_method_id: string | null;
+          receipt_number: string | null;
+          paid_by: string | null;
+          paid_at: string;
+          paid_date: string;
+          is_reversed: boolean;
+          reversed_by: string | null;
+          reversed_at: string | null;
+          reversal_reason: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["installment_payments"]["Row"]> & {
+          installment_id: string;
+          amount: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["installment_payments"]["Row"]>;
+      };
       incoming_calls: {
         Row: {
           id: string;

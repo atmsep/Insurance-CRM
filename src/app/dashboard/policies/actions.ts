@@ -7,7 +7,7 @@ import { requireAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
 import type { PaymentFrequency } from "@/lib/database.types";
-import { installmentAlreadyCollected } from "./balance";
+import { installmentRemaining } from "./balance";
 
 export type PolicyFormState = { error: string; field?: string } | undefined;
 export type SendEmailState = { error: string } | { success: string } | undefined;
@@ -45,18 +45,47 @@ export async function searchPolicies(query: string): Promise<{ id: string; label
   return [...merged.values()].slice(0, 20);
 }
 
+type SingleOrMany<T> = T | T[] | null;
+
+export type InstallmentPayment = {
+  id: string;
+  amount: number;
+  paid_at: string;
+  receipt_number: string | null;
+  is_reversed: boolean;
+  reversal_reason: string | null;
+  payment_methods: SingleOrMany<{ name: string }>;
+  agency_users: SingleOrMany<{ full_name: string }>;
+};
+
+export type InstallmentWithPayments = {
+  id: string;
+  installment_number: number;
+  due_date: string;
+  amount: number;
+  status: string;
+  paid_amount: number | null;
+  installment_payments: InstallmentPayment[];
+};
+
 export async function getPolicyInstallments(policyId: string) {
   await requireAgencyUser();
   const supabase = await createSupabaseClient();
   const [{ data: installments }, { data: paymentMethods }] = await Promise.all([
     supabase
       .from("policy_installments")
-      .select("*")
+      .select(
+        "*, installment_payments(*, payment_methods(name), " +
+          "agency_users!installment_payments_paid_by_fkey(full_name))",
+      )
       .eq("policy_id", policyId)
       .order("installment_number", { ascending: true }),
     supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
-  return { installments: installments ?? [], paymentMethods: paymentMethods ?? [] };
+  return {
+    installments: (installments ?? []) as unknown as InstallmentWithPayments[],
+    paymentMethods: paymentMethods ?? [],
+  };
 }
 
 export async function getPolicyClaims(policyId: string) {
@@ -452,11 +481,13 @@ export async function updatePolicyDetails(
   revalidatePath(`/dashboard/policies/${policyId}`);
 }
 
-// Records an actual collection: amount received, method, receipt, and who
-// collected it (from the server session, never trusted from the client —
-// the RLS policy on policy_installments independently enforces the same
-// self-attribution and refuses this update once the row is no longer
-// pending/overdue, so this is a defense-in-depth check, not the boundary).
+// Records an actual collection as its own transaction row (installment_payments)
+// rather than overwriting a single rolled-up total, so a partial payment
+// followed by a top-up shows as two distinct movements everywhere instead
+// of merging into one. A DB trigger recomputes the parent installment's
+// paid_amount/status from the active (non-reversed) transactions afterward.
+// Self-attributed from the server session, never trusted from the client —
+// the RLS policy on installment_payments independently enforces the same.
 export async function collectInstallmentPayment(
   policyId: string,
   installmentId: string,
@@ -467,40 +498,30 @@ export async function collectInstallmentPayment(
 
   const { data: installment } = await supabase
     .from("policy_installments")
-    .select("amount, status, paid_amount")
+    .select("amount, paid_amount")
     .eq("id", installmentId)
     .single();
   if (!installment) return;
 
-  // A row already partially_paid keeps its running total — this call adds
-  // to it rather than overwriting it, so a second collection tops up toward
-  // the balance still owed instead of erasing what was already received. A
-  // cancelled row starts over from zero (see installmentAlreadyCollected).
-  const alreadyPaid = installmentAlreadyCollected(installment);
-  const remainingDue = Math.max(installment.amount - alreadyPaid, 0);
+  const remainingDue = installmentRemaining(installment);
   const enteredRaw = formData.get("paid_amount");
   const entered = enteredRaw !== null && enteredRaw !== "" ? Number(enteredRaw) : NaN;
   const newPayment = Number.isFinite(entered) && entered > 0 ? entered : remainingDue;
-  const totalPaid = Math.round((alreadyPaid + newPayment) * 100) / 100;
-  const tip = Math.max(Math.round((totalPaid - installment.amount) * 100) / 100, 0);
+  if (newPayment <= 0) return;
 
   const paymentMethodId = (formData.get("payment_method_id") as string) || null;
   const receiptNumber = (formData.get("receipt_number") as string) || null;
-  const now = new Date();
 
-  await supabase
-    .from("policy_installments")
-    .update({
-      status: totalPaid >= installment.amount ? "paid" : "partially_paid",
-      paid_amount: totalPaid,
-      paid_date: now.toISOString().slice(0, 10),
-      paid_at: now.toISOString(),
-      payment_method_id: paymentMethodId,
-      receipt_number: receiptNumber,
-      paid_by: agencyUser.id,
-    })
-    .eq("id", installmentId);
+  const { error } = await supabase.from("installment_payments").insert({
+    installment_id: installmentId,
+    amount: Math.round(newPayment * 100) / 100,
+    payment_method_id: paymentMethodId,
+    receipt_number: receiptNumber,
+    paid_by: agencyUser.id,
+  });
+  if (error) return;
 
+  const tip = Math.max(Math.round((newPayment - remainingDue) * 100) / 100, 0);
   const tipNote = tip > 0 ? ` (εκ των οποίων ${tip.toFixed(2)} € tip)` : "";
   await logActivity(supabase, {
     entityType: "policy",
@@ -515,13 +536,14 @@ export async function collectInstallmentPayment(
   revalidatePath("/dashboard/cash-register");
 }
 
-// Owner/admin only (enforced both here and by RLS). Never touches the
-// original paid_amount/paid_by/paid_at/payment_method_id — the collection
-// stays visible, just flagged cancelled, so a disputed entry remains
-// evidence instead of being erased.
-export async function cancelInstallmentPayment(
+// Owner/admin only (enforced both here and by RLS). Reverses one specific
+// transaction rather than the whole installment — never touches the
+// original row, just flags it, so a disputed collection stays visible as
+// evidence instead of being erased. The DB trigger then recomputes the
+// parent installment's paid_amount/status from what's left active.
+export async function reverseInstallmentPayment(
   policyId: string,
-  installmentId: string,
+  paymentId: string,
   formData: FormData,
 ) {
   const agencyUser = await requireAgencyUser();
@@ -534,14 +556,14 @@ export async function cancelInstallmentPayment(
   if (!reason) return { error: "Η αιτιολογία ακύρωσης είναι υποχρεωτική." };
 
   await supabase
-    .from("policy_installments")
+    .from("installment_payments")
     .update({
-      status: "cancelled",
-      cancelled_by: agencyUser.id,
-      cancelled_at: new Date().toISOString(),
-      cancellation_reason: reason,
+      is_reversed: true,
+      reversed_by: agencyUser.id,
+      reversed_at: new Date().toISOString(),
+      reversal_reason: reason,
     })
-    .eq("id", installmentId);
+    .eq("id", paymentId);
 
   await logActivity(supabase, {
     entityType: "policy",

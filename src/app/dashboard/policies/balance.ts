@@ -6,40 +6,27 @@ export type PolicyForBalance = { id: string; status: string; premium_gross: numb
 
 export type InstallmentForMath = {
   amount: number;
-  status: string;
   paid_amount?: number | null;
 };
 
-// A single installment row holds the running total ever collected on it in
-// paid_amount, which can land under, over, or exactly on `amount` — these
-// three helpers turn that one number into the three figures the UI/reports
+// policy_installments.paid_amount is kept in sync with the active
+// (non-reversed) total of its installment_payments transactions by a DB
+// trigger (see migration 0045), so it's always accurate — these three
+// helpers turn that one number into the three figures the UI/reports
 // actually need: how much of it counts toward the premium (capped at
 // amount, so a tip never masks as more premium collected), how much is a
-// tip (the part above amount), and how much is still owed.
+// tip (the part above amount), and how much is still owed. Pure math, no
+// status branching needed — paid_amount already reflects reality.
 export function installmentApplied(inst: InstallmentForMath): number {
-  if (inst.status !== "paid" && inst.status !== "partially_paid") return 0;
   return Math.min(inst.paid_amount ?? 0, inst.amount);
 }
 
 export function installmentTip(inst: InstallmentForMath): number {
-  if (inst.status !== "paid" && inst.status !== "partially_paid") return 0;
   return Math.max((inst.paid_amount ?? 0) - inst.amount, 0);
 }
 
-// paid_amount on a cancelled row is a reversed collection kept as evidence,
-// not money currently held — so a cancelled row owes its full amount again,
-// same as one that was never collected at all.
 export function installmentRemaining(inst: InstallmentForMath): number {
-  if (inst.status === "paid") return 0;
-  if (inst.status === "partially_paid") return Math.max(inst.amount - (inst.paid_amount ?? 0), 0);
-  return inst.amount;
-}
-
-// What a fresh collection on this row should be netted against: a
-// partially_paid row keeps its running total, but a cancelled row starts
-// over from zero — its old paid_amount was reversed, not banked.
-export function installmentAlreadyCollected(inst: InstallmentForMath): number {
-  return inst.status === "partially_paid" ? (inst.paid_amount ?? 0) : 0;
+  return Math.max(inst.amount - (inst.paid_amount ?? 0), 0);
 }
 
 // "Issued and still relevant" — not a draft that never went out, not a
@@ -62,12 +49,11 @@ export async function getOutstandingByPolicy(
 
   const { data: installments } = await supabase
     .from("policy_installments")
-    .select("policy_id, amount, status, paid_amount")
+    .select("policy_id, amount, paid_amount")
     .in(
       "policy_id",
       billable.map((p) => p.id),
-    )
-    .in("status", ["paid", "partially_paid"]);
+    );
 
   const paidByPolicy = new Map<string, number>();
   for (const i of installments ?? []) {

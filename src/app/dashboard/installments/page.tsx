@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { installmentStatusVariant } from "@/lib/status-badge";
 import { resolveClientName } from "@/lib/client-name";
-import { installmentRemaining, installmentAlreadyCollected } from "../policies/balance";
+import { installmentRemaining } from "../policies/balance";
 import {
   Table,
   TableBody,
@@ -22,7 +22,6 @@ const STATUS_LABELS: Record<string, string> = {
   paid: "Πληρώθηκε",
   overdue: "Ληξιπρόθεσμη",
   partially_paid: "Μερική πληρωμή",
-  cancelled: "Ακυρώθηκε",
 };
 
 type ClientEmbed = {
@@ -37,7 +36,6 @@ type Row = {
   amount: number;
   status: string;
   paid_amount: number | null;
-  cancellation_reason: string | null;
   policies: {
     policy_number: string;
     assigned_agent_id: string | null;
@@ -59,11 +57,9 @@ function formatDate(value: string) {
 function RowsTable({
   rows,
   paymentMethods,
-  canCollectCancelled,
 }: {
   rows: Row[];
   paymentMethods: { id: string; name: string }[];
-  canCollectCancelled: boolean;
 }) {
   return (
     <div className="rounded-md border">
@@ -83,8 +79,6 @@ function RowsTable({
             rows.map((inst) => {
               const name = resolveClientName(inst.policies?.clients ?? null);
               const remaining = installmentRemaining(inst);
-              const canCollect =
-                inst.status !== "cancelled" || canCollectCancelled;
 
               return (
                 <TableRow key={inst.id}>
@@ -102,11 +96,6 @@ function RowsTable({
                         Δόθηκαν {(inst.paid_amount ?? 0).toFixed(2)} € από {inst.amount.toFixed(2)} €
                       </div>
                     )}
-                    {inst.status === "cancelled" && (
-                      <div className="text-xs text-muted-foreground">
-                        Ακυρώθηκε προηγούμενη είσπραξη{inst.cancellation_reason ? `: ${inst.cancellation_reason}` : ""}
-                      </div>
-                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant={installmentStatusVariant(inst.status)}>
@@ -114,15 +103,13 @@ function RowsTable({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {canCollect && (
-                      <CollectPaymentForm
-                        installmentId={inst.id}
-                        collectAction={collectInstallmentPayment.bind(null, inst.policy_id, inst.id)}
-                        amount={inst.amount}
-                        alreadyPaid={installmentAlreadyCollected(inst)}
-                        paymentMethods={paymentMethods}
-                      />
-                    )}
+                    <CollectPaymentForm
+                      installmentId={inst.id}
+                      collectAction={collectInstallmentPayment.bind(null, inst.policy_id, inst.id)}
+                      amount={inst.amount}
+                      alreadyPaid={inst.paid_amount ?? 0}
+                      paymentMethods={paymentMethods}
+                    />
                   </TableCell>
                 </TableRow>
               );
@@ -150,7 +137,7 @@ export default async function InstallmentsPage() {
       supabase
         .from("policy_installments")
         .select(
-          "id, policy_id, due_date, amount, status, paid_amount, cancellation_reason, " +
+          "id, policy_id, due_date, amount, status, paid_amount, " +
             "policies!inner(policy_number, status, assigned_agent_id, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
           { count: "exact" },
         )
@@ -210,7 +197,7 @@ export default async function InstallmentsPage() {
                   <span className="text-sm text-muted-foreground">{groupTotal.toFixed(2)} €</span>
                 </CardHeader>
                 <CardContent>
-                  <RowsTable rows={group.rows} paymentMethods={paymentMethods ?? []} canCollectCancelled />
+                  <RowsTable rows={group.rows} paymentMethods={paymentMethods ?? []} />
                 </CardContent>
               </Card>
             );
@@ -219,7 +206,7 @@ export default async function InstallmentsPage() {
           <p className="text-sm text-muted-foreground">Δεν υπάρχουν ανείσπρακτα.</p>
         )
       ) : (
-        <RowsTable rows={rows} paymentMethods={paymentMethods ?? []} canCollectCancelled={false} />
+        <RowsTable rows={rows} paymentMethods={paymentMethods ?? []} />
       )}
     </div>
   );
