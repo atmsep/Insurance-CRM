@@ -3,19 +3,14 @@ import { requireAgencyUser } from "@/lib/dal";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { POLICY_STATUS_LABELS as STATUS_LABELS } from "../policy-labels";
 import { getOutstandingByPolicy } from "../balance";
+import { parsePolicyFilters, applyPolicyFilters } from "../filters";
 
 export async function GET(request: Request) {
   await requireAgencyUser();
   const supabase = await createClient();
-  const { searchParams } = new URL(request.url);
-  const q = searchParams.get("q");
-  const client = searchParams.get("client");
-  const line = searchParams.get("line");
-  const carrier = searchParams.get("carrier");
-  const status = searchParams.get("status");
-  const risk = searchParams.get("risk");
-  const expiring = searchParams.get("expiring");
-  const ids = searchParams.get("ids");
+  const { searchParams: sp } = new URL(request.url);
+  const filters = parsePolicyFilters(Object.fromEntries(sp.entries()));
+  const ids = sp.get("ids");
 
   let query = supabase
     .from("policies")
@@ -29,18 +24,7 @@ export async function GET(request: Request) {
   if (ids) {
     query = query.in("id", ids.split(","));
   } else {
-    if (expiring) {
-      const days = Number(expiring) || 30;
-      const until = new Date();
-      until.setDate(until.getDate() + days);
-      query = query.in("status", ["active", "pending_renewal"]).lte("end_date", until.toISOString().slice(0, 10));
-    }
-    if (q) query = query.ilike("policy_number", `%${q}%`);
-    if (client) query = query.ilike("clients.display_name", `%${client}%`);
-    if (line) query = query.eq("insurance_line_id", line);
-    if (carrier) query = query.eq("carrier_id", carrier);
-    if (status) query = query.eq("status", status);
-    if (risk) query = query.ilike("risk_label", `%${risk}%`);
+    query = applyPolicyFilters(query, filters);
   }
 
   const { data: policies } = await query;

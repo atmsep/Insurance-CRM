@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAgencyUser } from "@/lib/dal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { policyStatusVariant } from "@/lib/status-badge";
@@ -20,6 +21,9 @@ import {
 import { BulkStatusBar } from "@/components/bulk-status-bar";
 import { bulkUpdatePolicyStatus } from "./actions";
 import { getOutstandingByPolicy } from "./balance";
+import { parsePolicyFilters, applyPolicyFilters, parsePerPage } from "./filters";
+import { AdvancedPolicySearchSheet } from "./_components/advanced-policy-search-sheet";
+import { PageSizeSelect } from "./_components/page-size-select";
 import {
   Table,
   TableBody,
@@ -28,8 +32,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-const PAGE_SIZE = 20;
 
 export default async function PoliciesPage({
   searchParams,
@@ -42,16 +44,35 @@ export default async function PoliciesPage({
     status?: string;
     risk?: string;
     expiring?: string;
+    agent?: string;
+    broker_office?: string;
+    start_from?: string;
+    start_to?: string;
+    end_from?: string;
+    end_to?: string;
+    premium_from?: string;
+    premium_to?: string;
+    per_page?: string;
     page?: string;
   }>;
 }) {
-  const { q, client, line, carrier, status, risk, expiring, page: pageParam } = await searchParams;
+  const sp = await searchParams;
+  const filters = parsePolicyFilters(sp);
   const supabase = await createClient();
-  const page = Math.max(1, Number(pageParam) || 1);
+  const agencyUser = await getCurrentAgencyUser();
+  const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
+  const page = Math.max(1, Number(sp.page) || 1);
+  const perPage = parsePerPage(sp.per_page);
 
-  const [{ data: insuranceLines }, { data: carriers }] = await Promise.all([
+  const [{ data: insuranceLines }, { data: carriers }, { data: brokerOffices }, agents] = await Promise.all([
     supabase.from("insurance_lines").select("id, name_el").order("sort_order"),
     supabase.from("carriers").select("id, name").order("name"),
+    supabase.from("broker_offices").select("id, name").eq("is_active", true).order("name"),
+    isAdmin
+      ? (
+          await supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name")
+        ).data
+      : null,
   ]);
 
   let query = supabase
@@ -62,55 +83,63 @@ export default async function PoliciesPage({
     )
     .eq("is_current_term", true);
 
-  if (expiring) {
-    const days = Number(expiring) || 30;
-    const until = new Date();
-    until.setDate(until.getDate() + days);
-    query = query
-      .in("status", ["active", "pending_renewal"])
-      .lte("end_date", until.toISOString().slice(0, 10))
-      .order("end_date", { ascending: true });
-  } else {
-    query = query.order("created_at", { ascending: false });
-  }
+  query = filters.expiring
+    ? query.order("end_date", { ascending: true })
+    : query.order("created_at", { ascending: false });
 
-  if (q) query = query.ilike("policy_number", `%${q}%`);
-  if (client) query = query.ilike("clients.display_name", `%${client}%`);
-  if (line) query = query.eq("insurance_line_id", line);
-  if (carrier) query = query.eq("carrier_id", carrier);
-  if (status) query = query.eq("status", status);
-  if (risk) query = query.ilike("risk_label", `%${risk}%`);
+  query = applyPolicyFilters(query, filters);
 
-  const from = (page - 1) * PAGE_SIZE;
-  query = query.range(from, from + PAGE_SIZE - 1);
+  const from = (page - 1) * perPage;
+  query = query.range(from, from + perPage - 1);
 
   const { data: policies, count } = await query;
-  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil((count ?? 0) / perPage));
   const outstandingByPolicy = await getOutstandingByPolicy(supabase, policies ?? []);
 
   const exportParams = new URLSearchParams();
-  if (q) exportParams.set("q", q);
-  if (client) exportParams.set("client", client);
-  if (line) exportParams.set("line", line);
-  if (carrier) exportParams.set("carrier", carrier);
-  if (status) exportParams.set("status", status);
-  if (risk) exportParams.set("risk", risk);
-  if (expiring) exportParams.set("expiring", expiring);
+  if (filters.q) exportParams.set("q", filters.q);
+  if (filters.client) exportParams.set("client", filters.client);
+  if (filters.line) exportParams.set("line", filters.line);
+  if (filters.carrier) exportParams.set("carrier", filters.carrier);
+  if (filters.status) exportParams.set("status", filters.status);
+  if (filters.risk) exportParams.set("risk", filters.risk);
+  if (filters.expiring) exportParams.set("expiring", filters.expiring);
+  if (filters.agentId) exportParams.set("agent", filters.agentId);
+  if (filters.brokerOfficeId) exportParams.set("broker_office", filters.brokerOfficeId);
+  if (filters.startFrom) exportParams.set("start_from", filters.startFrom);
+  if (filters.startTo) exportParams.set("start_to", filters.startTo);
+  if (filters.endFrom) exportParams.set("end_from", filters.endFrom);
+  if (filters.endTo) exportParams.set("end_to", filters.endTo);
+  if (filters.premiumFrom) exportParams.set("premium_from", filters.premiumFrom);
+  if (filters.premiumTo) exportParams.set("premium_to", filters.premiumTo);
 
   return (
     <div className="flex flex-col gap-6">
       <ListPageHeader
         title="Συμβόλαια"
         filterBanner={
-          expiring
+          filters.expiring
             ? {
-                label: `Ενεργά συμβόλαια που λήγουν εντός ${Number(expiring) || 30} ημερών`,
+                label: `Ενεργά συμβόλαια που λήγουν εντός ${Number(filters.expiring) || 30} ημερών`,
                 clearHref: "/dashboard/policies",
               }
             : undefined
         }
         actions={
           <>
+            <AdvancedPolicySearchSheet
+              form="policy-filters"
+              agentId={filters.agentId}
+              brokerOfficeId={filters.brokerOfficeId}
+              startFrom={filters.startFrom}
+              startTo={filters.startTo}
+              endFrom={filters.endFrom}
+              endTo={filters.endTo}
+              premiumFrom={filters.premiumFrom}
+              premiumTo={filters.premiumTo}
+              agents={agents?.map((a) => ({ id: a.id, label: a.full_name }))}
+              brokerOffices={(brokerOffices ?? []).map((b) => ({ id: b.id, label: b.name }))}
+            />
             <Button
               variant="outline"
               nativeButton={false}
@@ -152,7 +181,7 @@ export default async function PoliciesPage({
                   form="policy-filters"
                   name="risk"
                   placeholder="Χαρακτηριστικό..."
-                  defaultValue={risk ?? ""}
+                  defaultValue={filters.risk ?? ""}
                   className="h-7 text-xs"
                 />
               </TableHead>
@@ -161,7 +190,7 @@ export default async function PoliciesPage({
                   form="policy-filters"
                   name="client"
                   placeholder="Πελάτης..."
-                  defaultValue={client ?? ""}
+                  defaultValue={filters.client ?? ""}
                   className="h-7 text-xs"
                 />
               </TableHead>
@@ -170,7 +199,7 @@ export default async function PoliciesPage({
                   form="policy-filters"
                   name="q"
                   placeholder="Αριθμός..."
-                  defaultValue={q ?? ""}
+                  defaultValue={filters.q ?? ""}
                   className="h-7 text-xs"
                 />
               </TableHead>
@@ -178,7 +207,7 @@ export default async function PoliciesPage({
                 <FilterSelect
                   form="policy-filters"
                   name="line"
-                  defaultValue={line ?? ""}
+                  defaultValue={filters.line ?? ""}
                   allLabel="Όλοι οι κλάδοι"
                   options={(insuranceLines ?? []).map((l) => ({ id: l.id, label: l.name_el }))}
                 />
@@ -187,7 +216,7 @@ export default async function PoliciesPage({
                 <FilterSelect
                   form="policy-filters"
                   name="carrier"
-                  defaultValue={carrier ?? ""}
+                  defaultValue={filters.carrier ?? ""}
                   allLabel="Όλες οι εταιρείες"
                   options={(carriers ?? []).map((c) => ({ id: c.id, label: c.name }))}
                 />
@@ -202,7 +231,7 @@ export default async function PoliciesPage({
                 <FilterSelect
                   form="policy-filters"
                   name="status"
-                  defaultValue={status ?? ""}
+                  defaultValue={filters.status ?? ""}
                   allLabel="Όλες οι καταστάσεις"
                   options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ id: value, label }))}
                 />
@@ -309,15 +338,35 @@ export default async function PoliciesPage({
       </BulkSelectionProvider>
 
       <form id="policy-filters" className="flex flex-wrap items-center justify-between gap-3">
-        {expiring && <input type="hidden" name="expiring" value={expiring} />}
-        <Button type="submit" variant="secondary" size="sm">
-          Εφαρμογή φίλτρων
-        </Button>
+        {filters.expiring && <input type="hidden" name="expiring" value={filters.expiring} />}
+        <div className="flex items-center gap-3">
+          <Button type="submit" variant="secondary" size="sm">
+            Εφαρμογή φίλτρων
+          </Button>
+          <PageSizeSelect perPage={perPage} />
+        </div>
         <Pagination
           page={page}
           totalPages={totalPages}
           basePath="/dashboard/policies"
-          searchParams={{ q, client, line, carrier, status, risk, expiring }}
+          searchParams={{
+            q: filters.q,
+            client: filters.client,
+            line: filters.line,
+            carrier: filters.carrier,
+            status: filters.status,
+            risk: filters.risk,
+            expiring: filters.expiring,
+            agent: filters.agentId,
+            broker_office: filters.brokerOfficeId,
+            start_from: filters.startFrom,
+            start_to: filters.startTo,
+            end_from: filters.endFrom,
+            end_to: filters.endTo,
+            premium_from: filters.premiumFrom,
+            premium_to: filters.premiumTo,
+            per_page: sp.per_page,
+          }}
         />
       </form>
     </div>
