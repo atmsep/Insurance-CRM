@@ -2,6 +2,12 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { DayCell } from "./day-cell";
+import {
+  CELEBRATION_ICONS,
+  buildCelebrationWish,
+  getCelebrationTemplates,
+  isCelebrationType,
+} from "@/lib/celebrations";
 
 const WEEKDAY_LABELS = ["Δε", "Τρ", "Τε", "Πε", "Πα", "Σα", "Κυ"];
 const MONTH_LABELS = [
@@ -44,15 +50,39 @@ export default async function TasksCalendarPage({
   const rangeEnd = `${year}-${pad(monthIndex)}-${pad(daysInMonth)}`;
 
   const supabase = await createClient();
-  const { data: tasks } = await supabase
-    .from("tasks")
-    .select("id, title, due_date, priority, status")
-    .gte("due_date", rangeStart)
-    .lte("due_date", rangeEnd)
-    .order("due_date", { ascending: true });
+  const [{ data: tasks }, templates] = await Promise.all([
+    supabase
+      .from("tasks")
+      .select("id, title, due_date, priority, status, task_type, client_id, clients(email, display_name)")
+      .gte("due_date", rangeStart)
+      .lte("due_date", rangeEnd)
+      .order("due_date", { ascending: true }),
+    getCelebrationTemplates(supabase),
+  ]);
 
-  const tasksByDay = new Map<number, typeof tasks>();
-  for (const task of tasks ?? []) {
+  type TaskRow = {
+    id: string;
+    title: string;
+    due_date: string;
+    priority: string;
+    task_type: string;
+    clients: { email: string | null; display_name: string | null } | { email: string | null; display_name: string | null }[] | null;
+  };
+
+  const allTasks = ((tasks ?? []) as unknown as TaskRow[]).map((task) => {
+    const client = Array.isArray(task.clients) ? (task.clients[0] ?? null) : task.clients;
+    const celebration = isCelebrationType(task.task_type)
+      ? {
+          icon: CELEBRATION_ICONS[task.task_type],
+          clientEmail: client?.email ?? null,
+          ...buildCelebrationWish(templates[task.task_type], client?.display_name ?? "τον πελάτη"),
+        }
+      : null;
+    return { id: task.id, title: task.title, due_date: task.due_date, priority: task.priority, celebration };
+  });
+
+  const tasksByDay = new Map<number, typeof allTasks>();
+  for (const task of allTasks) {
     const day = Number(task.due_date.slice(8, 10));
     const list = tasksByDay.get(day) ?? [];
     list.push(task);

@@ -7,8 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createTask } from "../actions";
 import { taskPriorityVariant } from "@/lib/status-badge";
+import { CelebrationWishDialog } from "../celebration-wish-dialog";
 
-type DayTask = { id: string; title: string; priority: string };
+type DayTask = {
+  id: string;
+  title: string;
+  priority: string;
+  celebration: { icon: string; clientEmail: string | null; subject: string; body: string } | null;
+};
 
 export function DayCell({
   day,
@@ -48,16 +54,35 @@ export function DayCell({
         <p className={`text-right ${isToday ? "font-bold text-primary" : "text-muted-foreground"}`}>{day}</p>
       </div>
       <div className="flex flex-col gap-1">
-        {tasks.map((task) => (
-          <Badge
-            key={task.id}
-            variant={taskPriorityVariant(task.priority)}
-            className="block w-full truncate text-left"
-            title={task.title}
-          >
-            {task.title}
-          </Badge>
-        ))}
+        {tasks.map((task) => {
+          const celebration = task.celebration;
+          return celebration ? (
+            <CelebrationWishDialog
+              key={task.id}
+              taskId={task.id}
+              clientEmail={celebration.clientEmail}
+              initialSubject={celebration.subject}
+              initialBody={celebration.body}
+            >
+              <Badge
+                variant="secondary"
+                className="block w-full cursor-pointer truncate text-left"
+                title={task.title}
+              >
+                {celebration.icon} {task.title}
+              </Badge>
+            </CelebrationWishDialog>
+          ) : (
+            <Badge
+              key={task.id}
+              variant={taskPriorityVariant(task.priority)}
+              className="block w-full truncate text-left"
+              title={task.title}
+            >
+              {task.title}
+            </Badge>
+          );
+        })}
       </div>
 
       {open && (

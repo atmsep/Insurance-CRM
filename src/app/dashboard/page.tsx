@@ -3,6 +3,14 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { resolveClientName } from "@/lib/client-name";
+import { CelebrationWishDialog } from "./tasks/celebration-wish-dialog";
+import {
+  CELEBRATION_ICONS,
+  CELEBRATION_LABELS,
+  buildCelebrationWish,
+  getCelebrationTemplates,
+  isCelebrationType,
+} from "@/lib/celebrations";
 
 function addDays(days: number) {
   const d = new Date();
@@ -30,6 +38,7 @@ export default async function DashboardPage() {
     { data: todayTasks },
     { data: todayCollections },
     { data: todayExpiring },
+    celebrationTemplates,
   ] = await Promise.all([
     supabase
       .from("policies")
@@ -69,7 +78,7 @@ export default async function DashboardPage() {
       .limit(8),
     supabase
       .from("tasks")
-      .select("id, title, priority")
+      .select("id, title, priority, task_type, clients(email, display_name)")
       .eq("status", "pending")
       .eq("due_date", today)
       .order("priority", { ascending: false }),
@@ -85,19 +94,52 @@ export default async function DashboardPage() {
       .in("status", ["active", "pending_renewal"])
       .eq("is_current_term", true)
       .eq("end_date", today),
+    getCelebrationTemplates(supabase),
   ]);
 
   const outstanding = outstandingCount ?? 0;
   const expiringCount = expiringPolicies?.length ?? 0;
 
-  type AgendaItem = { key: string; label: string; href: string; kind: "task" | "collection" | "expiring" };
+  type AgendaItem =
+    | { key: string; label: string; href: string; kind: "task" | "collection" | "expiring" }
+    | {
+        key: string;
+        label: string;
+        kind: "celebration";
+        taskId: string;
+        icon: string;
+        celebrationLabel: string;
+        clientEmail: string | null;
+        subject: string;
+        body: string;
+      };
+
+  type TodayTaskRow = {
+    id: string;
+    title: string;
+    task_type: string;
+    clients: { email: string | null; display_name: string | null } | { email: string | null; display_name: string | null }[] | null;
+  };
+
   const agendaItems: AgendaItem[] = [
-    ...(todayTasks ?? []).map((t) => ({
-      key: `task-${t.id}`,
-      label: t.title,
-      href: "/dashboard/tasks",
-      kind: "task" as const,
-    })),
+    ...((todayTasks ?? []) as unknown as TodayTaskRow[]).map((t): AgendaItem => {
+      if (isCelebrationType(t.task_type)) {
+        const client = Array.isArray(t.clients) ? (t.clients[0] ?? null) : t.clients;
+        const wish = buildCelebrationWish(celebrationTemplates[t.task_type], client?.display_name ?? "τον πελάτη");
+        return {
+          key: `task-${t.id}`,
+          label: t.title,
+          kind: "celebration",
+          taskId: t.id,
+          icon: CELEBRATION_ICONS[t.task_type],
+          celebrationLabel: CELEBRATION_LABELS[t.task_type],
+          clientEmail: client?.email ?? null,
+          subject: wish.subject,
+          body: wish.body,
+        };
+      }
+      return { key: `task-${t.id}`, label: t.title, href: "/dashboard/tasks", kind: "task" as const };
+    }),
     ...(todayCollections ?? []).map((i) => ({
       key: `inst-${i.id}`,
       label: `Είσπραξη ${(i.policies as unknown as { policy_number: string } | null)?.policy_number ?? "—"} — ${i.amount.toFixed(2)} €`,
@@ -122,30 +164,47 @@ export default async function DashboardPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {agendaItems.length ? (
-            agendaItems.map((item) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-              >
-                <span>{item.label}</span>
-                <Badge
-                  variant={
-                    item.kind === "collection"
-                      ? "destructive"
-                      : item.kind === "expiring"
-                        ? "outline"
-                        : "default"
-                  }
+            agendaItems.map((item) =>
+              item.kind === "celebration" ? (
+                <CelebrationWishDialog
+                  key={item.key}
+                  taskId={item.taskId}
+                  clientEmail={item.clientEmail}
+                  initialSubject={item.subject}
+                  initialBody={item.body}
                 >
-                  {item.kind === "task"
-                    ? "Υπενθύμιση"
-                    : item.kind === "collection"
-                      ? "Είσπραξη"
-                      : "Λήξη"}
-                </Badge>
-              </Link>
-            ))
+                  <div className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted">
+                    <span>
+                      {item.icon} {item.label}
+                    </span>
+                    <Badge variant="secondary">{item.celebrationLabel}</Badge>
+                  </div>
+                </CelebrationWishDialog>
+              ) : (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                >
+                  <span>{item.label}</span>
+                  <Badge
+                    variant={
+                      item.kind === "collection"
+                        ? "destructive"
+                        : item.kind === "expiring"
+                          ? "outline"
+                          : "default"
+                    }
+                  >
+                    {item.kind === "task"
+                      ? "Υπενθύμιση"
+                      : item.kind === "collection"
+                        ? "Είσπραξη"
+                        : "Λήξη"}
+                  </Badge>
+                </Link>
+              ),
+            )
           ) : (
             <p className="text-sm text-muted-foreground">Δεν έχεις τίποτα προγραμματισμένο για σήμερα.</p>
           )}

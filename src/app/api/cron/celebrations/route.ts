@@ -1,12 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendEmail, renderTemplate } from "@/lib/email";
 import { getNameDay } from "@/lib/name-days";
 
 type CelebrationType = "name_day" | "birthday";
 
 type ClientRow = {
   id: string;
-  email: string | null;
   display_name: string | null;
   assigned_agent_id: string | null;
   client_individuals:
@@ -24,6 +22,10 @@ const TITLES: Record<CelebrationType, (name: string) => string> = {
   birthday: (name) => `Σήμερα έχει γενέθλια ο/η ${name}`,
 };
 
+// This job only creates the internal reminder task — sending the actual
+// wishes to the client is a deliberate manual step the agent takes by
+// clicking the task (see sendCelebrationWish in dashboard/tasks/actions.ts),
+// not something this cron does on its own.
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -32,15 +34,15 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
 
-  const [{ data: taskSetting }, { data: emailSetting }] = await Promise.all([
-    supabase.from("app_settings").select("enabled").eq("key", "celebration_tasks").maybeSingle(),
-    supabase.from("app_settings").select("enabled").eq("key", "celebration_emails").maybeSingle(),
-  ]);
+  const { data: taskSetting } = await supabase
+    .from("app_settings")
+    .select("enabled")
+    .eq("key", "celebration_tasks")
+    .maybeSingle();
   const tasksEnabled = taskSetting ? taskSetting.enabled : true;
-  const emailsEnabled = emailSetting ? emailSetting.enabled : true;
 
-  if (!tasksEnabled && !emailsEnabled) {
-    return Response.json({ skipped: "celebration automations disabled in Settings" });
+  if (!tasksEnabled) {
+    return Response.json({ skipped: "celebration reminders disabled in Settings" });
   }
 
   // "Today" in Greece, not wherever the cron happens to run — a client's
@@ -52,7 +54,7 @@ export async function GET(request: Request) {
 
   const { data: clients } = await supabase
     .from("clients")
-    .select("id, email, display_name, assigned_agent_id, client_individuals(first_name, date_of_birth)")
+    .select("id, display_name, assigned_agent_id, client_individuals(first_name, date_of_birth)")
     .eq("client_type", "individual")
     .eq("is_active", true);
 
@@ -87,23 +89,12 @@ export async function GET(request: Request) {
     .limit(1)
     .maybeSingle();
 
-  const [{ data: nameDayTemplate }, { data: birthdayTemplate }] = await Promise.all([
-    supabase.from("email_templates").select("subject, body, is_active").eq("key", "name_day").maybeSingle(),
-    supabase.from("email_templates").select("subject, body, is_active").eq("key", "birthday").maybeSingle(),
-  ]);
-  const templates: Record<CelebrationType, { subject: string; body: string; is_active: boolean } | null> = {
-    name_day: nameDayTemplate,
-    birthday: birthdayTemplate,
-  };
-
   let tasksCreated = 0;
-  let emailsSent = 0;
-  const errors: string[] = [];
 
   for (const { client, type } of matches) {
     // Idempotent: the unique constraint on (client_id, celebration_type,
     // celebration_date) makes a second cron run the same day a no-op —
-    // claim the slot first, then fill in what actually happened below.
+    // claim the slot first, then fill in the task id below.
     const { error: logError } = await supabase.from("client_celebrations_log").insert({
       client_id: client.id,
       celebration_type: type,
@@ -112,57 +103,33 @@ export async function GET(request: Request) {
     if (logError) continue;
 
     const name = client.display_name ?? "τον πελάτη";
+    const assignee = client.assigned_agent_id ?? fallbackAgent?.id ?? null;
     let taskId: string | null = null;
 
-    if (tasksEnabled) {
-      const assignee = client.assigned_agent_id ?? fallbackAgent?.id ?? null;
-      if (assignee) {
-        const { data: task } = await supabase
-          .from("tasks")
-          .insert({
-            title: TITLES[type](name),
-            task_type: type,
-            assigned_to: assignee,
-            client_id: client.id,
-            due_date: athensDate,
-            priority: "medium",
-          })
-          .select("id")
-          .single();
-        taskId = task?.id ?? null;
-        if (taskId) tasksCreated++;
-      }
-    }
-
-    let emailWasSent = false;
-    if (emailsEnabled && client.email) {
-      const template = templates[type];
-      if (template && template.is_active) {
-        const fields = {
-          client_name: name,
-          agency_name: process.env.AGENCY_NAME || "το ασφαλιστικό μας γραφείο",
-        };
-        const result = await sendEmail({
-          to: client.email,
-          subject: renderTemplate(template.subject, fields),
-          html: renderTemplate(template.body, fields),
-        });
-        if (result.ok) {
-          emailWasSent = true;
-          emailsSent++;
-        } else {
-          errors.push(`${name}: ${result.error}`);
-        }
-      }
+    if (assignee) {
+      const { data: task } = await supabase
+        .from("tasks")
+        .insert({
+          title: TITLES[type](name),
+          task_type: type,
+          assigned_to: assignee,
+          client_id: client.id,
+          due_date: athensDate,
+          priority: "medium",
+        })
+        .select("id")
+        .single();
+      taskId = task?.id ?? null;
+      if (taskId) tasksCreated++;
     }
 
     await supabase
       .from("client_celebrations_log")
-      .update({ task_id: taskId, email_sent: emailWasSent })
+      .update({ task_id: taskId })
       .eq("client_id", client.id)
       .eq("celebration_type", type)
       .eq("celebration_date", athensDate);
   }
 
-  return Response.json({ matched: matches.length, tasksCreated, emailsSent, errors });
+  return Response.json({ matched: matches.length, tasksCreated });
 }
