@@ -196,7 +196,7 @@ export default async function ReportsPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <StatCard label="Ενεργό ασφάλιστρο" value={`${activePremium.toFixed(2)} €`} />
-        <StatCard label="Χρεωθέν σύνολο δόσεων" value={`${totalBilled.toFixed(2)} €`} />
+        <StatCard label="Χρεωθέν σύνολο εισπράξεων" value={`${totalBilled.toFixed(2)} €`} />
         <StatCard label="Εισπραγμένο" value={`${totalCollected.toFixed(2)} €`} />
         <StatCard label="Φιλοδωρήματα" value={`${totalTips.toFixed(2)} €`} />
         <StatCard

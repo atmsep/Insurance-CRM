@@ -155,7 +155,7 @@ export default async function PolicyDetailPage({
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">Στοιχεία</TabsTrigger>
-          <TabsTrigger value="installments">Δόσεις</TabsTrigger>
+          <TabsTrigger value="installments">Εισπράξεις</TabsTrigger>
           <TabsTrigger value="claims">Ζημιές</TabsTrigger>
           <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>

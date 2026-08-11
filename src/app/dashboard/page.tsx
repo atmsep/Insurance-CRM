@@ -25,10 +25,10 @@ export default async function DashboardPage() {
     { count: openClaimsCount },
     { count: openTicketsCount },
     { data: expiringPolicies },
-    { data: overdueInstallments },
+    { count: outstandingCount },
     { data: upcomingTasks },
     { data: todayTasks },
-    { data: todayInstallments },
+    { data: todayCollections },
     { data: todayExpiring },
   ] = await Promise.all([
     supabase
@@ -53,13 +53,14 @@ export default async function DashboardPage() {
       .lte("end_date", in30Days)
       .order("end_date", { ascending: true })
       .limit(8),
+    // Every policy issued (not a draft, not itself cancelled) that hasn't
+    // been fully collected — no due-date cutoff, so this matches the
+    // "Ανείσπρακτα" worklist exactly, not just what's already overdue.
     supabase
       .from("policy_installments")
-      .select("id, due_date, amount, policies(policy_number)")
-      .in("status", ["pending", "overdue"])
-      .lte("due_date", today)
-      .order("due_date", { ascending: true })
-      .limit(8),
+      .select("id, policies!inner(status)", { count: "exact", head: true })
+      .neq("status", "paid")
+      .not("policies.status", "in", "(draft,cancelled)"),
     supabase
       .from("tasks")
       .select("id, title, due_date, priority")
@@ -74,8 +75,9 @@ export default async function DashboardPage() {
       .order("priority", { ascending: false }),
     supabase
       .from("policy_installments")
-      .select("id, amount, policy_id, policies(policy_number)")
-      .in("status", ["pending", "overdue"])
+      .select("id, amount, policy_id, policies!inner(policy_number, status)")
+      .neq("status", "paid")
+      .not("policies.status", "in", "(draft,cancelled)")
       .eq("due_date", today),
     supabase
       .from("policies")
@@ -85,10 +87,10 @@ export default async function DashboardPage() {
       .eq("end_date", today),
   ]);
 
-  const overdueCount = overdueInstallments?.length ?? 0;
+  const outstanding = outstandingCount ?? 0;
   const expiringCount = expiringPolicies?.length ?? 0;
 
-  type AgendaItem = { key: string; label: string; href: string; kind: "task" | "installment" | "expiring" };
+  type AgendaItem = { key: string; label: string; href: string; kind: "task" | "collection" | "expiring" };
   const agendaItems: AgendaItem[] = [
     ...(todayTasks ?? []).map((t) => ({
       key: `task-${t.id}`,
@@ -96,11 +98,11 @@ export default async function DashboardPage() {
       href: "/dashboard/tasks",
       kind: "task" as const,
     })),
-    ...(todayInstallments ?? []).map((i) => ({
+    ...(todayCollections ?? []).map((i) => ({
       key: `inst-${i.id}`,
-      label: `Δόση ${(i.policies as unknown as { policy_number: string } | null)?.policy_number ?? "—"} — ${i.amount.toFixed(2)} €`,
+      label: `Είσπραξη ${(i.policies as unknown as { policy_number: string } | null)?.policy_number ?? "—"} — ${i.amount.toFixed(2)} €`,
       href: `/dashboard/policies/${i.policy_id}`,
-      kind: "installment" as const,
+      kind: "collection" as const,
     })),
     ...(todayExpiring ?? []).map((p) => ({
       key: `exp-${p.id}`,
@@ -129,7 +131,7 @@ export default async function DashboardPage() {
                 <span>{item.label}</span>
                 <Badge
                   variant={
-                    item.kind === "installment"
+                    item.kind === "collection"
                       ? "destructive"
                       : item.kind === "expiring"
                         ? "outline"
@@ -138,8 +140,8 @@ export default async function DashboardPage() {
                 >
                   {item.kind === "task"
                     ? "Υπενθύμιση"
-                    : item.kind === "installment"
-                      ? "Δόση"
+                    : item.kind === "collection"
+                      ? "Είσπραξη"
                       : "Λήξη"}
                 </Badge>
               </Link>
@@ -168,9 +170,9 @@ export default async function DashboardPage() {
           href="/dashboard/policies?expiring=30"
         />
         <StatTile
-          label="Ληξιπρόθεσμες δόσεις"
-          value={overdueCount}
-          tone={overdueCount > 0 ? "critical" : "neutral"}
+          label="Ανείσπρακτα"
+          value={outstanding}
+          tone={outstanding > 0 ? "critical" : "neutral"}
           href="/dashboard/installments"
         />
         <StatTile

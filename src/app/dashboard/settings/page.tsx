@@ -39,8 +39,9 @@ export default async function SettingsPage() {
     isAdmin
       ? supabase
           .from("policy_installments")
-          .select("amount, status, paid_amount, policies!inner(assigned_agent_id)")
-          .in("status", ["pending", "overdue", "partially_paid"])
+          .select("amount, status, paid_amount, policies!inner(assigned_agent_id, status)")
+          .neq("status", "paid")
+          .not("policies.status", "in", "(draft,cancelled)")
       : Promise.resolve({ data: [] }),
     isAdmin
       ? supabase.from("commission_payees").select("*").order("name")

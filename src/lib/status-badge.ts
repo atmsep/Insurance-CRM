@@ -29,7 +29,7 @@ export function commissionStatusVariant(status: string): StatusBadgeVariant {
 
 export function installmentStatusVariant(status: string): StatusBadgeVariant {
   if (status === "paid") return "success";
-  if (status === "overdue") return "destructive";
+  if (status === "overdue" || status === "cancelled") return "destructive";
   if (status === "pending" || status === "partially_paid") return "warning";
   return "outline";
 }

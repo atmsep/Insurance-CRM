@@ -33,7 +33,7 @@ const navItems: NavItem[] = [
   {
     group: "Τυπώνω - Πληρώνω",
     links: [
-      { href: "/dashboard/installments", label: "Δόσεις", icon: Receipt },
+      { href: "/dashboard/installments", label: "Εισπράξεις", icon: Receipt },
       { href: "/dashboard/commissions", label: "Προμήθειες", icon: Percent },
       { href: "/dashboard/cash-register", label: "Ταμείο", icon: Wallet },
     ],

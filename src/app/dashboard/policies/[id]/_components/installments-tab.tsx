@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { installmentStatusVariant } from "@/lib/status-badge";
 import { formatDate } from "@/lib/date";
-import { installmentTip, installmentRemaining } from "../../balance";
+import { installmentTip, installmentRemaining, installmentAlreadyCollected } from "../../balance";
 import {
   getPolicyInstallments,
   createInstallment,
@@ -42,6 +42,7 @@ type Installment = {
   amount: number;
   status: string;
   paid_amount: number | null;
+  cancellation_reason: string | null;
 };
 
 export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdmin: boolean }) {
@@ -86,12 +87,12 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Δόσεις</CardTitle>
+        <CardTitle className="text-base">Εισπράξεις</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {loadError ? (
           <div className="flex flex-col items-start gap-2 text-sm">
-            <p className="text-muted-foreground">Δεν ήταν δυνατή η φόρτωση των δόσεων.</p>
+            <p className="text-muted-foreground">Δεν ήταν δυνατή η φόρτωση των εισπράξεων.</p>
             <Button type="button" variant="outline" size="sm" onClick={refetch}>
               Δοκίμασε ξανά
             </Button>
@@ -136,6 +137,12 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                               + {tip.toFixed(2)} € tip
                             </div>
                           )}
+                          {inst.status === "cancelled" && (
+                            <div className="text-xs text-muted-foreground">
+                              Ακυρώθηκε προηγούμενη είσπραξη
+                              {inst.cancellation_reason ? `: ${inst.cancellation_reason}` : ""}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant={installmentStatusVariant(inst.status)}>
@@ -145,7 +152,8 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                         <TableCell>
                           {(inst.status === "pending" ||
                             inst.status === "overdue" ||
-                            inst.status === "partially_paid") && (
+                            inst.status === "partially_paid" ||
+                            (isAdmin && inst.status === "cancelled")) && (
                             <CollectPaymentForm
                               installmentId={inst.id}
                               collectAction={async (formData) => {
@@ -153,7 +161,7 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                                 await refetch();
                               }}
                               amount={inst.amount}
-                              alreadyPaid={inst.paid_amount ?? 0}
+                              alreadyPaid={installmentAlreadyCollected(inst)}
                               paymentMethods={data.paymentMethods}
                             />
                           )}
@@ -173,7 +181,7 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                 ) : (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center text-muted-foreground">
-                      Δεν υπάρχουν δόσεις.
+                      Δεν υπάρχουν εισπράξεις.
                     </TableCell>
                   </TableRow>
                 )}
@@ -182,7 +190,7 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
 
             <form action={addInstallmentAction} className="flex flex-wrap items-end gap-3">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="due_date">Ημ. λήξης δόσης</Label>
+                <Label htmlFor="due_date">Ημ. λήξης</Label>
                 <Input id="due_date" name="due_date" type="date" required className="w-40" />
               </div>
               <div className="flex flex-col gap-2">
@@ -190,7 +198,7 @@ export function InstallmentsTab({ policyId, isAdmin }: { policyId: string; isAdm
                 <Input id="amount" name="amount" type="number" step="0.01" required className="w-32" />
               </div>
               <Button type="submit" variant="secondary">
-                Προσθήκη δόσης
+                Προσθήκη είσπραξης
               </Button>
             </form>
           </>

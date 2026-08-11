@@ -7,6 +7,7 @@ import { requireAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
 import type { PaymentFrequency } from "@/lib/database.types";
+import { installmentAlreadyCollected } from "./balance";
 
 export type PolicyFormState = { error: string; field?: string } | undefined;
 export type SendEmailState = { error: string } | { success: string } | undefined;
@@ -259,10 +260,10 @@ export async function createPolicy(
     return { error: "Σφάλμα κατά την αποθήκευση στοιχείων κλάδου: " + branchError };
   }
 
-  // Auto-generate the single δόση for the full gross premium, so the agent
-  // only ever has to click "Είσπραξη" when money actually comes in instead
-  // of first adding the installment by hand. Applies to renewals too — a
-  // renewed term needs its own fresh installment just like new business.
+  // Auto-generate the single receivable for the full gross premium, so the
+  // agent only ever has to click "Είσπραξη" when money actually comes in
+  // instead of first entering it by hand. Applies to renewals too — a
+  // renewed term needs its own fresh receivable just like new business.
   await supabase
     .from("policy_installments")
     .insert(buildInstallmentRows(policy.id, startDate, premiumGross));
@@ -368,7 +369,7 @@ export async function createInstallment(policyId: string, formData: FormData) {
     entityType: "policy",
     entityId: policyId,
     action: "installment_created",
-    description: "Προστέθηκε νέα δόση.",
+    description: "Προστέθηκε νέα είσπραξη.",
     actorId: agencyUser.id,
   });
 
@@ -471,10 +472,11 @@ export async function collectInstallmentPayment(
     .single();
   if (!installment) return;
 
-  // A δόση already partially_paid keeps its running total — this call adds
+  // A row already partially_paid keeps its running total — this call adds
   // to it rather than overwriting it, so a second collection tops up toward
-  // the balance still owed instead of erasing what was already received.
-  const alreadyPaid = installment.status === "partially_paid" ? (installment.paid_amount ?? 0) : 0;
+  // the balance still owed instead of erasing what was already received. A
+  // cancelled row starts over from zero (see installmentAlreadyCollected).
+  const alreadyPaid = installmentAlreadyCollected(installment);
   const remainingDue = Math.max(installment.amount - alreadyPaid, 0);
   const enteredRaw = formData.get("paid_amount");
   const entered = enteredRaw !== null && enteredRaw !== "" ? Number(enteredRaw) : NaN;
@@ -504,7 +506,7 @@ export async function collectInstallmentPayment(
     entityType: "policy",
     entityId: policyId,
     action: "payment_collected",
-    description: `Εισπράχθηκαν ${newPayment.toFixed(2)} € δόσης${tipNote}.`,
+    description: `Εισπράχθηκαν ${newPayment.toFixed(2)} €${tipNote}.`,
     actorId: agencyUser.id,
   });
 
@@ -545,7 +547,7 @@ export async function cancelInstallmentPayment(
     entityType: "policy",
     entityId: policyId,
     action: "payment_cancelled",
-    description: `Ακυρώθηκε είσπραξη δόσης: ${reason}`,
+    description: `Ακυρώθηκε είσπραξη: ${reason}`,
     actorId: agencyUser.id,
   });
 

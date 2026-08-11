@@ -26,10 +26,27 @@ export function installmentTip(inst: InstallmentForMath): number {
   return Math.max((inst.paid_amount ?? 0) - inst.amount, 0);
 }
 
+// paid_amount on a cancelled row is a reversed collection kept as evidence,
+// not money currently held — so a cancelled row owes its full amount again,
+// same as one that was never collected at all.
 export function installmentRemaining(inst: InstallmentForMath): number {
-  if (inst.status === "pending" || inst.status === "overdue") return inst.amount;
+  if (inst.status === "paid") return 0;
   if (inst.status === "partially_paid") return Math.max(inst.amount - (inst.paid_amount ?? 0), 0);
-  return 0;
+  return inst.amount;
+}
+
+// What a fresh collection on this row should be netted against: a
+// partially_paid row keeps its running total, but a cancelled row starts
+// over from zero — its old paid_amount was reversed, not banked.
+export function installmentAlreadyCollected(inst: InstallmentForMath): number {
+  return inst.status === "partially_paid" ? (inst.paid_amount ?? 0) : 0;
+}
+
+// "Issued and still relevant" — not a draft that never went out, not a
+// policy that was itself cancelled. Used to decide which policies' unpaid
+// balances should actually show up as owed.
+export function isBillablePolicyStatus(status: string): boolean {
+  return status !== "draft" && status !== "cancelled";
 }
 
 // Same "outstanding = premium_gross minus paid installments" rule used on
@@ -40,7 +57,7 @@ export async function getOutstandingByPolicy(
   policies: PolicyForBalance[],
 ): Promise<Map<string, number>> {
   const outstanding = new Map<string, number>();
-  const billable = policies.filter((p) => p.status !== "draft" && p.status !== "cancelled");
+  const billable = policies.filter((p) => isBillablePolicyStatus(p.status));
   if (billable.length === 0) return outstanding;
 
   const { data: installments } = await supabase
