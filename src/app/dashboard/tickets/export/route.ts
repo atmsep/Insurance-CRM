@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   let query = supabase
     .from("client_tickets")
     .select(
-      "subject, status, priority, created_at, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)), agency_users!assigned_to(full_name)",
+      "subject, status, priority, created_at, resolution_notes, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)), agency_users!assigned_to(full_name)",
     )
     .order("created_at", { ascending: false })
     .limit(5000);
@@ -50,6 +50,7 @@ export async function GET(request: Request) {
       priority: PRIORITY_LABELS[t.priority] ?? t.priority,
       created_at: formatDate(t.created_at),
       status: TICKET_STATUS_LABELS[t.status] ?? t.status,
+      resolution_notes: t.resolution_notes ?? "",
     };
   });
 
@@ -60,6 +61,7 @@ export async function GET(request: Request) {
     { key: "priority", label: "Προτεραιότητα" },
     { key: "created_at", label: "Ημ/νία" },
     { key: "status", label: "Κατάσταση" },
+    { key: "resolution_notes", label: "Περιγραφή διεκπεραίωσης" },
   ]);
 
   return csvResponse(csv, "aitimata.csv");

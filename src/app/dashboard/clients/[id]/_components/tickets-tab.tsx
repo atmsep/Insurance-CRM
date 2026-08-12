@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusSelect as TicketStatusSelect } from "../../../tickets/status-select";
+import { AssigneeSelect } from "../../../tickets/assignee-select";
 import type { TicketStatus } from "@/lib/database.types";
 import { formatDateTime } from "@/lib/date";
 
@@ -20,15 +21,19 @@ type Ticket = {
   description: string | null;
   status: string;
   created_at: string;
+  assigned_to: string | null;
+  resolution_notes: string | null;
 };
 
 export function TicketsTab({
   clientId,
   tickets,
+  agents,
   addTicketAction,
 }: {
   clientId: string;
   tickets: Ticket[];
+  agents: { id: string; full_name: string }[];
   addTicketAction: (formData: FormData) => void | Promise<void>;
 }) {
   return (
@@ -43,7 +48,9 @@ export function TicketsTab({
               <TableHead>Ημ/νία</TableHead>
               <TableHead>Θέμα</TableHead>
               <TableHead>Περιγραφή</TableHead>
+              <TableHead>Ανάθεση</TableHead>
               <TableHead>Κατάσταση</TableHead>
+              <TableHead>Περιγραφή διεκπεραίωσης</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -54,17 +61,29 @@ export function TicketsTab({
                   <TableCell>{ticket.subject}</TableCell>
                   <TableCell className="max-w-xs truncate">{ticket.description ?? "—"}</TableCell>
                   <TableCell>
+                    <AssigneeSelect
+                      ticketId={ticket.id}
+                      clientId={clientId}
+                      assignedTo={ticket.assigned_to}
+                      agents={agents}
+                    />
+                  </TableCell>
+                  <TableCell>
                     <TicketStatusSelect
                       ticketId={ticket.id}
                       clientId={clientId}
                       status={ticket.status as TicketStatus}
+                      resolutionNotes={ticket.resolution_notes}
                     />
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate" title={ticket.resolution_notes ?? undefined}>
+                    {ticket.resolution_notes ?? "—"}
                   </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                <TableCell colSpan={6} className="text-center text-muted-foreground">
                   Δεν υπάρχουν αιτήματα.
                 </TableCell>
               </TableRow>

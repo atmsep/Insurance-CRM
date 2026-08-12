@@ -72,7 +72,7 @@ export default async function ClientDetailPage({
       .eq("policies.client_id", id),
     supabase
       .from("client_tickets")
-      .select("id, subject, description, status, priority, created_at")
+      .select("id, subject, description, status, priority, created_at, assigned_to, resolution_notes")
       .eq("client_id", id)
       .order("created_at", { ascending: false }),
     supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
@@ -207,7 +207,12 @@ export default async function ClientDetailPage({
         </TabsContent>
 
         <TabsContent value="tickets" className="pt-4">
-          <TicketsTab clientId={id} tickets={tickets ?? []} addTicketAction={addTicketAction} />
+          <TicketsTab
+            clientId={id}
+            tickets={tickets ?? []}
+            agents={agents ?? []}
+            addTicketAction={addTicketAction}
+          />
         </TabsContent>
 
         <TabsContent value="commissions" className="pt-4">

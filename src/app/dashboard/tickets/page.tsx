@@ -22,8 +22,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TICKET_STATUS_LABELS } from "./ticket-labels";
-import { ticketStatusVariant, taskPriorityVariant } from "@/lib/status-badge";
+import { taskPriorityVariant } from "@/lib/status-badge";
 import { resolveClientName } from "@/lib/client-name";
+import { StatusSelect } from "./status-select";
+import { AssigneeSelect } from "./assignee-select";
+import type { TicketStatus } from "@/lib/database.types";
 
 const PRIORITY_LABELS: Record<string, string> = {
   low: "Χαμηλή",
@@ -50,7 +53,7 @@ export default async function TicketsPage({
   let query = supabase
     .from("client_tickets")
     .select(
-      "id, client_id, subject, status, priority, created_at, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)), agency_users!assigned_to(full_name)",
+      "id, client_id, subject, status, priority, created_at, assigned_to, resolution_notes, clients(client_individuals(first_name,last_name), client_legal_entities(company_name))",
       { count: "exact" },
     )
     .order("created_at", { ascending: false });
@@ -61,7 +64,10 @@ export default async function TicketsPage({
   const from = (page - 1) * PAGE_SIZE;
   query = query.range(from, from + PAGE_SIZE - 1);
 
-  const { data: tickets, count } = await query;
+  const [{ data: tickets, count }, { data: agents }] = await Promise.all([
+    query,
+    supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
+  ]);
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   const exportParams = new URLSearchParams();
@@ -98,6 +104,7 @@ export default async function TicketsPage({
               <TableHead>Προτεραιότητα</TableHead>
               <TableHead>Ημ/νία</TableHead>
               <TableHead>Κατάσταση</TableHead>
+              <TableHead>Περιγραφή διεκπεραίωσης</TableHead>
             </TableRow>
             <TableRow>
               <TableHead className="pb-2" />
@@ -115,6 +122,7 @@ export default async function TicketsPage({
                   options={Object.entries(TICKET_STATUS_LABELS).map(([value, label]) => ({ id: value, label }))}
                 />
               </TableHead>
+              <TableHead className="pb-2" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -124,7 +132,6 @@ export default async function TicketsPage({
                   client_individuals: { first_name: string; last_name: string } | null;
                   client_legal_entities: { company_name: string } | null;
                 } | null;
-                const agent = ticket.agency_users as unknown as { full_name: string } | null;
                 const name = resolveClientName(client);
 
                 return (
@@ -138,7 +145,14 @@ export default async function TicketsPage({
                       </Link>
                     </TableCell>
                     <TableCell>{ticket.subject}</TableCell>
-                    <TableCell>{agent?.full_name ?? "—"}</TableCell>
+                    <TableCell>
+                      <AssigneeSelect
+                        ticketId={ticket.id}
+                        clientId={ticket.client_id}
+                        assignedTo={ticket.assigned_to}
+                        agents={agents ?? []}
+                      />
+                    </TableCell>
                     <TableCell>
                       <Badge variant={taskPriorityVariant(ticket.priority)}>
                         {PRIORITY_LABELS[ticket.priority] ?? ticket.priority}
@@ -146,16 +160,22 @@ export default async function TicketsPage({
                     </TableCell>
                     <TableCell>{formatDate(ticket.created_at)}</TableCell>
                     <TableCell>
-                      <Badge variant={ticketStatusVariant(ticket.status)}>
-                        {TICKET_STATUS_LABELS[ticket.status] ?? ticket.status}
-                      </Badge>
+                      <StatusSelect
+                        ticketId={ticket.id}
+                        clientId={ticket.client_id}
+                        status={ticket.status as TicketStatus}
+                        resolutionNotes={ticket.resolution_notes}
+                      />
+                    </TableCell>
+                    <TableCell className="max-w-56 truncate" title={ticket.resolution_notes ?? undefined}>
+                      {ticket.resolution_notes ?? "—"}
                     </TableCell>
                   </ClickableRow>
                 );
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   Δεν υπάρχουν αιτήματα.
                 </TableCell>
               </TableRow>

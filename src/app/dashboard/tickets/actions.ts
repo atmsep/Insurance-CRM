@@ -39,15 +39,23 @@ export async function createTicket(clientId: string, formData: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function updateTicketStatus(ticketId: string, clientId: string, status: string) {
+export async function updateTicketStatus(
+  ticketId: string,
+  clientId: string,
+  status: string,
+  resolutionNotes?: string,
+) {
   const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
+
+  const isClosing = status === "resolved" || status === "closed";
 
   await supabase
     .from("client_tickets")
     .update({
       status,
-      resolved_at: status === "resolved" || status === "closed" ? new Date().toISOString() : null,
+      resolved_at: isClosing ? new Date().toISOString() : null,
+      ...(resolutionNotes !== undefined ? { resolution_notes: resolutionNotes } : {}),
     })
     .eq("id", ticketId);
 
@@ -55,7 +63,34 @@ export async function updateTicketStatus(ticketId: string, clientId: string, sta
     entityType: "client",
     entityId: clientId,
     action: "ticket_status_changed",
-    description: `Η κατάσταση ενός αιτήματος άλλαξε σε "${status}".`,
+    description: resolutionNotes
+      ? `Η κατάσταση ενός αιτήματος άλλαξε σε "${status}": ${resolutionNotes}`
+      : `Η κατάσταση ενός αιτήματος άλλαξε σε "${status}".`,
+    actorId: agencyUser.id,
+  });
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+  revalidatePath("/dashboard/tickets");
+  revalidatePath("/dashboard");
+}
+
+export async function assignTicket(ticketId: string, clientId: string, agentId: string) {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const { data: agent } = await supabase
+    .from("agency_users")
+    .select("full_name")
+    .eq("id", agentId)
+    .maybeSingle();
+
+  await supabase.from("client_tickets").update({ assigned_to: agentId }).eq("id", ticketId);
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: clientId,
+    action: "ticket_assigned",
+    description: `Το αίτημα ανατέθηκε στον/στην ${agent?.full_name ?? "συνεργάτη"}.`,
     actorId: agencyUser.id,
   });
 
