@@ -43,14 +43,32 @@ export default async function CommissionsPage({
   if (status) query = query.eq("status", status);
   if (direction) query = query.eq("direction", direction);
 
-  const { data: commissions } = await query;
+  const [{ data: commissions }, totalsResult] = (await Promise.all([
+    query,
+    supabase.rpc("commissions_filtered_total", {
+      p_status: status ?? null,
+      p_direction: direction ?? null,
+    }),
+  ])) as unknown as [
+    Awaited<typeof query>,
+    { data: { total_amount: number; row_count: number }[] | null },
+  ];
 
-  const total = (commissions ?? []).reduce((sum, c) => sum + (c.commission_amount ?? 0), 0);
+  const totals = totalsResult.data?.[0] ?? { total_amount: 0, row_count: 0 };
+  const total = totals.total_amount;
+  const isTruncated = totals.row_count > 100;
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Προμήθειες</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">Προμήθειες</h1>
+          {isTruncated && (
+            <p className="text-sm text-muted-foreground">
+              Εμφανίζονται 100 από {totals.row_count} — το σύνολο υπολογίζεται σε όλες.
+            </p>
+          )}
+        </div>
         <p className="text-sm text-muted-foreground">
           Σύνολο: <span className="font-medium text-foreground">{total.toFixed(2)} €</span>
         </p>

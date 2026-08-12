@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { installmentRemaining } from "../../../policies/balance";
 import { updateAgencyUserProfile } from "../../actions";
 import { AgentDetailsCard } from "./_components/agent-details-card";
 import { AgentStatusToggle } from "./_components/agent-status-toggle";
@@ -26,7 +25,7 @@ export default async function AgentDetailPage({
   const [
     { count: clientsCount },
     { count: activePoliciesCount },
-    { data: outstandingRows },
+    outstandingResult,
     { data: commissions },
   ] = await Promise.all([
     supabase
@@ -40,12 +39,9 @@ export default async function AgentDetailPage({
       .eq("assigned_agent_id", id)
       .eq("status", "active")
       .eq("is_current_term", true),
-    supabase
-      .from("policy_installments")
-      .select("amount, status, paid_amount, policies!inner(assigned_agent_id, status)")
-      .neq("status", "paid")
-      .not("policies.status", "in", "(draft,cancelled)")
-      .eq("policies.assigned_agent_id", id),
+    supabase.rpc("agent_outstanding_balance", { p_agent_id: id }) as unknown as Promise<{
+      data: number | null;
+    }>,
     supabase
       .from("commissions")
       .select("commission_amount, status")
@@ -53,7 +49,11 @@ export default async function AgentDetailPage({
       .eq("direction", "incoming"),
   ]);
 
-  const outstanding = (outstandingRows ?? []).reduce((sum, row) => sum + installmentRemaining(row), 0);
+  // True per-agent sum via SQL (agent_outstanding_balance, migration 0063) —
+  // the previous unbounded .select() summed in JS was subject to
+  // PostgREST's 1,000-row cap, which risked silently undercounting exactly
+  // the agents with the largest books after the Profia import.
+  const outstanding = outstandingResult.data ?? 0;
   const commissionsPaid = (commissions ?? [])
     .filter((c) => c.status === "paid")
     .reduce((sum, c) => sum + c.commission_amount, 0);

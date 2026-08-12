@@ -46,6 +46,7 @@ async function sendBatch(
       "id, policy_number, end_date, insurance_lines(name_el), carriers(name), clients(email, display_name)",
     )
     .in("status", ["active", "pending_renewal"])
+    .eq("is_current_term", true)
     .is(sentColumn, null)
     .gte("end_date", today.toISOString().slice(0, 10))
     .lte("end_date", cutoff.toISOString().slice(0, 10));

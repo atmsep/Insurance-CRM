@@ -37,17 +37,23 @@ type TaskRow = {
   clients: { email: string | null; display_name: string | null } | { email: string | null; display_name: string | null }[] | null;
 };
 
+const LIST_CAP = 300;
+
 export default async function TasksPage() {
   const supabase = await createClient();
 
-  const [{ data: tasks }, templates] = await Promise.all([
+  const [{ data: tasks, count }, templates] = await Promise.all([
     supabase
       .from("tasks")
-      .select("id, title, due_date, priority, task_type, clients(email, display_name)")
+      .select("id, title, due_date, priority, task_type, clients(email, display_name)", {
+        count: "exact",
+      })
       .eq("status", "pending")
-      .order("due_date", { ascending: true }),
+      .order("due_date", { ascending: true })
+      .limit(LIST_CAP),
     getCelebrationTemplates(supabase),
   ]);
+  const isTruncated = (count ?? 0) > LIST_CAP;
 
   const rows = ((tasks ?? []) as unknown as TaskRow[]).map((task) => {
     const client = Array.isArray(task.clients) ? (task.clients[0] ?? null) : task.clients;
@@ -65,7 +71,14 @@ export default async function TasksPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Υπενθυμίσεις</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">Υπενθυμίσεις</h1>
+          {isTruncated && (
+            <p className="text-sm text-muted-foreground">
+              Εμφανίζονται {LIST_CAP} από {count} — ολοκλήρωσε τις παλαιότερες για να δεις τις υπόλοιπες.
+            </p>
+          )}
+        </div>
         <Button
           variant="outline"
           nativeButton={false}

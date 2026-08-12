@@ -132,7 +132,7 @@ export default async function InstallmentsPage() {
   const agencyUser = await getCurrentAgencyUser();
   const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
 
-  const [{ data: installments, count }, { data: paymentMethods }, { data: agents }] =
+  const [{ data: installments, count }, { data: paymentMethods }, { data: agents }, totalsResult] =
     await Promise.all([
       supabase
         .from("policy_installments")
@@ -149,10 +149,14 @@ export default async function InstallmentsPage() {
       isAdmin
         ? supabase.from("agency_users").select("id, full_name").order("full_name")
         : Promise.resolve({ data: [] }),
+      supabase.rpc("installments_outstanding_total") as unknown as Promise<{ data: number | null }>,
     ]);
 
   const rows = (installments ?? []) as unknown as Row[];
-  const total = rows.reduce((sum, i) => sum + installmentRemaining(i), 0);
+  // The true total (not rows.reduce, which only covers the .limit(LIST_CAP)
+  // page) — installmentRemaining's per-row math is mirrored in SQL by
+  // installments_outstanding_total (migration 0062).
+  const total = totalsResult.data ?? 0;
   const isTruncated = (count ?? 0) > LIST_CAP;
 
   const agentNameById = new Map((agents ?? []).map((a) => [a.id, a.full_name]));

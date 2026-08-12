@@ -52,14 +52,28 @@ export async function GET(request: Request) {
   const month = Number(monthStr);
   const day = Number(dayStr);
 
-  const { data: clients } = await supabase
-    .from("clients")
-    .select("id, display_name, assigned_agent_id, client_individuals(first_name, date_of_birth)")
-    .eq("client_type", "individual")
-    .eq("is_active", true);
+  // Unpaginated .select() is silently capped at 1,000 rows by PostgREST —
+  // clients is ~6,090 rows, so a plain fetch would permanently skip
+  // whichever clients land past the cap. This runs once a day, so paging
+  // through in full costs a handful of extra round trips, not a real delay.
+  const PAGE_SIZE = 1000;
+  const clients: ClientRow[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("clients")
+      .select("id, display_name, assigned_agent_id, client_individuals(first_name, date_of_birth)")
+      .eq("client_type", "individual")
+      .eq("is_active", true)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) break;
+    if (!data || data.length === 0) break;
+    clients.push(...(data as unknown as ClientRow[]));
+    if (data.length < PAGE_SIZE) break;
+  }
 
   const matches: { client: ClientRow; type: CelebrationType }[] = [];
-  for (const c of (clients ?? []) as ClientRow[]) {
+  for (const c of clients) {
     const individual = one(c.client_individuals);
     if (!individual) continue;
 
