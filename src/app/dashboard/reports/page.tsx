@@ -11,7 +11,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { COMMISSION_DIRECTION_LABELS } from "../commissions/direction-labels";
-import { installmentApplied, installmentTip } from "../policies/balance";
 
 const POLICY_STATUS_LABELS: Record<string, string> = {
   draft: "Πρόχειρο",
@@ -38,17 +37,32 @@ const COMMISSION_STATUS_LABELS: Record<string, string> = {
   cancelled: "Ακυρώθηκε",
 };
 
-function groupSum<T>(rows: T[], keyFn: (row: T) => string, valueFn: (row: T) => number) {
-  const map = new Map<string, { count: number; total: number }>();
-  for (const row of rows) {
-    const key = keyFn(row);
-    const entry = map.get(key) ?? { count: 0, total: 0 };
-    entry.count += 1;
-    entry.total += valueFn(row);
-    map.set(key, entry);
-  }
-  return map;
-}
+// Shapes returned by the report_* SQL functions (migration 0055) — not in
+// database.types.ts, which doesn't model custom functions, so the RPC calls
+// below need an explicit generic instead of relying on inference.
+type PoliciesByStatusRow = { status: string; policy_count: number; premium_sum: number };
+type PoliciesByLineRow = { line_name: string; policy_count: number; premium_sum: number };
+type BillingSummaryRow = {
+  total_billed: number;
+  total_collected: number;
+  total_tips: number;
+  outstanding: number;
+};
+type ClaimsByStatusRow = { status: string; claim_count: number; amount_sum: number };
+type CommissionsByStatusRow = {
+  direction: "incoming" | "outgoing";
+  status: string;
+  commission_count: number;
+  amount_sum: number;
+};
+type ReferralBreakdownRow = { source: string; client_count: number };
+type CarrierSummaryRow = {
+  carrier_id: string;
+  carrier_name: string;
+  collected: number;
+  commission_total: number;
+  commission_pending: number;
+};
 
 export default async function ReportsPage() {
   const agencyUser = await requireAgencyUser();
@@ -58,140 +72,85 @@ export default async function ReportsPage() {
 
   const supabase = await createClient();
 
+  // Every one of these tables can now hold well over Supabase's default
+  // 1000-row page cap (the Profia import alone put policies/installments/
+  // commissions far past it), and paging through the biggest ones client-side
+  // was itself slow enough to hit the statement timeout — so the aggregation
+  // happens in Postgres (see migration 0055) and each call here returns a
+  // handful of rows regardless of table size.
   const [
-    { data: policies },
-    { data: installments },
-    { data: claims },
-    { data: commissions },
-    { data: carrierInstallments },
-    { data: carrierCommissions },
-    { data: clients },
-  ] = await Promise.all([
-    supabase
-      .from("policies")
-      .select("id, status, premium_gross, insurance_lines(name_el)")
-      .eq("is_current_term", true),
-    supabase.from("policy_installments").select("policy_id, amount, status, paid_amount"),
-    supabase.from("claims").select("status, claim_amount_estimated, claim_amount_paid"),
-    supabase.from("commissions").select("status, commission_amount, direction"),
-    supabase
-      .from("policy_installments")
-      .select("amount, status, paid_amount, policies!inner(carrier_id, carriers(name))"),
-    supabase
-      .from("commissions")
-      .select("carrier_id, commission_amount, status, carriers(name)")
-      .eq("direction", "incoming"),
-    supabase.from("clients").select("referral_source").eq("is_active", true),
-  ]);
+    { data: policiesByStatusRows },
+    { data: lineBreakdownRows },
+    { data: billing },
+    { data: claimsByStatusRows },
+    { data: commissionsByStatusRows },
+    { data: referralRows },
+    { data: carrierRows },
+  ] = (await Promise.all([
+    supabase.rpc("report_policies_by_status"),
+    supabase.rpc("report_policies_by_line"),
+    supabase.rpc("report_billing_summary"),
+    supabase.rpc("report_claims_by_status"),
+    supabase.rpc("report_commissions_by_status"),
+    supabase.rpc("report_referral_breakdown"),
+    supabase.rpc("report_carrier_summary"),
+  ])) as unknown as [
+    { data: PoliciesByStatusRow[] | null },
+    { data: PoliciesByLineRow[] | null },
+    { data: BillingSummaryRow[] | null },
+    { data: ClaimsByStatusRow[] | null },
+    { data: CommissionsByStatusRow[] | null },
+    { data: ReferralBreakdownRow[] | null },
+    { data: CarrierSummaryRow[] | null },
+  ];
 
-  const policiesByStatus = groupSum(
-    policies ?? [],
-    (p) => p.status,
-    () => 1,
+  const policiesByStatus = new Map(
+    (policiesByStatusRows ?? []).map((r) => [r.status, { count: r.policy_count, total: r.premium_sum }]),
   );
-  const activePremium = (policies ?? [])
-    .filter((p) => p.status === "active")
-    .reduce((sum, p) => sum + (p.premium_gross ?? 0), 0);
+  const activePremium = policiesByStatus.get("active")?.total ?? 0;
 
-  const lineBreakdown = groupSum(
-    policies ?? [],
-    (p) => (p.insurance_lines as unknown as { name_el: string } | null)?.name_el ?? "—",
-    (p) => p.premium_gross ?? 0,
+  const lineBreakdown = new Map(
+    (lineBreakdownRows ?? []).map((r) => [r.line_name, { count: r.policy_count, total: r.premium_sum }]),
   );
 
-  // "Billed"/"outstanding" are measured against each policy's actual premium,
-  // not just the installment rows someone happened to create — otherwise a
-  // policy with no (or partial) installments looks fully collected.
-  const paidByPolicy = new Map<string, number>();
-  for (const i of installments ?? []) {
-    if (i.status !== "paid" && i.status !== "partially_paid") continue;
-    paidByPolicy.set(i.policy_id, (paidByPolicy.get(i.policy_id) ?? 0) + installmentApplied(i));
-  }
+  const totalBilled = billing?.[0]?.total_billed ?? 0;
+  const totalCollected = billing?.[0]?.total_collected ?? 0;
+  const totalTips = billing?.[0]?.total_tips ?? 0;
+  const outstanding = billing?.[0]?.outstanding ?? 0;
 
-  const billablePolicies = (policies ?? []).filter(
-    (p) => p.status !== "draft" && p.status !== "cancelled",
-  );
-  const totalBilled = billablePolicies.reduce((sum, p) => sum + (p.premium_gross ?? 0), 0);
-  const totalCollected = (installments ?? [])
-    .filter((i) => i.status === "paid" || i.status === "partially_paid")
-    .reduce((sum, i) => sum + installmentApplied(i), 0);
-  const totalTips = (installments ?? []).reduce((sum, i) => sum + installmentTip(i), 0);
-  const outstanding = billablePolicies.reduce(
-    (sum, p) => sum + Math.max((p.premium_gross ?? 0) - (paidByPolicy.get(p.id) ?? 0), 0),
-    0,
+  const claimsByStatus = new Map(
+    (claimsByStatusRows ?? []).map((r) => [r.status, { count: r.claim_count, total: r.amount_sum }]),
   );
 
-  const claimsByStatus = groupSum(
-    claims ?? [],
-    (c) => c.status,
-    (c) => c.claim_amount_paid ?? c.claim_amount_estimated ?? 0,
+  const incomingByStatus = new Map(
+    (commissionsByStatusRows ?? [])
+      .filter((r) => r.direction === "incoming")
+      .map((r) => [r.status, { count: r.commission_count, total: r.amount_sum }]),
   );
-
-  const incomingCommissions = (commissions ?? []).filter((c) => c.direction === "incoming");
-  const outgoingCommissions = (commissions ?? []).filter((c) => c.direction === "outgoing");
-
-  const incomingByStatus = groupSum(
-    incomingCommissions,
-    (c) => c.status,
-    (c) => c.commission_amount,
+  const outgoingByStatus = new Map(
+    (commissionsByStatusRows ?? [])
+      .filter((r) => r.direction === "outgoing")
+      .map((r) => [r.status, { count: r.commission_count, total: r.amount_sum }]),
   );
-  const outgoingByStatus = groupSum(
-    outgoingCommissions,
-    (c) => c.status,
-    (c) => c.commission_amount,
-  );
-  const totalIncomingCommissions = incomingCommissions.reduce(
-    (sum, c) => sum + c.commission_amount,
-    0,
-  );
-  const totalOutgoingCommissions = outgoingCommissions.reduce(
-    (sum, c) => sum + c.commission_amount,
-    0,
-  );
+  const totalIncomingCommissions = [...incomingByStatus.values()].reduce((sum, e) => sum + e.total, 0);
+  const totalOutgoingCommissions = [...outgoingByStatus.values()].reduce((sum, e) => sum + e.total, 0);
   const netCommissions = totalIncomingCommissions - totalOutgoingCommissions;
 
-  const referralBreakdown = groupSum(
-    clients ?? [],
-    (c) => c.referral_source?.trim() || "Χωρίς καταγραφή",
-    () => 1,
+  const referralBreakdown = new Map(
+    (referralRows ?? []).map((r) => [r.source, { count: r.client_count }]),
   );
 
-  type CarrierAgg = {
-    name: string;
-    collected: number;
-    commissionTotal: number;
-    commissionPending: number;
-  };
-  const carrierMap = new Map<string, CarrierAgg>();
-
-  for (const i of carrierInstallments ?? []) {
-    if (i.status !== "paid" && i.status !== "partially_paid") continue;
-    const p = i.policies as unknown as { carrier_id: string; carriers: { name: string } | null } | null;
-    if (!p) continue;
-    const entry = carrierMap.get(p.carrier_id) ?? {
-      name: p.carriers?.name ?? "—",
-      collected: 0,
-      commissionTotal: 0,
-      commissionPending: 0,
-    };
-    entry.collected += installmentApplied(i);
-    carrierMap.set(p.carrier_id, entry);
-  }
-
-  for (const c of carrierCommissions ?? []) {
-    const carrierName = (c.carriers as unknown as { name: string } | null)?.name ?? "—";
-    const entry = carrierMap.get(c.carrier_id) ?? {
-      name: carrierName,
-      collected: 0,
-      commissionTotal: 0,
-      commissionPending: 0,
-    };
-    entry.commissionTotal += c.commission_amount;
-    if (c.status === "pending" || c.status === "invoiced") {
-      entry.commissionPending += c.commission_amount;
-    }
-    carrierMap.set(c.carrier_id, entry);
-  }
+  const carrierMap = new Map(
+    (carrierRows ?? []).map((r) => [
+      r.carrier_id,
+      {
+        name: r.carrier_name,
+        collected: r.collected,
+        commissionTotal: r.commission_total,
+        commissionPending: r.commission_pending,
+      },
+    ]),
+  );
 
   return (
     <div className="flex flex-col gap-6">
