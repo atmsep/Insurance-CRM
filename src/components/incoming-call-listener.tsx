@@ -24,6 +24,15 @@ type IncomingCall = {
 //      processed, in case the socket died without reporting an error.
 const CATCH_UP_INTERVAL_MS = 30_000;
 
+// Guaranteed minimum time a call toast stays on screen. Sonner's own
+// duration timer is meant to pause while the tab is hidden, but a switch
+// back to the tab was observed dismissing the toast early anyway — so
+// instead of trusting that, the toast is shown with no auto-dismiss at all
+// and closed explicitly on our own timer. A background tab can only delay
+// a setTimeout, never fire it early, so this can't disappear before the
+// full 30s of actual screen time, worst case it lingers a bit longer.
+const TOAST_VISIBLE_MS = 30_000;
+
 export function IncomingCallListener({ enabled }: { enabled: boolean }) {
   const router = useRouter();
 
@@ -32,6 +41,7 @@ export function IncomingCallListener({ enabled }: { enabled: boolean }) {
 
     const supabase = createClient();
     const shownCallIds = new Set<string>();
+    const dismissTimers: ReturnType<typeof setTimeout>[] = [];
     let lastSeenAt = new Date().toISOString();
     let channel: ReturnType<typeof supabase.channel> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -41,21 +51,22 @@ export function IncomingCallListener({ enabled }: { enabled: boolean }) {
       if (shownCallIds.has(call.id)) return;
       shownCallIds.add(call.id);
 
-      if (call.client_id && call.client_name) {
-        toast(`Κλήση από: ${call.client_name}`, {
-          description: call.phone_number,
-          action: {
-            label: "Άνοιγμα καρτέλας",
-            onClick: () => router.push(`/dashboard/clients/${call.client_id}`),
-          },
-          duration: 20000,
-        });
-      } else {
-        toast("Άγνωστη κλήση", {
-          description: call.phone_number,
-          duration: 15000,
-        });
-      }
+      const toastId =
+        call.client_id && call.client_name
+          ? toast(`Κλήση από: ${call.client_name}`, {
+              description: call.phone_number,
+              action: {
+                label: "Άνοιγμα καρτέλας",
+                onClick: () => router.push(`/dashboard/clients/${call.client_id}`),
+              },
+              duration: Infinity,
+            })
+          : toast("Άγνωστη κλήση", {
+              description: call.phone_number,
+              duration: Infinity,
+            });
+
+      dismissTimers.push(setTimeout(() => toast.dismiss(toastId), TOAST_VISIBLE_MS));
     }
 
     async function catchUp() {
@@ -115,6 +126,7 @@ export function IncomingCallListener({ enabled }: { enabled: boolean }) {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       clearInterval(pollTimer);
+      for (const timer of dismissTimers) clearTimeout(timer);
       document.removeEventListener("visibilitychange", handleFocusOrVisible);
       window.removeEventListener("focus", handleFocusOrVisible);
       if (channel) supabase.removeChannel(channel);
