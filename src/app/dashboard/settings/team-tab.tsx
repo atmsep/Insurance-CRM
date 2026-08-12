@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -196,7 +197,11 @@ export function TeamTab({
 
               return (
                 <TableRow key={user.id}>
-                  <TableCell>{user.full_name}</TableCell>
+                  <TableCell>
+                    <Link href={`/dashboard/settings/team/${user.id}`} className="hover:underline">
+                      {user.full_name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <Select

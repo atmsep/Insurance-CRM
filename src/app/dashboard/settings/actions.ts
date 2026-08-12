@@ -329,6 +329,74 @@ export async function updateAgencyUserCreditLimit(userId: string, formData: Form
   revalidatePath("/dashboard/settings");
 }
 
+// Full profile edit from the agent's own detail page — name/phone/hire
+// date/role/credit limit together, plus the login email if it changed
+// (which also has to update auth.users, not just the agency_users row, or
+// the two would drift apart and the agent couldn't log in with the new
+// address). Same (clientId, formData) => {error}|undefined convention as
+// updateClientNotes, since the detail page's edit card follows the same
+// toggle-edit-mode UI as the client page's Στοιχεία tab.
+export async function updateAgencyUserProfile(
+  userId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const fullName = (formData.get("full_name") as string) || "";
+  const email = (formData.get("email") as string) || "";
+  const phone = (formData.get("phone") as string) || null;
+  const hireDate = (formData.get("hire_date") as string) || null;
+  const role = (formData.get("role") as string) || "agent";
+  const creditLimitRaw = formData.get("credit_limit");
+  const creditLimit =
+    typeof creditLimitRaw === "string" && creditLimitRaw.length > 0 ? Number(creditLimitRaw) : null;
+
+  if (!fullName) return { error: "Δώσε ονοματεπώνυμο." };
+  if (!isValidEmail(email)) return { error: "Δώσε ένα έγκυρο email." };
+
+  const { data: current } = await supabase
+    .from("agency_users")
+    .select("auth_user_id, email, is_active")
+    .eq("id", userId)
+    .single();
+
+  if (!current) return { error: "Ο συνεργάτης δεν βρέθηκε." };
+
+  if (email !== current.email) {
+    const admin = createAdminClient();
+    const { error: authError } = await admin.auth.admin.updateUserById(current.auth_user_id, { email });
+    if (authError) {
+      return { error: "Σφάλμα ενημέρωσης email σύνδεσης: " + authError.message };
+    }
+  }
+
+  const { error } = await supabase
+    .from("agency_users")
+    .update({
+      full_name: fullName,
+      email,
+      phone,
+      hire_date: hireDate,
+      role,
+      credit_limit: creditLimit,
+    })
+    .eq("id", userId);
+
+  if (error) return { error: "Σφάλμα: " + error.message };
+
+  await syncPayeeForAgencyUser(supabase, {
+    id: userId,
+    full_name: fullName,
+    email,
+    phone,
+    is_active: current.is_active,
+  });
+
+  revalidatePath(`/dashboard/settings/team/${userId}`);
+  revalidatePath("/dashboard/settings");
+}
+
 export async function inviteAgencyUser(
   _prevState: ActionState,
   formData: FormData,
