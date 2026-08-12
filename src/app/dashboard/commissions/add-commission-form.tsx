@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { CommissionTypeSelect } from "./commission-type-select";
 import { COMMISSION_DIRECTION_LABELS } from "./direction-labels";
-import { getCommissionRate } from "../policies/actions";
+import { getCommissionRate, getPayeeCommissionRate } from "../policies/actions";
 import type { CommissionDirection } from "@/lib/database.types";
 
 type Payee = { id: string; name: string };
@@ -54,6 +54,20 @@ export function AddCommissionForm({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Same idea for outgoing: once a payee is picked, prefill from whatever
+  // rate their agreement has configured for this policy's carrier/line.
+  useEffect(() => {
+    if (direction !== "outgoing" || !payeeId) return;
+    getPayeeCommissionRate(payeeId, carrierId, insuranceLineId).then((rate) => {
+      if (rate == null) return;
+      setRatePercent(String(rate));
+      const base = premiumNet != null ? premiumNet : null;
+      if (base != null) {
+        setAmount(((base * rate) / 100).toFixed(2));
+      }
+    });
+  }, [direction, payeeId, carrierId, insuranceLineId, premiumNet]);
 
   return (
     <form action={addAction} className="flex flex-wrap items-end gap-3">

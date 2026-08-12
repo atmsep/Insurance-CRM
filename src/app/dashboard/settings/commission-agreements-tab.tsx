@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useTransition } from "react";
+import { Fragment, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import {
 import { useFormValues } from "@/hooks/use-form-values";
 import {
   createCommissionAgreement,
+  createPayeeCommissionAgreement,
   updateCommissionAgreement,
   toggleCommissionAgreementActive,
   createCarrierCommissionRate,
@@ -60,6 +61,14 @@ export type BrokerOfficeWithAgreements = {
   id: string;
   name: string;
   is_direct: boolean;
+  is_active: boolean;
+  commission_agreements: Agreement[];
+};
+
+export type PayeeWithAgreements = {
+  id: string;
+  name: string;
+  is_external: boolean;
   is_active: boolean;
   commission_agreements: Agreement[];
 };
@@ -401,9 +410,16 @@ function AgreementCard({
   );
 }
 
-function NewAgreementForm({ brokerOfficeId, brokerOfficeName }: { brokerOfficeId: string; brokerOfficeName: string }) {
+function NewAgreementForm({
+  ownerId,
+  ownerName,
+  createAction,
+}: {
+  ownerId: string;
+  ownerName: string;
+  createAction: (formData: FormData) => Promise<{ error: string } | undefined>;
+}) {
   const [showForm, setShowForm] = useState(false);
-  const createAction = createCommissionAgreement.bind(null, brokerOfficeId);
 
   if (!showForm) {
     return (
@@ -427,18 +443,18 @@ function NewAgreementForm({ brokerOfficeId, brokerOfficeName }: { brokerOfficeId
       className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/30 p-3"
     >
       <div className="flex flex-col gap-2">
-        <Label htmlFor={`new_name_${brokerOfficeId}`}>Όνομα σύμβασης</Label>
+        <Label htmlFor={`new_name_${ownerId}`}>Όνομα σύμβασης</Label>
         <Input
-          id={`new_name_${brokerOfficeId}`}
+          id={`new_name_${ownerId}`}
           name="name"
           required
-          defaultValue={`Σύμβαση ${brokerOfficeName}`}
+          defaultValue={`Σύμβαση ${ownerName}`}
           className="w-56"
         />
       </div>
       <div className="flex flex-col gap-2">
-        <Label htmlFor={`new_notes_${brokerOfficeId}`}>Σημειώσεις</Label>
-        <Textarea id={`new_notes_${brokerOfficeId}`} name="notes" rows={2} className="w-72" />
+        <Label htmlFor={`new_notes_${ownerId}`}>Σημειώσεις</Label>
+        <Textarea id={`new_notes_${ownerId}`} name="notes" rows={2} className="w-72" />
       </div>
       <div className="flex gap-2">
         <Button type="submit" size="sm">
@@ -452,58 +468,146 @@ function NewAgreementForm({ brokerOfficeId, brokerOfficeName }: { brokerOfficeId
   );
 }
 
+function OwnerAgreementSection({
+  ownerId,
+  ownerName,
+  badges,
+  agreements,
+  createAction,
+  carriers,
+  insuranceLines,
+}: {
+  ownerId: string;
+  ownerName: string;
+  badges?: ReactNode;
+  agreements: Agreement[];
+  createAction: (formData: FormData) => Promise<{ error: string } | undefined>;
+  carriers: Carrier[];
+  insuranceLines: InsuranceLine[];
+}) {
+  const activeAgreement = agreements.find((a) => a.is_active);
+  const inactiveAgreements = agreements.filter((a) => !a.is_active);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-medium">{ownerName}</h3>
+        {badges}
+      </div>
+
+      {activeAgreement ? (
+        <AgreementCard agreement={activeAgreement} carriers={carriers} insuranceLines={insuranceLines} />
+      ) : (
+        <NewAgreementForm ownerId={ownerId} ownerName={ownerName} createAction={createAction} />
+      )}
+
+      {inactiveAgreements.length > 0 && (
+        <div className="flex flex-col gap-3 pl-4">
+          <p className="text-xs text-muted-foreground">Παλαιότερες συμβάσεις</p>
+          {inactiveAgreements.map((agreement) => (
+            <AgreementCard
+              key={agreement.id}
+              agreement={agreement}
+              carriers={carriers}
+              insuranceLines={insuranceLines}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CommissionAgreementsTab({
   brokerOffices,
+  payees,
   carriers,
   insuranceLines,
 }: {
   brokerOffices: BrokerOfficeWithAgreements[];
+  payees: PayeeWithAgreements[];
   carriers: Carrier[];
   insuranceLines: InsuranceLine[];
 }) {
+  const [mode, setMode] = useState<"incoming" | "outgoing">("incoming");
+
   return (
     <div className="flex flex-col gap-8">
-      <p className="text-sm text-muted-foreground">
-        Μία ενεργή σύμβαση ανά συνεργαζόμενο γραφείο, με όλες τις εταιρείες και τους κλάδους μαζί.
-      </p>
+      <div className="flex items-center gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant={mode === "incoming" ? "default" : "outline"}
+          onClick={() => setMode("incoming")}
+        >
+          Εισερχόμενες
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={mode === "outgoing" ? "default" : "outline"}
+          onClick={() => setMode("outgoing")}
+        >
+          Εξερχόμενες
+        </Button>
+      </div>
 
-      {brokerOffices.length ? (
-        brokerOffices.map((office) => {
-          const activeAgreement = office.commission_agreements.find((a) => a.is_active);
-          const inactiveAgreements = office.commission_agreements.filter((a) => !a.is_active);
+      {mode === "incoming" ? (
+        <div className="flex flex-col gap-8">
+          <p className="text-sm text-muted-foreground">
+            Μία ενεργή σύμβαση ανά συνεργαζόμενο γραφείο, με όλες τις εταιρείες και τους κλάδους μαζί.
+          </p>
 
-          return (
-            <div key={office.id} className="flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-medium">{office.name}</h3>
-                {office.is_direct && <Badge variant="outline">Απευθείας συμβάσεις</Badge>}
-                {!office.is_active && <Badge variant="outline">Ανενεργό γραφείο</Badge>}
-              </div>
-
-              {activeAgreement ? (
-                <AgreementCard agreement={activeAgreement} carriers={carriers} insuranceLines={insuranceLines} />
-              ) : (
-                <NewAgreementForm brokerOfficeId={office.id} brokerOfficeName={office.name} />
-              )}
-
-              {inactiveAgreements.length > 0 && (
-                <div className="flex flex-col gap-3 pl-4">
-                  <p className="text-xs text-muted-foreground">Παλαιότερες συμβάσεις</p>
-                  {inactiveAgreements.map((agreement) => (
-                    <AgreementCard
-                      key={agreement.id}
-                      agreement={agreement}
-                      carriers={carriers}
-                      insuranceLines={insuranceLines}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })
+          {brokerOffices.length ? (
+            brokerOffices.map((office) => (
+              <OwnerAgreementSection
+                key={office.id}
+                ownerId={office.id}
+                ownerName={office.name}
+                badges={
+                  <>
+                    {office.is_direct && <Badge variant="outline">Απευθείας συμβάσεις</Badge>}
+                    {!office.is_active && <Badge variant="outline">Ανενεργό γραφείο</Badge>}
+                  </>
+                }
+                agreements={office.commission_agreements}
+                createAction={createCommissionAgreement.bind(null, office.id)}
+                carriers={carriers}
+                insuranceLines={insuranceLines}
+              />
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">Δεν υπάρχουν συνεργαζόμενα γραφεία.</p>
+          )}
+        </div>
       ) : (
-        <p className="text-sm text-muted-foreground">Δεν υπάρχουν συνεργαζόμενα γραφεία.</p>
+        <div className="flex flex-col gap-8">
+          <p className="text-sm text-muted-foreground">
+            Μία ενεργή σύμβαση ανά συνεργάτη/δικαιούχο, με όλες τις εταιρείες και τους κλάδους μαζί.
+          </p>
+
+          {payees.length ? (
+            payees.map((payee) => (
+              <OwnerAgreementSection
+                key={payee.id}
+                ownerId={payee.id}
+                ownerName={payee.name}
+                badges={
+                  <>
+                    {payee.is_external && <Badge variant="outline">Εξωτερικός συνεργάτης</Badge>}
+                    {!payee.is_active && <Badge variant="outline">Ανενεργός</Badge>}
+                  </>
+                }
+                agreements={payee.commission_agreements}
+                createAction={createPayeeCommissionAgreement.bind(null, payee.id)}
+                carriers={carriers}
+                insuranceLines={insuranceLines}
+              />
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">Δεν υπάρχουν δικαιούχοι προμηθειών.</p>
+          )}
+        </div>
       )}
     </div>
   );

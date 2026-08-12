@@ -139,6 +139,35 @@ export async function getCommissionRate(
   return data?.default_commission_percent ?? null;
 }
 
+// Same lookup as getCommissionRate, but for what we pay OUT to a
+// συνεργάτης (commission_payees) instead of what comes in from a broker
+// office — mirrors the outgoing agreement structure added alongside the
+// incoming one (see commission-agreements-tab.tsx).
+export async function getPayeeCommissionRate(
+  payeeId: string,
+  carrierId: string,
+  insuranceLineId: string,
+): Promise<number | null> {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const { data } = await supabase
+    .from("carrier_commission_rates")
+    .select("default_commission_percent")
+    .eq("payee_id", payeeId)
+    .eq("carrier_id", carrierId)
+    .eq("insurance_line_id", insuranceLineId)
+    .eq("is_active", true)
+    .lte("valid_from", today)
+    .or(`valid_to.is.null,valid_to.gte.${today}`)
+    .order("valid_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data?.default_commission_percent ?? null;
+}
+
 function str(formData: FormData, key: string) {
   const v = formData.get(key);
   return typeof v === "string" && v.length > 0 ? v : null;

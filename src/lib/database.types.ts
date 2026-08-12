@@ -524,7 +524,8 @@ export interface Database {
       carrier_commission_rates: {
         Row: {
           id: string;
-          broker_office_id: string;
+          broker_office_id: string | null;
+          payee_id: string | null;
           agreement_id: string;
           carrier_id: string;
           insurance_line_id: string;
@@ -546,7 +547,9 @@ export interface Database {
       commission_agreements: {
         Row: {
           id: string;
-          broker_office_id: string;
+          broker_office_id: string | null;
+          payee_id: string | null;
+          direction: CommissionDirection;
           name: string;
           notes: string | null;
           is_active: boolean;
@@ -554,7 +557,6 @@ export interface Database {
           updated_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["commission_agreements"]["Row"]> & {
-          broker_office_id: string;
           name: string;
         };
         Update: Partial<Database["public"]["Tables"]["commission_agreements"]["Row"]>;

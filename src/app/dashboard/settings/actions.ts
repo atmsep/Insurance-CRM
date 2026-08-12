@@ -168,7 +168,7 @@ export async function createCarrierCommissionRate(
     if (error.code === "23505") {
       return {
         error:
-          "Υπάρχει ήδη ενεργή σύμβαση για αυτό το γραφείο/εταιρεία/κλάδο με την ίδια ημερομηνία έναρξης.",
+          "Υπάρχει ήδη ενεργή γραμμή με την ίδια εταιρεία/κλάδο/ημερομηνία έναρξης σε αυτή τη σύμβαση.",
       };
     }
     return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
@@ -202,7 +202,7 @@ export async function updateCarrierCommissionRate(
     if (error.code === "23505") {
       return {
         error:
-          "Υπάρχει ήδη ενεργή σύμβαση για αυτό το γραφείο/εταιρεία/κλάδο με την ίδια ημερομηνία έναρξης.",
+          "Υπάρχει ήδη ενεργή γραμμή με την ίδια εταιρεία/κλάδο/ημερομηνία έναρξης σε αυτή τη σύμβαση.",
       };
     }
     return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
@@ -280,9 +280,36 @@ export async function toggleCommissionAgreementActive(
 
   if (error) {
     if (error.code === "23505") {
-      return { error: "Το γραφείο έχει ήδη μια άλλη ενεργή σύμβαση." };
+      return { error: "Υπάρχει ήδη μια άλλη ενεργή σύμβαση για αυτό το γραφείο/συνεργάτη." };
     }
     return { error: "Σφάλμα: " + error.message };
+  }
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function createPayeeCommissionAgreement(
+  payeeId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = formData.get("name") as string;
+  if (!name) return { error: "Δώσε όνομα σύμβασης." };
+
+  const { error } = await supabase.from("commission_agreements").insert({
+    payee_id: payeeId,
+    direction: "outgoing",
+    name,
+    notes: (formData.get("notes") as string) || null,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "Ο συνεργάτης έχει ήδη ενεργή σύμβαση." };
+    }
+    return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
   }
 
   revalidatePath("/dashboard/settings");
