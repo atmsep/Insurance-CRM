@@ -2,9 +2,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
 import { ListPageHeader } from "@/components/list-page-header";
+import { FilterSelect } from "@/components/ui/filter-select";
 import {
   Table,
   TableBody,
@@ -17,28 +19,88 @@ import { formatDateTime } from "@/lib/date";
 import { updateCallNotes } from "./actions";
 
 const PAGE_SIZE = 30;
+const FILTERS_FORM_ID = "calls-filters";
 
 export default async function CallsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    q?: string;
+    client?: string;
+    matched?: string;
+    date_from?: string;
+    date_to?: string;
+  }>;
 }) {
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, q, client, matched, date_from: dateFrom, date_to: dateTo } = await searchParams;
   const supabase = await createClient();
   const page = Math.max(1, Number(pageParam) || 1);
 
-  const from = (page - 1) * PAGE_SIZE;
-  const { data: calls, count } = await supabase
+  let query = supabase
     .from("incoming_calls")
     .select("id, phone_number, client_id, client_name, notes, created_at", { count: "exact" })
-    .order("created_at", { ascending: false })
-    .range(from, from + PAGE_SIZE - 1);
+    .order("created_at", { ascending: false });
+
+  if (q) query = query.ilike("phone_number", `%${q}%`);
+  if (client) query = query.ilike("client_name", `%${client}%`);
+  if (matched === "yes") query = query.not("client_id", "is", null);
+  else if (matched === "no") query = query.is("client_id", null);
+  if (dateFrom) query = query.gte("created_at", `${dateFrom}T00:00:00.000Z`);
+  if (dateTo) query = query.lte("created_at", `${dateTo}T23:59:59.999Z`);
+
+  const from = (page - 1) * PAGE_SIZE;
+  query = query.range(from, from + PAGE_SIZE - 1);
+
+  const { data: calls, count } = await query;
 
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   return (
     <div className="flex flex-col gap-6">
       <ListPageHeader title="Κλήσεις" />
+
+      <form
+        id={FILTERS_FORM_ID}
+        className="flex flex-wrap items-end gap-3 rounded-md border p-3"
+      >
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="q">Τηλέφωνο</Label>
+          <Input id="q" name="q" defaultValue={q ?? ""} placeholder="Αναζήτηση αριθμού..." className="w-40" />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="client">Πελάτης</Label>
+          <Input id="client" name="client" defaultValue={client ?? ""} placeholder="Όνομα πελάτη..." className="w-56" />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label>Κατάσταση</Label>
+          <FilterSelect
+            form={FILTERS_FORM_ID}
+            name="matched"
+            defaultValue={matched ?? ""}
+            allLabel="Όλες"
+            options={[
+              { id: "yes", label: "Με πελάτη" },
+              { id: "no", label: "Άγνωστες" },
+            ]}
+            className="h-8 w-40 text-sm"
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="date_from">Από</Label>
+          <Input id="date_from" name="date_from" type="date" defaultValue={dateFrom ?? ""} className="w-40" />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="date_to">Έως</Label>
+          <Input id="date_to" name="date_to" type="date" defaultValue={dateTo ?? ""} className="w-40" />
+        </div>
+        <Button type="submit" variant="secondary" size="sm">
+          Εφαρμογή φίλτρων
+        </Button>
+        {(q || client || matched || dateFrom || dateTo) && (
+          <Button type="button" variant="ghost" size="sm" nativeButton={false} render={<Link href="/dashboard/calls">Καθαρισμός</Link>} />
+        )}
+      </form>
 
       <div className="rounded-md border">
         <Table>
@@ -91,7 +153,12 @@ export default async function CallsPage({
         </Table>
       </div>
 
-      <Pagination page={page} totalPages={totalPages} basePath="/dashboard/calls" searchParams={{}} />
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        basePath="/dashboard/calls"
+        searchParams={{ q, client, matched, date_from: dateFrom, date_to: dateTo }}
+      />
     </div>
   );
 }
