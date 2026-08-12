@@ -143,17 +143,20 @@ export async function createCarrierCommissionRate(
   await requireAdmin();
   const supabase = await createSupabaseClient();
 
-  const brokerOfficeId = formData.get("broker_office_id") as string;
+  const agreementId = formData.get("agreement_id") as string;
   const carrierId = formData.get("carrier_id") as string;
   const insuranceLineId = formData.get("insurance_line_id") as string;
   const percent = formData.get("default_commission_percent");
 
-  if (!brokerOfficeId || !carrierId || !insuranceLineId || !percent) {
-    return { error: "Συμπλήρωσε γραφείο, εταιρεία, κλάδο και ποσοστό." };
+  if (!agreementId || !carrierId || !insuranceLineId || !percent) {
+    return { error: "Συμπλήρωσε εταιρεία, κλάδο και ποσοστό." };
   }
 
+  // broker_office_id is derived from the agreement by a DB trigger — never
+  // set it directly here, or it could drift from which agreement the line
+  // actually belongs to.
   const { error } = await supabase.from("carrier_commission_rates").insert({
-    broker_office_id: brokerOfficeId,
+    agreement_id: agreementId,
     carrier_id: carrierId,
     insurance_line_id: insuranceLineId,
     default_commission_percent: Number(percent),
@@ -212,6 +215,76 @@ export async function toggleCarrierCommissionRateActive(rateId: string, isActive
   await requireAdmin();
   const supabase = await createSupabaseClient();
   await supabase.from("carrier_commission_rates").update({ is_active: isActive }).eq("id", rateId);
+  revalidatePath("/dashboard/settings");
+}
+
+export async function createCommissionAgreement(
+  brokerOfficeId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = formData.get("name") as string;
+  if (!name) return { error: "Δώσε όνομα σύμβασης." };
+
+  const { error } = await supabase.from("commission_agreements").insert({
+    broker_office_id: brokerOfficeId,
+    name,
+    notes: (formData.get("notes") as string) || null,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "Το γραφείο έχει ήδη ενεργή σύμβαση." };
+    }
+    return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+  }
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function updateCommissionAgreement(
+  agreementId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = formData.get("name") as string;
+  if (!name) return { error: "Δώσε όνομα σύμβασης." };
+
+  const { error } = await supabase
+    .from("commission_agreements")
+    .update({ name, notes: (formData.get("notes") as string) || null })
+    .eq("id", agreementId);
+
+  if (error) {
+    return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+  }
+
+  revalidatePath("/dashboard/settings");
+}
+
+export async function toggleCommissionAgreementActive(
+  agreementId: string,
+  isActive: boolean,
+): Promise<{ error: string } | undefined> {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const { error } = await supabase
+    .from("commission_agreements")
+    .update({ is_active: isActive })
+    .eq("id", agreementId);
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "Το γραφείο έχει ήδη μια άλλη ενεργή σύμβαση." };
+    }
+    return { error: "Σφάλμα: " + error.message };
+  }
+
   revalidatePath("/dashboard/settings");
 }
 

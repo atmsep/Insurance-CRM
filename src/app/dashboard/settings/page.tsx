@@ -7,6 +7,7 @@ import { CarriersTab } from "./carriers-tab";
 import { TeamTab } from "./team-tab";
 import { PayeesTab } from "./payees-tab";
 import { BrokerOfficesTab } from "./broker-offices-tab";
+import { CommissionAgreementsTab, type BrokerOfficeWithAgreements } from "./commission-agreements-tab";
 import { PaymentMethodsTab } from "./payment-methods-tab";
 import { AutomationsTab } from "./automations-tab";
 import { EmailTemplatesTab } from "./email-templates-tab";
@@ -24,7 +25,7 @@ export default async function SettingsPage() {
     { data: payees },
     { data: brokerOffices },
     { data: insuranceLines },
-    { data: commissionRates },
+    { data: brokerOfficesWithAgreements },
     { data: paymentMethods },
     { data: appSettings },
     { data: emailTemplates },
@@ -54,11 +55,12 @@ export default async function SettingsPage() {
       : Promise.resolve({ data: [] }),
     isAdmin
       ? supabase
-          .from("carrier_commission_rates")
+          .from("broker_offices")
           .select(
-            "id, default_commission_percent, valid_from, valid_to, is_active, broker_offices(name), carriers(name), insurance_lines(name_el)",
+            "id, name, is_direct, is_active, commission_agreements(id, name, notes, is_active, carrier_commission_rates(id, carrier_id, insurance_line_id, default_commission_percent, valid_from, valid_to, is_active, carriers(name), insurance_lines(name_el)))",
           )
-          .order("valid_from", { ascending: false })
+          .order("is_direct", { ascending: false })
+          .order("name")
       : Promise.resolve({ data: [] }),
     isAdmin
       ? supabase.from("payment_methods").select("*").order("sort_order")
@@ -100,6 +102,7 @@ export default async function SettingsPage() {
           {isAdmin && <TabsTrigger value="team">Συνεργάτες</TabsTrigger>}
           {isAdmin && <TabsTrigger value="payees">Δικαιούχοι Προμηθειών</TabsTrigger>}
           {isAdmin && <TabsTrigger value="brokers">Συνεργαζόμενα Γραφεία</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="agreements">Συμβάσεις Προμηθειών</TabsTrigger>}
           {isAdmin && <TabsTrigger value="payment-methods">Μέθοδοι Πληρωμής</TabsTrigger>}
           {isAdmin && <TabsTrigger value="automations">Αυτοματισμοί</TabsTrigger>}
           {isAdmin && <TabsTrigger value="email-templates">Πρότυπα Email</TabsTrigger>}
@@ -129,11 +132,15 @@ export default async function SettingsPage() {
         )}
         {isAdmin && (
           <TabsContent value="brokers" className="pt-4">
-            <BrokerOfficesTab
-              brokerOffices={brokerOffices ?? []}
+            <BrokerOfficesTab brokerOffices={brokerOffices ?? []} />
+          </TabsContent>
+        )}
+        {isAdmin && (
+          <TabsContent value="agreements" className="pt-4">
+            <CommissionAgreementsTab
+              brokerOffices={(brokerOfficesWithAgreements ?? []) as unknown as BrokerOfficeWithAgreements[]}
               carriers={carriers ?? []}
               insuranceLines={insuranceLines ?? []}
-              rates={commissionRates ?? []}
             />
           </TabsContent>
         )}

@@ -525,6 +525,7 @@ export interface Database {
         Row: {
           id: string;
           broker_office_id: string;
+          agreement_id: string;
           carrier_id: string;
           insurance_line_id: string;
           default_commission_percent: number;
@@ -535,12 +536,28 @@ export interface Database {
           updated_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["carrier_commission_rates"]["Row"]> & {
-          broker_office_id: string;
+          agreement_id: string;
           carrier_id: string;
           insurance_line_id: string;
           default_commission_percent: number;
         };
         Update: Partial<Database["public"]["Tables"]["carrier_commission_rates"]["Row"]>;
+      };
+      commission_agreements: {
+        Row: {
+          id: string;
+          broker_office_id: string;
+          name: string;
+          notes: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["commission_agreements"]["Row"]> & {
+          broker_office_id: string;
+          name: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["commission_agreements"]["Row"]>;
       };
       tasks: {
         Row: {
