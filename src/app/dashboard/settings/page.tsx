@@ -64,7 +64,7 @@ export default async function SettingsPage() {
       ? supabase.from("payment_methods").select("*").order("sort_order")
       : Promise.resolve({ data: [] }),
     isAdmin
-      ? supabase.from("app_settings").select("key, enabled").order("key")
+      ? supabase.from("app_settings").select("key, enabled, value").order("key")
       : Promise.resolve({ data: [] }),
     isAdmin
       ? supabase.from("email_templates").select("*").order("is_system", { ascending: false }).order("name")

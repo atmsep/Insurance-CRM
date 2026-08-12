@@ -22,7 +22,7 @@ function one<T>(v: T | T[] | null): T | null {
 
 async function sendBatch(
   supabase: ReturnType<typeof createAdminClient>,
-  daysRemaining: 30 | 7,
+  daysRemaining: number,
   sentColumn: "renewal_notice_30d_sent_at" | "renewal_notice_7d_sent_at",
   templateKey: "renewal_30d" | "renewal_7d",
 ) {
@@ -98,19 +98,22 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
 
-  const { data: setting } = await supabase
-    .from("app_settings")
-    .select("enabled")
-    .eq("key", "renewal_reminder_emails")
-    .maybeSingle();
+  const [{ data: setting }, { data: primarySetting }, { data: finalSetting }] = await Promise.all([
+    supabase.from("app_settings").select("enabled").eq("key", "renewal_reminder_emails").maybeSingle(),
+    supabase.from("app_settings").select("value").eq("key", "renewal_reminder_days_primary").maybeSingle(),
+    supabase.from("app_settings").select("value").eq("key", "renewal_reminder_days_final").maybeSingle(),
+  ]);
 
   if (setting && !setting.enabled) {
     return Response.json({ skipped: "renewal_reminder_emails is disabled in Settings" });
   }
 
+  const primaryDays = primarySetting?.value ?? 30;
+  const finalDays = finalSetting?.value ?? 7;
+
   const [result30, result7] = await Promise.all([
-    sendBatch(supabase, 30, "renewal_notice_30d_sent_at", "renewal_30d"),
-    sendBatch(supabase, 7, "renewal_notice_7d_sent_at", "renewal_7d"),
+    sendBatch(supabase, primaryDays, "renewal_notice_30d_sent_at", "renewal_30d"),
+    sendBatch(supabase, finalDays, "renewal_notice_7d_sent_at", "renewal_7d"),
   ]);
 
   return Response.json({ notice30: result30, notice7: result7 });

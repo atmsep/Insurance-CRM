@@ -279,6 +279,32 @@ export async function toggleAppSetting(key: string, enabled: boolean) {
   revalidatePath("/dashboard/settings");
 }
 
+export async function updateRenewalReminderDays(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const primary = Number(formData.get("primary_days"));
+  const final = Number(formData.get("final_days"));
+
+  if (!Number.isInteger(primary) || primary < 1 || !Number.isInteger(final) || final < 1) {
+    return { error: "Οι μέρες πρέπει να είναι θετικοί ακέραιοι αριθμοί." };
+  }
+  if (final >= primary) {
+    return { error: "Η τελευταία υπενθύμιση πρέπει να είναι λιγότερες μέρες πριν τη λήξη από την πρώτη." };
+  }
+
+  await Promise.all([
+    supabase.from("app_settings").update({ value: primary }).eq("key", "renewal_reminder_days_primary"),
+    supabase.from("app_settings").update({ value: final }).eq("key", "renewal_reminder_days_final"),
+  ]);
+
+  revalidatePath("/dashboard/settings");
+  return { success: "Οι μέρες υπενθύμισης ενημερώθηκαν." };
+}
+
 export async function updateAgencyUserRole(userId: string, role: string) {
   await requireAdmin();
   const supabase = await createSupabaseClient();

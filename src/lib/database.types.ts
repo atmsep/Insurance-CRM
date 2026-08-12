@@ -375,6 +375,7 @@ export interface Database {
         Row: {
           key: string;
           enabled: boolean;
+          value: number | null;
           updated_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["app_settings"]["Row"]> & {
