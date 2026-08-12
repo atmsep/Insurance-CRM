@@ -38,6 +38,7 @@ export default async function DashboardPage() {
     { data: todayTasks },
     { data: todayCollections },
     { data: todayExpiring },
+    { count: todayCallsCount },
     celebrationTemplates,
   ] = await Promise.all([
     supabase
@@ -94,6 +95,10 @@ export default async function DashboardPage() {
       .in("status", ["active", "pending_renewal"])
       .eq("is_current_term", true)
       .eq("end_date", today),
+    supabase
+      .from("incoming_calls")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", `${today}T00:00:00.000Z`),
     getCelebrationTemplates(supabase),
   ]);
 
@@ -246,6 +251,7 @@ export default async function DashboardPage() {
           tone={(openTicketsCount ?? 0) > 0 ? "warning" : "neutral"}
           href="/dashboard/tickets?open=1"
         />
+        <StatTile label="Κλήσεις σήμερα" value={todayCallsCount ?? 0} href="/dashboard/calls" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
