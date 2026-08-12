@@ -15,7 +15,7 @@ import { COMMISSION_DIRECTION_LABELS } from "./direction-labels";
 import { commissionStatusVariant } from "@/lib/status-badge";
 
 function formatDate(value: string | null) {
-  return value ? new Date(value).toLocaleDateString("el-GR") : "—";
+  return value ? new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" }) : "—";
 }
 
 const DIRECTION_TABS: { value: string | undefined; label: string }[] = [

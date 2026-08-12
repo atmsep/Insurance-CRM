@@ -51,7 +51,7 @@ type Row = {
 const LIST_CAP = 300;
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
+  return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }
 
 function RowsTable({

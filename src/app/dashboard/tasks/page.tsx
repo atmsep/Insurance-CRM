@@ -25,7 +25,7 @@ const PRIORITY_LABELS: Record<string, string> = {
 };
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
+  return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }
 
 type TaskRow = {

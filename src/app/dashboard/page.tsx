@@ -19,7 +19,7 @@ function addDays(days: number) {
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
+  return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }
 
 export default async function DashboardPage() {

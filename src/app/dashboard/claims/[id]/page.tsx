@@ -14,7 +14,7 @@ import { getDocumentsFor } from "../../documents/get-documents";
 import { resolveClientName } from "@/lib/client-name";
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
+  return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }
 
 export default async function ClaimDetailPage({

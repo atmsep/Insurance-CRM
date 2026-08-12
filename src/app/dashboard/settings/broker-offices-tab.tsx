@@ -58,7 +58,7 @@ function one<T>(v: T | T[] | null): T | null {
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
+  return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }
 
 function EditRateForm({ rate, onDone }: { rate: Rate; onDone: () => void }) {

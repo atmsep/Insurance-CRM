@@ -14,7 +14,11 @@ import {
 } from "@/components/ui/table";
 
 function formatTime(value: string) {
-  return new Date(value).toLocaleTimeString("el-GR", { hour: "2-digit", minute: "2-digit" });
+  return new Date(value).toLocaleTimeString("el-GR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Athens",
+  });
 }
 
 type SingleOrMany<T> = T | T[] | null;

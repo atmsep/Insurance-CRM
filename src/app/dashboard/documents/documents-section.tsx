@@ -24,7 +24,7 @@ function formatSize(bytes: number | null) {
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
+  return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }
 
 export function DocumentsSection({

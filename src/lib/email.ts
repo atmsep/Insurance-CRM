@@ -19,7 +19,7 @@ export function renderTemplate(text: string, fields: Record<string, string>): st
 }
 
 function formatDateGr(value: string) {
-  return new Date(value).toLocaleDateString("el-GR");
+  return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }
 
 // The merge fields available to every policy-related template (manual
