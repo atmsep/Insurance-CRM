@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAgencyUser } from "@/lib/dal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { updateClientNotes, createInteraction } from "../actions";
+import { updateClientNotes, createInteraction, updateIncomingCallNotes } from "../actions";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
 import { createTicket } from "../../tickets/actions";
@@ -12,6 +12,7 @@ import { ClientHeader } from "./_components/client-header";
 import { DetailsTab } from "./_components/details-tab";
 import { PoliciesTab, type Policy as ClientPolicy } from "./_components/policies-tab";
 import { InteractionsTab } from "./_components/interactions-tab";
+import { CallsTab } from "./_components/calls-tab";
 import { TicketsTab } from "./_components/tickets-tab";
 import { CommissionsTab, type Commission as ClientCommission } from "./_components/commissions-tab";
 import { ReferralsTab, type ReferredClient } from "./_components/referrals-tab";
@@ -42,6 +43,7 @@ export default async function ClientDetailPage({
   const [
     { data: policies },
     { data: interactions },
+    { data: calls },
     documents,
     { data: installments },
     { data: tickets },
@@ -65,6 +67,12 @@ export default async function ClientDetailPage({
       .eq("client_id", id)
       .order("interaction_date", { ascending: false })
       .limit(20),
+    supabase
+      .from("incoming_calls")
+      .select("id, phone_number, notes, created_at")
+      .eq("client_id", id)
+      .order("created_at", { ascending: false })
+      .limit(50),
     getDocumentsFor("client", id),
     supabase
       .from("policy_installments")
@@ -157,6 +165,7 @@ export default async function ClientDetailPage({
   const updateAction = updateClientNotes.bind(null, id);
   const addInteractionAction = createInteraction.bind(null, id);
   const addTicketAction = createTicket.bind(null, id);
+  const updateCallNotesAction = updateIncomingCallNotes.bind(null, id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -175,6 +184,7 @@ export default async function ClientDetailPage({
           <TabsTrigger value="details">Στοιχεία</TabsTrigger>
           <TabsTrigger value="policies">Συμβόλαια</TabsTrigger>
           <TabsTrigger value="interactions">Επικοινωνία</TabsTrigger>
+          <TabsTrigger value="calls">Κλήσεις</TabsTrigger>
           <TabsTrigger value="tickets">Αιτήματα</TabsTrigger>
           <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
           <TabsTrigger value="referrals">Συστάσεις</TabsTrigger>
@@ -204,6 +214,10 @@ export default async function ClientDetailPage({
 
         <TabsContent value="interactions" className="pt-4">
           <InteractionsTab interactions={interactions ?? []} addInteractionAction={addInteractionAction} />
+        </TabsContent>
+
+        <TabsContent value="calls" className="pt-4">
+          <CallsTab calls={calls ?? []} updateNotesAction={updateCallNotesAction} />
         </TabsContent>
 
         <TabsContent value="tickets" className="pt-4">

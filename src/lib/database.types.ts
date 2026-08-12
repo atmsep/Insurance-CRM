@@ -311,6 +311,7 @@ export interface Database {
           phone_number: string;
           client_id: string | null;
           client_name: string | null;
+          notes: string | null;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["incoming_calls"]["Row"]> & {

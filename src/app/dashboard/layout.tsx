@@ -26,7 +26,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
       <Suspense fallback={null}>
         <ToastListener />
       </Suspense>
-      <IncomingCallListener />
+      <IncomingCallListener enabled={agencyUser.role === "owner" || agencyUser.role === "admin"} />
       <KeyboardShortcuts />
       <Sidebar />
       <div className="flex flex-1 flex-col">

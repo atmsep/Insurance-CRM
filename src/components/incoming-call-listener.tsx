@@ -11,10 +11,11 @@ type IncomingCall = {
   client_name: string | null;
 };
 
-export function IncomingCallListener() {
+export function IncomingCallListener({ enabled }: { enabled: boolean }) {
   const router = useRouter();
 
   useEffect(() => {
+    if (!enabled) return;
     const supabase = createClient();
 
     const channel = supabase
@@ -47,7 +48,7 @@ export function IncomingCallListener() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [router]);
+  }, [router, enabled]);
 
   return null;
 }

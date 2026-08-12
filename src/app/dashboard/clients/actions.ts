@@ -371,3 +371,20 @@ export async function createInteraction(clientId: string, formData: FormData) {
 
   revalidatePath(`/dashboard/clients/${clientId}`);
 }
+
+// Never required — a call shows up in the history automatically the
+// moment the phone rings (see incoming-call-listener.tsx / the caller-ID
+// bridge), this just lets someone jot down what was discussed afterward.
+// clientId comes first (not callId) so the client detail page can bind it
+// once and hand CallsTab a (callId, formData) => ... action, which it then
+// binds per row — .bind() only fixes parameters left-to-right.
+export async function updateIncomingCallNotes(clientId: string, callId: string, formData: FormData) {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const notes = (formData.get("notes") as string) || null;
+
+  await supabase.from("incoming_calls").update({ notes }).eq("id", callId);
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+}

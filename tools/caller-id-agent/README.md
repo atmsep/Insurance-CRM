@@ -52,8 +52,31 @@ If step 6 doesn't show anything, run `set DEBUG_RAW=1 && node agent.js`
 ## Running it automatically
 
 Once confirmed working, set it to start automatically so it survives a PC
-restart — either:
-- **Task Scheduler**: create a task that runs `node agent.js` from this
-  folder "at log on", or
-- a small process manager like [pm2](https://pm2.keymetrics.io/) or
-  [nssm](https://nssm.cc/) to run it as a proper Windows service.
+restart. Use `run-agent.ps1` in this folder for the Task Scheduler action —
+**don't** point the task straight at `cmd /c node agent.js`. A task action of
+`cmd /c "<path with spaces>" agent.js >> "<log path>" 2>&1` hits a classic
+`cmd.exe` quoting quirk (the leading quoted path plus more quotes later on
+the line confuses its parser) and, worse, when it *does* launch, the task's
+own console is what Task Scheduler signals to stop the task — which showed
+up as the agent dying seconds after every start with
+`STATUS_CONTROL_C_EXIT` in the task's History tab. `run-agent.ps1` sidesteps
+both: it uses `Start-Process` to launch `node agent.js` fully detached, with
+its own window (hidden) and its own console, then exits — so the scheduled
+task itself completes immediately (successfully) and Node keeps running
+independently, outside Task Scheduler's process tree.
+
+```powershell
+$wrapperScript = "<full path to>\tools\caller-id-agent\run-agent.ps1"
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wrapperScript`""
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden
+
+Register-ScheduledTask -TaskName "CRM Caller ID Agent" -Action $action -Trigger $trigger -Settings $settings -Description "Bridges the USB Caller-ID modem to the CRM's incoming-call popup." -Force
+Start-ScheduledTask -TaskName "CRM Caller ID Agent"
+```
+
+Output goes to `agent.log` / `agent-error.log` in this folder (both
+gitignored — they can contain caller phone numbers).
+
+Alternatively, a small process manager like [pm2](https://pm2.keymetrics.io/)
+or [nssm](https://nssm.cc/) can run it as a proper Windows service instead.
