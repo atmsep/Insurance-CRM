@@ -32,6 +32,7 @@ export default async function DashboardPage() {
     { count: pendingTasksCount },
     { count: openClaimsCount },
     { count: openTicketsCount },
+    { count: expiringCount },
     { data: expiringPolicies },
     { count: outstandingCount },
     { data: upcomingTasks },
@@ -55,6 +56,14 @@ export default async function DashboardPage() {
       .from("client_tickets")
       .select("id", { count: "exact", head: true })
       .not("status", "in", "(resolved,closed)"),
+    // Real total for the stat tile — the query below this one caps at 8 rows
+    // for the preview list, so its .length can't be reused as the count.
+    supabase
+      .from("policies")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["active", "pending_renewal"])
+      .eq("is_current_term", true)
+      .lte("end_date", in30Days),
     supabase
       .from("policies")
       .select("id, policy_number, end_date, clients(client_individuals(first_name,last_name), client_legal_entities(company_name))")
@@ -103,7 +112,6 @@ export default async function DashboardPage() {
   ]);
 
   const outstanding = outstandingCount ?? 0;
-  const expiringCount = expiringPolicies?.length ?? 0;
 
   type AgendaItem =
     | { key: string; label: string; href: string; kind: "task" | "collection" | "expiring" }
@@ -229,8 +237,8 @@ export default async function DashboardPage() {
         />
         <StatTile
           label="Λήγουν σε 30 ημέρες"
-          value={expiringCount}
-          tone={expiringCount > 0 ? "warning" : "neutral"}
+          value={expiringCount ?? 0}
+          tone={(expiringCount ?? 0) > 0 ? "warning" : "neutral"}
           href="/dashboard/policies?expiring=30"
         />
         <StatTile
