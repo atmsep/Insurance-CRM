@@ -37,6 +37,8 @@ type Client = {
   assigned_agent_id: string | null;
   notes: string | null;
   client_individuals: {
+    first_name: string;
+    last_name: string;
     father_name: string | null;
     date_of_birth: string | null;
     occupation: string | null;
@@ -45,6 +47,7 @@ type Client = {
     amka: string | null;
   } | null;
   client_legal_entities: {
+    company_name: string;
     legal_form: string | null;
     kad: string | null;
     gemi_number: string | null;
@@ -89,12 +92,15 @@ export function DetailsTab({
   const agentLabel = agents.find((a) => a.id === client.assigned_agent_id)?.full_name;
 
   const { field, values, setValue } = useFormValues({
+    first_name: client.client_individuals?.first_name ?? "",
+    last_name: client.client_individuals?.last_name ?? "",
     father_name: client.client_individuals?.father_name ?? "",
     date_of_birth: client.client_individuals?.date_of_birth ?? "",
     occupation: client.client_individuals?.occupation ?? "",
     id_document_type: client.client_individuals?.id_document_type ?? "",
     id_document_number: client.client_individuals?.id_document_number ?? "",
     amka: client.client_individuals?.amka ?? "",
+    company_name: client.client_legal_entities?.company_name ?? "",
     legal_form: client.client_legal_entities?.legal_form ?? "",
     kad: client.client_legal_entities?.kad ?? "",
     gemi_number: client.client_legal_entities?.gemi_number ?? "",
@@ -145,6 +151,14 @@ export function DetailsTab({
               {client.client_type === "individual" && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-2">
+                    <Label htmlFor="first_name">Όνομα</Label>
+                    <Input id="first_name" name="first_name" required {...field("first_name")} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="last_name">Επώνυμο</Label>
+                    <Input id="last_name" name="last_name" required {...field("last_name")} />
+                  </div>
+                  <div className="flex flex-col gap-2">
                     <Label htmlFor="father_name">Πατρώνυμο</Label>
                     <Input id="father_name" name="father_name" {...field("father_name")} />
                   </div>
@@ -183,6 +197,10 @@ export function DetailsTab({
               )}
               {client.client_type === "legal_entity" && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2 sm:col-span-2">
+                    <Label htmlFor="company_name">Επωνυμία</Label>
+                    <Input id="company_name" name="company_name" required {...field("company_name")} />
+                  </div>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="legal_form">Νομική μορφή</Label>
                     <Input id="legal_form" name="legal_form" {...field("legal_form")} />
@@ -289,6 +307,8 @@ export function DetailsTab({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {client.client_type === "individual" && (
                 <>
+                  <ViewField label="Όνομα" value={client.client_individuals?.first_name} />
+                  <ViewField label="Επώνυμο" value={client.client_individuals?.last_name} />
                   <ViewField label="Πατρώνυμο" value={client.client_individuals?.father_name} />
                   <ViewField label="Ημερομηνία γέννησης" value={client.client_individuals?.date_of_birth} />
                   <ViewField label="Επάγγελμα" value={client.client_individuals?.occupation} />
@@ -305,6 +325,7 @@ export function DetailsTab({
               )}
               {client.client_type === "legal_entity" && (
                 <>
+                  <ViewField label="Επωνυμία" value={client.client_legal_entities?.company_name} />
                   <ViewField label="Νομική μορφή" value={client.client_legal_entities?.legal_form} />
                   <ViewField label="ΚΑΔ" value={client.client_legal_entities?.kad} />
                   <ViewField label="Αριθμός Γ.Ε.ΜΗ." value={client.client_legal_entities?.gemi_number} />

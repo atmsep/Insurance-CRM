@@ -260,6 +260,17 @@ export async function updateClientNotes(
     return { error: "Ένας πελάτης δεν μπορεί να είναι συστήνων του εαυτού του." };
   }
 
+  const clientType = formData.get("client_type") as string;
+  const firstName = (formData.get("first_name") as string) || "";
+  const lastName = (formData.get("last_name") as string) || "";
+  if (clientType === "individual" && (!firstName.trim() || !lastName.trim())) {
+    return { error: "Το όνομα και το επώνυμο είναι υποχρεωτικά." };
+  }
+  const companyName = (formData.get("company_name") as string) || "";
+  if (clientType === "legal_entity" && !companyName.trim()) {
+    return { error: "Η επωνυμία είναι υποχρεωτική." };
+  }
+
   const { error: clientError } = await supabase
     .from("clients")
     .update({
@@ -286,7 +297,7 @@ export async function updateClientNotes(
     return { error: "Σφάλμα κατά την αποθήκευση: " + clientError.message };
   }
 
-  if (formData.get("client_type") === "individual") {
+  if (clientType === "individual") {
     const amka = (formData.get("amka") as string) || null;
     if (amka && !isValidAmka(amka)) {
       return { error: "Το ΑΜΚΑ δεν είναι έγκυρο." };
@@ -295,6 +306,8 @@ export async function updateClientNotes(
     const { error: individualError } = await supabase
       .from("client_individuals")
       .update({
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         father_name: (formData.get("father_name") as string) || null,
         date_of_birth: (formData.get("date_of_birth") as string) || null,
         occupation: (formData.get("occupation") as string) || null,
@@ -309,10 +322,11 @@ export async function updateClientNotes(
     }
   }
 
-  if (formData.get("client_type") === "legal_entity") {
+  if (clientType === "legal_entity") {
     const { error: legalEntityError } = await supabase
       .from("client_legal_entities")
       .update({
+        company_name: companyName.trim(),
         legal_form: (formData.get("legal_form") as string) || null,
         kad: (formData.get("kad") as string) || null,
         gemi_number: (formData.get("gemi_number") as string) || null,
