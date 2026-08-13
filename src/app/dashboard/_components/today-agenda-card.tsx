@@ -7,9 +7,9 @@ import {
   CELEBRATION_ICONS,
   CELEBRATION_LABELS,
   buildCelebrationWish,
-  getCelebrationTemplates,
   isCelebrationType,
 } from "@/lib/celebrations";
+import { getCelebrationTemplatesCached } from "@/lib/cached-queries/lookups";
 import { formatDate, todayISO } from "./date-utils";
 
 type AgendaItem =
@@ -60,7 +60,7 @@ export async function TodayAgendaCard() {
         .in("status", ["active", "pending_renewal"])
         .eq("is_current_term", true)
         .eq("end_date", today),
-      getCelebrationTemplates(supabase),
+      getCelebrationTemplatesCached(),
     ]);
 
   const agendaItems: AgendaItem[] = [

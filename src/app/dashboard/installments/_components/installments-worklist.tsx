@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { collectInstallmentPayment } from "../../policies/actions";
 import { CollectPaymentForm } from "../../policies/collect-payment-form";
+import { getAgentsListCached, getActivePaymentMethodsCached } from "@/lib/cached-queries/lookups";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Εκκρεμεί",
@@ -132,18 +133,17 @@ export async function InstallmentsWorklist() {
   // few thousand rows (confirmed live). installments_worklist/_count
   // (migration 0065) do the same join and the equivalent agent/admin
   // scoping in one explicit WHERE condition instead of per-row RLS.
-  const [worklistResult, countResult, { data: paymentMethods }, { data: agents }, totalsResult] =
-    await Promise.all([
-      supabase.rpc("installments_worklist", { p_limit: LIST_CAP }) as unknown as Promise<{
-        data: Row[] | null;
-      }>,
-      supabase.rpc("installments_worklist_count") as unknown as Promise<{ data: number | null }>,
-      supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
-      isAdmin
-        ? supabase.from("agency_users").select("id, full_name").order("full_name")
-        : Promise.resolve({ data: [] }),
-      supabase.rpc("installments_outstanding_total") as unknown as Promise<{ data: number | null }>,
-    ]);
+  const [worklistResult, countResult, paymentMethods, agents, totalsResult] = await Promise.all([
+    supabase.rpc("installments_worklist", { p_limit: LIST_CAP }) as unknown as Promise<{
+      data: Row[] | null;
+    }>,
+    supabase.rpc("installments_worklist_count") as unknown as Promise<{ data: number | null }>,
+    // Agency-wide config lookups, not agent-scoped — cached (see
+    // src/lib/cached-queries/lookups.ts) instead of re-querying every load.
+    getActivePaymentMethodsCached(),
+    isAdmin ? getAgentsListCached() : Promise.resolve([]),
+    supabase.rpc("installments_outstanding_total") as unknown as Promise<{ data: number | null }>,
+  ]);
 
   const rows = worklistResult.data ?? [];
   const count = countResult.data ?? 0;
@@ -153,7 +153,7 @@ export async function InstallmentsWorklist() {
   const total = totalsResult.data ?? 0;
   const isTruncated = count > LIST_CAP;
 
-  const agentNameById = new Map((agents ?? []).map((a) => [a.id, a.full_name]));
+  const agentNameById = new Map(agents.map((a) => [a.id, a.full_name]));
 
   type Group = { key: string; label: string; rows: Row[] };
   let groups: Group[] | null = null;
@@ -194,7 +194,7 @@ export async function InstallmentsWorklist() {
                   <span className="text-sm text-muted-foreground">{groupTotal.toFixed(2)} €</span>
                 </CardHeader>
                 <CardContent>
-                  <RowsTable rows={group.rows} paymentMethods={paymentMethods ?? []} />
+                  <RowsTable rows={group.rows} paymentMethods={paymentMethods} />
                 </CardContent>
               </Card>
             );
@@ -203,7 +203,7 @@ export async function InstallmentsWorklist() {
           <p className="text-sm text-muted-foreground">Δεν υπάρχουν ανείσπρακτα.</p>
         )
       ) : (
-        <RowsTable rows={rows} paymentMethods={paymentMethods ?? []} />
+        <RowsTable rows={rows} paymentMethods={paymentMethods} />
       )}
     </div>
   );

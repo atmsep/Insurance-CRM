@@ -1,8 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
+import { CACHE_TAGS } from "@/lib/cache-tags";
 import type { CommissionDirection, CommissionType } from "@/lib/database.types";
 
 function str(formData: FormData, key: string) {
@@ -43,6 +44,8 @@ export async function createCommission(policyId: string, carrierId: string, form
 
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/commissions");
+  revalidatePath("/dashboard/reports");
+  updateTag(CACHE_TAGS.reports);
 }
 
 export async function updateCommissionStatus(
@@ -55,4 +58,6 @@ export async function updateCommissionStatus(
   await supabase.from("commissions").update({ status }).eq("id", commissionId);
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/commissions");
+  revalidatePath("/dashboard/reports");
+  updateTag(CACHE_TAGS.reports);
 }

@@ -1,11 +1,12 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
+import { CACHE_TAGS } from "@/lib/cache-tags";
 import type { PaymentFrequency } from "@/lib/database.types";
 import { installmentRemaining } from "./balance";
 import { POLICY_STATUS_LABELS } from "./policy-labels";
@@ -611,6 +612,9 @@ export async function collectInstallmentPayment(
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/installments");
   revalidatePath("/dashboard/cash-register");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reports");
+  updateTag(CACHE_TAGS.reports);
 }
 
 // Owner/admin only (enforced both here and by RLS). Reverses one specific
@@ -653,6 +657,9 @@ export async function reverseInstallmentPayment(
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/installments");
   revalidatePath("/dashboard/cash-register");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reports");
+  updateTag(CACHE_TAGS.reports);
 }
 
 export async function sendPolicyEmail(

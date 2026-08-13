@@ -1,10 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgencyUser } from "@/lib/dal";
 import { isValidEmail } from "@/lib/validation";
+import { CACHE_TAGS } from "@/lib/cache-tags";
 
 export type ActionState = { error: string } | { success: string } | undefined;
 
@@ -325,6 +326,8 @@ export async function createPaymentMethod(formData: FormData) {
   await supabase.from("payment_methods").insert({ name });
 
   revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard/installments");
+  updateTag(CACHE_TAGS.paymentMethods);
 }
 
 export async function togglePaymentMethodActive(paymentMethodId: string, isActive: boolean) {
@@ -335,6 +338,8 @@ export async function togglePaymentMethodActive(paymentMethodId: string, isActiv
     .update({ is_active: isActive })
     .eq("id", paymentMethodId);
   revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard/installments");
+  updateTag(CACHE_TAGS.paymentMethods);
 }
 
 export async function createEmailTemplate(formData: FormData) {
@@ -349,6 +354,7 @@ export async function createEmailTemplate(formData: FormData) {
   await supabase.from("email_templates").insert({ name, subject, body });
 
   revalidatePath("/dashboard/settings");
+  updateTag(CACHE_TAGS.celebrationTemplates);
 }
 
 export async function updateEmailTemplate(templateId: string, formData: FormData) {
@@ -363,6 +369,7 @@ export async function updateEmailTemplate(templateId: string, formData: FormData
   await supabase.from("email_templates").update({ name, subject, body }).eq("id", templateId);
 
   revalidatePath("/dashboard/settings");
+  updateTag(CACHE_TAGS.celebrationTemplates);
 }
 
 export async function toggleEmailTemplateActive(templateId: string, isActive: boolean) {
@@ -370,6 +377,7 @@ export async function toggleEmailTemplateActive(templateId: string, isActive: bo
   const supabase = await createSupabaseClient();
   await supabase.from("email_templates").update({ is_active: isActive }).eq("id", templateId);
   revalidatePath("/dashboard/settings");
+  updateTag(CACHE_TAGS.celebrationTemplates);
 }
 
 export async function toggleAppSetting(key: string, enabled: boolean) {
@@ -410,6 +418,7 @@ export async function updateAgencyUserRole(userId: string, role: string) {
   const supabase = await createSupabaseClient();
   await supabase.from("agency_users").update({ role }).eq("id", userId);
   revalidatePath("/dashboard/settings");
+  updateTag(CACHE_TAGS.agencyUsers);
 }
 
 export async function toggleAgencyUserActive(userId: string, isActive: boolean) {
@@ -418,6 +427,7 @@ export async function toggleAgencyUserActive(userId: string, isActive: boolean) 
   await supabase.from("agency_users").update({ is_active: isActive }).eq("id", userId);
   await supabase.from("commission_payees").update({ is_active: isActive }).eq("agency_user_id", userId);
   revalidatePath("/dashboard/settings");
+  updateTag(CACHE_TAGS.agencyUsers);
 }
 
 export async function updateAgencyUserCreditLimit(userId: string, formData: FormData) {
@@ -495,6 +505,7 @@ export async function updateAgencyUserProfile(
 
   revalidatePath(`/dashboard/settings/team/${userId}`);
   revalidatePath("/dashboard/settings");
+  updateTag(CACHE_TAGS.agencyUsers);
 }
 
 export async function inviteAgencyUser(
@@ -538,6 +549,7 @@ export async function inviteAgencyUser(
   await syncPayeeForAgencyUser(supabase, { id: newUser.id, full_name: fullName, email });
 
   revalidatePath("/dashboard/settings");
+  updateTag(CACHE_TAGS.agencyUsers);
   return { success: `Στάλθηκε πρόσκληση στο ${email}.` };
 }
 
@@ -590,5 +602,6 @@ export async function createAgencyUserDirect(
   await syncPayeeForAgencyUser(supabase, { id: newUser.id, full_name: fullName, email });
 
   revalidatePath("/dashboard/settings");
+  updateTag(CACHE_TAGS.agencyUsers);
   return { success: `Ο/Η ${fullName} καταχωρήθηκε — μπορεί να συνδεθεί άμεσα με το email και τον κωδικό.` };
 }

@@ -1,10 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
+import { CACHE_TAGS } from "@/lib/cache-tags";
 
 export type ClaimFormState = { error: string } | undefined;
 
@@ -61,6 +62,9 @@ export async function createClaim(
 
   revalidatePath("/dashboard/claims");
   revalidatePath(`/dashboard/policies/${policyId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reports");
+  updateTag(CACHE_TAGS.reports);
   redirect(`/dashboard/claims/${claim.id}?toast=${encodeURIComponent("Η ζημιά καταχωρήθηκε.")}`);
 }
 
@@ -78,6 +82,9 @@ export async function updateClaimStatus(claimId: string, policyId: string, statu
   revalidatePath(`/dashboard/claims/${claimId}`);
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/claims");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reports");
+  updateTag(CACHE_TAGS.reports);
 }
 
 export async function bulkUpdateClaimStatus(
@@ -110,6 +117,9 @@ export async function bulkUpdateClaimStatus(
   for (const claim of claims ?? []) {
     revalidatePath(`/dashboard/policies/${claim.policy_id}`);
   }
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reports");
+  updateTag(CACHE_TAGS.reports);
 }
 
 export async function updateClaimDetails(claimId: string, policyId: string, formData: FormData) {
@@ -138,4 +148,7 @@ export async function updateClaimDetails(claimId: string, policyId: string, form
 
   revalidatePath(`/dashboard/claims/${claimId}`);
   revalidatePath(`/dashboard/policies/${policyId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reports");
+  updateTag(CACHE_TAGS.reports);
 }
