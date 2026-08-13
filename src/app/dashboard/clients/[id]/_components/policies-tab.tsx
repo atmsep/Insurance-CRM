@@ -16,7 +16,7 @@ import {
 import { policyStatusVariant } from "@/lib/status-badge";
 import { formatDate } from "@/lib/date";
 import { POLICY_STATUS_LABELS } from "../../../policies/policy-labels";
-import { ColumnFilter, type FilterOption } from "./column-filter";
+import { ColumnFilter, type FilterOption, type SortDirection } from "./column-filter";
 
 export type Policy = {
   id: string;
@@ -100,6 +100,7 @@ const COLUMNS: Column[] = [
 
 export function PoliciesTab({ policies }: { policies: Policy[] }) {
   const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
   const optionsByColumn = useMemo(() => {
     const map = new Map<string, FilterOption[]>();
@@ -117,18 +118,26 @@ export function PoliciesTab({ policies }: { policies: Policy[] }) {
     return map;
   }, [policies]);
 
-  const visiblePolicies = useMemo(
-    () =>
-      policies.filter((p) =>
-        COLUMNS.every((col) => {
-          const active = filters[col.key];
-          return !active || active.has(col.getValue(p));
-        }),
-      ),
-    [policies, filters],
-  );
+  const visiblePolicies = useMemo(() => {
+    const filtered = policies.filter((p) =>
+      COLUMNS.every((col) => {
+        const active = filters[col.key];
+        return !active || active.has(col.getValue(p));
+      }),
+    );
+    if (!sort) return filtered;
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const sign = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const ka = col.getSortKey(a);
+      const kb = col.getSortKey(b);
+      return ka < kb ? -sign : ka > kb ? sign : 0;
+    });
+  }, [policies, filters, sort]);
 
   const hasActiveFilters = Object.values(filters).some((f) => f !== null && f !== undefined);
+  const hasActiveSortOrFilters = hasActiveFilters || sort !== null;
 
   return (
     <Card>
@@ -140,8 +149,15 @@ export function PoliciesTab({ policies }: { policies: Policy[] }) {
               Εμφανίζονται {visiblePolicies.length} από {policies.length}
             </span>
           )}
-          {hasActiveFilters && (
-            <Button variant="ghost" size="xs" onClick={() => setFilters({})}>
+          {hasActiveSortOrFilters && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => {
+                setFilters({});
+                setSort(null);
+              }}
+            >
               Καθαρισμός φίλτρων
             </Button>
           )}
@@ -158,6 +174,8 @@ export function PoliciesTab({ policies }: { policies: Policy[] }) {
                     options={optionsByColumn.get(col.key) ?? []}
                     active={filters[col.key] ?? null}
                     onChange={(next) => setFilters((f) => ({ ...f, [col.key]: next }))}
+                    sortDirection={sort?.key === col.key ? sort.direction : null}
+                    onSort={(direction) => setSort(direction ? { key: col.key, direction } : null)}
                   />
                 </TableHead>
               ))}
