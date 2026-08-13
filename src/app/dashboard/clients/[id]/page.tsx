@@ -7,8 +7,6 @@ import {
   createInteraction,
   updateIncomingCallNotes,
   updateClientProfile,
-  addRelatedMember,
-  removeRelatedMember,
 } from "../actions";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
@@ -23,9 +21,7 @@ import { PoliciesTab, type Policy as ClientPolicy } from "./_components/policies
 import { InteractionsTab } from "./_components/interactions-tab";
 import { CallsTab } from "./_components/calls-tab";
 import { TicketsTab } from "./_components/tickets-tab";
-import { CommissionsTab } from "./_components/commissions-tab";
 import { ReferralsTab, type ReferredClient } from "./_components/referrals-tab";
-import { RelatedMembersTab } from "./_components/related-members-tab";
 import { OutstandingTab } from "./_components/outstanding-tab";
 import { LedgerTab } from "./_components/ledger-tab";
 import { TasksTab } from "./_components/tasks-tab";
@@ -42,16 +38,6 @@ type ClientInstallmentRow = {
   status: string;
   paid_amount: number | null;
   installment_payments: { amount: number; paid_date: string; paid_at: string; is_reversed: boolean }[];
-};
-
-type ClientCommissionRow = {
-  id: string;
-  commission_type: string;
-  commission_amount: number;
-  status: string;
-  period: string | null;
-  policy_id: string;
-  policy_number: string;
 };
 
 export default async function ClientDetailPage({
@@ -82,14 +68,11 @@ export default async function ClientDetailPage({
     { data: installments },
     { data: tickets },
     { data: agents },
-    { data: commissions },
     { data: tasks },
     { data: activity },
     { data: referrals },
     { data: ownReferralRewards },
     { data: defaultRule },
-    { data: relatedMembersOwned },
-    { data: relatedMembersReverse },
   ] = await Promise.all([
     supabase
       .from("policies")
@@ -129,12 +112,6 @@ export default async function ClientDetailPage({
       .eq("client_id", id)
       .order("created_at", { ascending: false }),
     supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
-    // Same PostgREST-embedded-filter timeout as the installments query
-    // above (pre-existing, found incidentally while verifying the new
-    // tabs) — client_commissions (migration 0070) is the same fix.
-    supabase.rpc("client_commissions", { p_client_id: id }) as unknown as Promise<{
-      data: ClientCommissionRow[] | null;
-    }>,
     supabase
       .from("tasks")
       .select("id, title, due_date, status, priority")
@@ -166,16 +143,6 @@ export default async function ClientDetailPage({
       .select("calc_type, rate_percent, fixed_amount")
       .eq("referrer_client_id", id)
       .maybeSingle(),
-    supabase
-      .from("client_related_members")
-      .select("id, relationship_type, related_client:related_client_id(id, display_name)")
-      .eq("client_id", id)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("client_related_members")
-      .select("id, relationship_type, owner:client_id(id, display_name)")
-      .eq("related_client_id", id)
-      .order("created_at", { ascending: false }),
   ]);
 
   const installmentRows = installments ?? [];
@@ -225,8 +192,6 @@ export default async function ClientDetailPage({
   const addInteractionAction = createInteraction.bind(null, id);
   const addTicketAction = createTicket.bind(null, id);
   const updateCallNotesAction = updateIncomingCallNotes.bind(null, id);
-  const addRelatedMemberAction = addRelatedMember.bind(null, id);
-  const removeRelatedMemberAction = removeRelatedMember.bind(null, id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -249,9 +214,7 @@ export default async function ClientDetailPage({
           <TabsTrigger value="interactions">Επικοινωνία</TabsTrigger>
           <TabsTrigger value="calls">Κλήσεις</TabsTrigger>
           <TabsTrigger value="tickets">Αιτήματα</TabsTrigger>
-          <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
           <TabsTrigger value="referrals">Συστάσεις</TabsTrigger>
-          <TabsTrigger value="related-members">Συσχετιζόμενα μέλη</TabsTrigger>
           <TabsTrigger value="tasks">Υπενθυμίσεις</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
           <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
@@ -304,30 +267,12 @@ export default async function ClientDetailPage({
           />
         </TabsContent>
 
-        <TabsContent value="commissions" className="pt-4">
-          <CommissionsTab commissions={commissions ?? []} />
-        </TabsContent>
-
         <TabsContent value="referrals" className="pt-4">
           <ReferralsTab
             referrerClientId={id}
             referrals={(referrals ?? []) as unknown as ReferredClient[]}
             isAdmin={isAdmin}
             defaultRule={defaultRule ?? null}
-          />
-        </TabsContent>
-
-        <TabsContent value="related-members" className="pt-4">
-          <RelatedMembersTab
-            clientId={id}
-            ownedMembers={(relatedMembersOwned ?? []) as unknown as Parameters<
-              typeof RelatedMembersTab
-            >[0]["ownedMembers"]}
-            reverseMembers={(relatedMembersReverse ?? []) as unknown as Parameters<
-              typeof RelatedMembersTab
-            >[0]["reverseMembers"]}
-            addAction={addRelatedMemberAction}
-            removeAction={removeRelatedMemberAction}
           />
         </TabsContent>
 
