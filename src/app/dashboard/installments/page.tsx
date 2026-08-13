@@ -4,7 +4,6 @@ import { getCurrentAgencyUser } from "@/lib/dal";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { installmentStatusVariant } from "@/lib/status-badge";
-import { resolveClientName } from "@/lib/client-name";
 import { installmentRemaining } from "../policies/balance";
 import {
   Table,
@@ -24,11 +23,6 @@ const STATUS_LABELS: Record<string, string> = {
   partially_paid: "Μερική πληρωμή",
 };
 
-type ClientEmbed = {
-  client_individuals: { first_name: string; last_name: string } | null;
-  client_legal_entities: { company_name: string } | null;
-} | null;
-
 type Row = {
   id: string;
   policy_id: string;
@@ -36,11 +30,9 @@ type Row = {
   amount: number;
   status: string;
   paid_amount: number | null;
-  policies: {
-    policy_number: string;
-    assigned_agent_id: string | null;
-    clients: ClientEmbed;
-  } | null;
+  policy_number: string;
+  assigned_agent_id: string | null;
+  client_name: string;
 };
 
 // This is an operational worklist (every issued policy still owed money —
@@ -77,17 +69,16 @@ function RowsTable({
         <TableBody>
           {rows.length ? (
             rows.map((inst) => {
-              const name = resolveClientName(inst.policies?.clients ?? null);
               const remaining = installmentRemaining(inst);
 
               return (
                 <TableRow key={inst.id}>
                   <TableCell>
                     <Link href={`/dashboard/policies/${inst.policy_id}`} className="hover:underline">
-                      {inst.policies?.policy_number ?? "—"}
+                      {inst.policy_number}
                     </Link>
                   </TableCell>
-                  <TableCell>{name}</TableCell>
+                  <TableCell>{inst.client_name}</TableCell>
                   <TableCell>{formatDate(inst.due_date)}</TableCell>
                   <TableCell>
                     <div>{remaining.toFixed(2)} €</div>
@@ -132,19 +123,18 @@ export default async function InstallmentsPage() {
   const agencyUser = await getCurrentAgencyUser();
   const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
 
-  const [{ data: installments, count }, { data: paymentMethods }, { data: agents }, totalsResult] =
+  // The list+count queries used to join policy_installments -> policies ->
+  // clients directly; per-row RLS on both joined tables compounded enough
+  // to hit a real statement timeout once policy_installments grew past a
+  // few thousand rows (confirmed live). installments_worklist/_count
+  // (migration 0065) do the same join and the equivalent agent/admin
+  // scoping in one explicit WHERE condition instead of per-row RLS.
+  const [worklistResult, countResult, { data: paymentMethods }, { data: agents }, totalsResult] =
     await Promise.all([
-      supabase
-        .from("policy_installments")
-        .select(
-          "id, policy_id, due_date, amount, status, paid_amount, " +
-            "policies!inner(policy_number, status, assigned_agent_id, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
-          { count: "exact" },
-        )
-        .neq("status", "paid")
-        .not("policies.status", "in", "(draft,cancelled)")
-        .order("due_date", { ascending: true })
-        .limit(LIST_CAP),
+      supabase.rpc("installments_worklist", { p_limit: LIST_CAP }) as unknown as Promise<{
+        data: Row[] | null;
+      }>,
+      supabase.rpc("installments_worklist_count") as unknown as Promise<{ data: number | null }>,
       supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
       isAdmin
         ? supabase.from("agency_users").select("id, full_name").order("full_name")
@@ -152,12 +142,13 @@ export default async function InstallmentsPage() {
       supabase.rpc("installments_outstanding_total") as unknown as Promise<{ data: number | null }>,
     ]);
 
-  const rows = (installments ?? []) as unknown as Row[];
+  const rows = worklistResult.data ?? [];
+  const count = countResult.data ?? 0;
   // The true total (not rows.reduce, which only covers the .limit(LIST_CAP)
   // page) — installmentRemaining's per-row math is mirrored in SQL by
   // installments_outstanding_total (migration 0062).
   const total = totalsResult.data ?? 0;
-  const isTruncated = (count ?? 0) > LIST_CAP;
+  const isTruncated = count > LIST_CAP;
 
   const agentNameById = new Map((agents ?? []).map((a) => [a.id, a.full_name]));
 
@@ -166,7 +157,7 @@ export default async function InstallmentsPage() {
   if (isAdmin) {
     const byAgent = new Map<string, Group>();
     for (const row of rows) {
-      const agentId = row.policies?.assigned_agent_id ?? "unassigned";
+      const agentId = row.assigned_agent_id ?? "unassigned";
       const label = agentId === "unassigned" ? "Χωρίς ανάθεση" : (agentNameById.get(agentId) ?? "—");
       if (!byAgent.has(agentId)) byAgent.set(agentId, { key: agentId, label, rows: [] });
       byAgent.get(agentId)!.rows.push(row);
