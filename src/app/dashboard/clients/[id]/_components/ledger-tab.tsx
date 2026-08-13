@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/date";
+import { cn } from "@/lib/utils";
 
 type LedgerInstallment = {
   id: string;
@@ -127,7 +128,9 @@ export function LedgerTab({
                   <TableCell>{row.description}</TableCell>
                   <TableCell>{row.debit > 0 ? `${row.debit.toFixed(2)} €` : "—"}</TableCell>
                   <TableCell>{row.credit > 0 ? `${row.credit.toFixed(2)} €` : "—"}</TableCell>
-                  <TableCell className="font-medium">{row.balance.toFixed(2)} €</TableCell>
+                  <TableCell className={cn("font-medium", row.balance < 0 && "text-destructive")}>
+                    {row.balance.toFixed(2)} €
+                  </TableCell>
                 </TableRow>
               ))
             ) : (
@@ -140,7 +143,10 @@ export function LedgerTab({
           </TableBody>
         </Table>
         <p className="text-sm text-muted-foreground">
-          Τρέχον υπόλοιπο: <span className="font-medium text-foreground">{finalBalance.toFixed(2)} €</span>
+          Τρέχον υπόλοιπο:{" "}
+          <span className={cn("font-medium", finalBalance < 0 ? "text-destructive" : "text-foreground")}>
+            {finalBalance.toFixed(2)} €
+          </span>
         </p>
       </CardContent>
     </Card>

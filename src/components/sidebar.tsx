@@ -12,7 +12,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "no-print hidden shrink-0 flex-col justify-between border-r bg-muted/20 p-4 sm:flex",
+        "no-print hidden shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar p-4 text-sidebar-foreground sm:flex",
         collapsed ? "w-16" : "w-56",
       )}
     >
@@ -23,6 +23,7 @@ export function Sidebar() {
             type="button"
             variant="ghost"
             size="icon-sm"
+            className="text-sidebar-foreground hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
             onClick={() => setCollapsed((v) => !v)}
             title={collapsed ? "Ανάπτυξη μενού" : "Σύμπτυξη μενού"}
           >

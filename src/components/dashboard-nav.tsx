@@ -78,8 +78,8 @@ export function DashboardNav({
           "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
           collapsed && "justify-center px-2",
           isActive
-            ? "bg-primary text-primary-foreground"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+            : "text-sidebar-foreground/75 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground",
         )}
       >
         <Icon className="size-4 shrink-0" />
@@ -94,7 +94,7 @@ export function DashboardNav({
         "group" in item ? (
           <div key={item.group} className="mt-3 flex flex-col gap-1 first:mt-0">
             {!collapsed && (
-              <p className="px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
+              <p className="px-3 text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/50">
                 {item.group}
               </p>
             )}

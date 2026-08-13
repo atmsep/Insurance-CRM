@@ -28,7 +28,7 @@ export function MobileNav() {
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
-          <div className="fixed inset-y-0 left-0 flex w-64 flex-col bg-background p-4 shadow-lg">
+          <div className="fixed inset-y-0 left-0 flex w-64 flex-col bg-sidebar p-4 text-sidebar-foreground shadow-lg">
             <div className="mb-6 flex items-center justify-between">
               <p className="text-lg font-semibold">CRM Ασφαλιστικού</p>
               <Button
@@ -36,6 +36,7 @@ export function MobileNav() {
                 variant="ghost"
                 size="sm"
                 aria-label="Κλείσιμο"
+                className="text-sidebar-foreground hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
                 onClick={() => setOpen(false)}
               >
                 <X className="size-5" />

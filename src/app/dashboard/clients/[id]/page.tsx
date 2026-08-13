@@ -244,7 +244,6 @@ export default async function ClientDetailPage({
         <TabsList>
           <TabsTrigger value="details">Στοιχεία</TabsTrigger>
           <TabsTrigger value="profile">Προφίλ</TabsTrigger>
-          <TabsTrigger value="policies">Συμβόλαια</TabsTrigger>
           <TabsTrigger value="outstanding">Ανείσπρακτα</TabsTrigger>
           <TabsTrigger value="ledger">Λογιστική Καρτέλα</TabsTrigger>
           <TabsTrigger value="interactions">Επικοινωνία</TabsTrigger>
@@ -259,26 +258,25 @@ export default async function ClientDetailPage({
         </TabsList>
 
         <TabsContent value="details" className="pt-4">
-          <DetailsTab
-            client={client}
-            agents={agents ?? []}
-            referrerLabel={referrerLabel}
-            totalBilled={totalBilled}
-            totalPaid={totalPaid}
-            totalTips={totalTips}
-            outstanding={outstanding}
-            referralRewardTotal={referralRewardTotal}
-            referralRewardPolicyCount={referralRewardPolicyCount}
-            updateAction={updateAction}
-          />
+          <div className="flex flex-col gap-6">
+            <DetailsTab
+              client={client}
+              agents={agents ?? []}
+              referrerLabel={referrerLabel}
+              totalBilled={totalBilled}
+              totalPaid={totalPaid}
+              totalTips={totalTips}
+              outstanding={outstanding}
+              referralRewardTotal={referralRewardTotal}
+              referralRewardPolicyCount={referralRewardPolicyCount}
+              updateAction={updateAction}
+            />
+            <PoliciesTab policies={(policies ?? []) as unknown as ClientPolicy[]} />
+          </div>
         </TabsContent>
 
         <TabsContent value="profile" className="pt-4">
           <ProfileTab client={client} updateAction={updateProfileAction} />
-        </TabsContent>
-
-        <TabsContent value="policies" className="pt-4">
-          <PoliciesTab policies={(policies ?? []) as unknown as ClientPolicy[]} />
         </TabsContent>
 
         <TabsContent value="outstanding" className="pt-4">
