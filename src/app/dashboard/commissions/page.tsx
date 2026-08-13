@@ -1,22 +1,9 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { Badge } from "@/components/ui/badge";
+import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { COMMISSION_TYPE_LABELS, COMMISSION_STATUS_LABELS } from "./commission-labels";
-import { COMMISSION_DIRECTION_LABELS } from "./direction-labels";
-import { commissionStatusVariant } from "@/lib/status-badge";
-
-function formatDate(value: string | null) {
-  return value ? new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" }) : "—";
-}
+import { COMMISSION_STATUS_LABELS } from "./commission-labels";
+import { CommissionsTable } from "./_components/commissions-table";
+import { TableCardSkeleton } from "../_components/skeletons";
 
 const DIRECTION_TABS: { value: string | undefined; label: string }[] = [
   { value: undefined, label: "Όλες" },
@@ -30,49 +17,10 @@ export default async function CommissionsPage({
   searchParams: Promise<{ status?: string; direction?: string }>;
 }) {
   const { status, direction } = await searchParams;
-  const supabase = await createClient();
-
-  let query = supabase
-    .from("commissions")
-    .select(
-      "id, commission_type, direction, commission_amount, status, period, policies(id, policy_number), agency_users(full_name), commission_payees(name)",
-    )
-    .order("period", { ascending: false })
-    .limit(100);
-
-  if (status) query = query.eq("status", status);
-  if (direction) query = query.eq("direction", direction);
-
-  const [{ data: commissions }, totalsResult] = (await Promise.all([
-    query,
-    supabase.rpc("commissions_filtered_total", {
-      p_status: status ?? null,
-      p_direction: direction ?? null,
-    }),
-  ])) as unknown as [
-    Awaited<typeof query>,
-    { data: { total_amount: number; row_count: number }[] | null },
-  ];
-
-  const totals = totalsResult.data?.[0] ?? { total_amount: 0, row_count: 0 };
-  const total = totals.total_amount;
-  const isTruncated = totals.row_count > 100;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Προμήθειες</h1>
-          {isTruncated && (
-            <p className="text-sm text-muted-foreground">
-              Εμφανίζονται 100 από {totals.row_count} — το σύνολο υπολογίζεται σε όλες.
-            </p>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Σύνολο: <span className="font-medium text-foreground">{total.toFixed(2)} €</span>
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Προμήθειες</h1>
 
       <div className="flex flex-wrap gap-2">
         {DIRECTION_TABS.map((tab) => {
@@ -111,65 +59,9 @@ export default async function CommissionsPage({
         </Button>
       </form>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Κατεύθυνση</TableHead>
-              <TableHead>Συμβόλαιο</TableHead>
-              <TableHead>Χειριστής</TableHead>
-              <TableHead>Δικαιούχος</TableHead>
-              <TableHead>Τύπος</TableHead>
-              <TableHead>Ποσό</TableHead>
-              <TableHead>Περίοδος</TableHead>
-              <TableHead>Κατάσταση</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {commissions?.length ? (
-              commissions.map((c) => {
-                const policy = c.policies as unknown as { id: string; policy_number: string } | null;
-                const agent = c.agency_users as unknown as { full_name: string } | null;
-                const payee = c.commission_payees as unknown as { name: string } | null;
-                return (
-                  <TableRow key={c.id}>
-                    <TableCell>
-                      {COMMISSION_DIRECTION_LABELS[c.direction] ?? c.direction}
-                    </TableCell>
-                    <TableCell>
-                      {policy ? (
-                        <Link href={`/dashboard/policies/${policy.id}`} className="hover:underline">
-                          {policy.policy_number}
-                        </Link>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>{agent?.full_name ?? "—"}</TableCell>
-                    <TableCell>{payee?.name ?? "—"}</TableCell>
-                    <TableCell>
-                      {COMMISSION_TYPE_LABELS[c.commission_type] ?? c.commission_type}
-                    </TableCell>
-                    <TableCell>{c.commission_amount.toFixed(2)} €</TableCell>
-                    <TableCell>{formatDate(c.period)}</TableCell>
-                    <TableCell>
-                      <Badge variant={commissionStatusVariant(c.status)}>
-                        {COMMISSION_STATUS_LABELS[c.status] ?? c.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            ) : (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν προμήθειες.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <Suspense key={`${status ?? ""}-${direction ?? ""}`} fallback={<TableCardSkeleton columns={8} />}>
+        <CommissionsTable status={status} direction={direction} />
+      </Suspense>
     </div>
   );
 }
