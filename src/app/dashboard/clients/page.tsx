@@ -28,6 +28,29 @@ import { AdvancedSearchSheet } from "./_components/advanced-search-sheet";
 import { PageSizeSelect } from "./_components/page-size-select";
 import { parseClientFilters, applyClientFilters, needsIndividualJoin, parsePerPage } from "./filters";
 
+type ClientListRow = {
+  id: string;
+  client_code: number;
+  client_type: string;
+  afm: string | null;
+  phone_mobile: string | null;
+  phone_landline: string | null;
+  address_street: string | null;
+  address_number: string | null;
+  address_city: string | null;
+  assigned_agent_id: string | null;
+  is_active: boolean;
+  client_individuals: { first_name: string; last_name: string } | null;
+  client_legal_entities: { company_name: string } | null;
+  agency_users: { full_name: string } | null;
+};
+
+function formatAddress(client: ClientListRow): string {
+  const streetLine = [client.address_street, client.address_number].filter(Boolean).join(" ");
+  const parts = [streetLine, client.address_city].filter(Boolean);
+  return parts.length ? parts.join(", ") : "—";
+}
+
 export default async function ClientsPage({
   searchParams,
 }: {
@@ -47,6 +70,7 @@ export default async function ClientsPage({
     show_inactive?: string;
     per_page?: string;
     page?: string;
+    all?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -67,21 +91,63 @@ export default async function ClientsPage({
     ? "client_individuals!inner(first_name,last_name)"
     : "client_individuals(first_name,last_name)";
 
-  let query = supabase
-    .from("clients")
-    .select(
-      `id, client_code, client_type, afm, phone_mobile, address_city, is_active, ${individualSelect}, client_legal_entities(company_name)`,
-      { count: "exact" },
-    )
-    .order("created_at", { ascending: false });
+  // Default landing view: the 50 clients this user last opened, most
+  // recent first — no pagination, driven by client_visits (not activity_log,
+  // which only records mutations, never page views). Applying any filter,
+  // or the explicit "Προβολή όλων" escape hatch (?all=1), switches back to
+  // the full filtered/paginated directory below. hasAnyFilter is computed
+  // from the already-parsed `filters` (empty-string params normalize to
+  // undefined there), so submitting the filter form with every field blank
+  // still lands on the recent-visits view instead of looking like a no-op.
+  const hasAnyFilter = Boolean(
+    filters.code ||
+      filters.name ||
+      filters.afm ||
+      filters.phone ||
+      filters.city ||
+      filters.email ||
+      filters.region ||
+      filters.postalCode ||
+      filters.agentId ||
+      filters.clientType ||
+      filters.dobFrom ||
+      filters.dobTo ||
+      filters.showInactive,
+  );
+  const showAll = sp.all === "1";
+  const useRecent = !hasAnyFilter && !showAll;
 
-  query = applyClientFilters(query, filters);
+  let clients: ClientListRow[] = [];
+  let totalPages = 1;
 
-  const from = (page - 1) * perPage;
-  query = query.range(from, from + perPage - 1);
+  if (useRecent) {
+    const { data: visits } = await supabase
+      .from("client_visits")
+      .select(
+        "visited_at, clients(id, client_code, client_type, afm, phone_mobile, phone_landline, address_street, address_number, address_city, assigned_agent_id, is_active, client_individuals(first_name,last_name), client_legal_entities(company_name), agency_users!clients_assigned_agent_id_fkey(full_name))",
+      )
+      .eq("agency_user_id", agencyUser?.id ?? "")
+      .order("visited_at", { ascending: false })
+      .limit(50);
+    clients = (visits ?? []).map((v) => v.clients).filter(Boolean) as unknown as ClientListRow[];
+  } else {
+    let query = supabase
+      .from("clients")
+      .select(
+        `id, client_code, client_type, afm, phone_mobile, phone_landline, address_street, address_number, address_city, assigned_agent_id, is_active, ${individualSelect}, client_legal_entities(company_name), agency_users!clients_assigned_agent_id_fkey(full_name)`,
+        { count: "exact" },
+      )
+      .order("created_at", { ascending: false });
 
-  const { data: clients, count } = await query;
-  const totalPages = Math.max(1, Math.ceil((count ?? 0) / perPage));
+    query = applyClientFilters(query, filters);
+
+    const from = (page - 1) * perPage;
+    query = query.range(from, from + perPage - 1);
+
+    const { data, count } = await query;
+    clients = (data ?? []) as unknown as ClientListRow[];
+    totalPages = Math.max(1, Math.ceil((count ?? 0) / perPage));
+  }
 
   const exportParams = new URLSearchParams();
   if (filters.code) exportParams.set("code", filters.code);
@@ -144,8 +210,9 @@ export default async function ClientsPage({
                 <TableHead>Κωδ.</TableHead>
                 <TableHead>Ονομα / Επωνυμία</TableHead>
                 <TableHead>ΑΦΜ</TableHead>
-                <TableHead>Τηλέφωνο</TableHead>
-                <TableHead>Πόλη</TableHead>
+                <TableHead>Τηλέφωνα</TableHead>
+                <TableHead>Διεύθυνση</TableHead>
+                <TableHead>Συνεργάτης</TableHead>
                 <TableHead>Κατάσταση</TableHead>
                 <TableHead className="w-8" />
               </TableRow>
@@ -188,6 +255,7 @@ export default async function ClientsPage({
                   />
                 </TableHead>
                 <TableHead className="pb-2" />
+                <TableHead className="pb-2" />
                 <TableHead className="pb-2">
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <input
@@ -220,8 +288,16 @@ export default async function ClientsPage({
                         </Link>
                       </TableCell>
                       <TableCell>{client.afm ?? "—"}</TableCell>
-                      <TableCell>{client.phone_mobile ?? "—"}</TableCell>
-                      <TableCell>{client.address_city ?? "—"}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span>{client.phone_mobile ?? "—"}</span>
+                          {client.phone_landline && (
+                            <span className="text-xs text-muted-foreground">{client.phone_landline}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>{formatAddress(client)}</TableCell>
+                      <TableCell>{client.agency_users?.full_name ?? "—"}</TableCell>
                       <TableCell>
                         <Badge variant={client.is_active ? "success" : "outline"}>
                           {client.is_active ? "Ενεργός" : "Ανενεργός"}
@@ -231,8 +307,10 @@ export default async function ClientsPage({
                         <QuickView title={name} fullHref={`/dashboard/clients/${client.id}`}>
                           <QuickViewField label="Κωδικός" value={`#${client.client_code}`} />
                           <QuickViewField label="ΑΦΜ" value={client.afm} />
-                          <QuickViewField label="Τηλέφωνο" value={client.phone_mobile} />
-                          <QuickViewField label="Πόλη" value={client.address_city} />
+                          <QuickViewField label="Κινητό" value={client.phone_mobile} />
+                          <QuickViewField label="Σταθερό" value={client.phone_landline} />
+                          <QuickViewField label="Διεύθυνση" value={formatAddress(client)} />
+                          <QuickViewField label="Συνεργάτης" value={client.agency_users?.full_name} />
                           <QuickViewField
                             label="Κατάσταση"
                             value={
@@ -248,8 +326,8 @@ export default async function ClientsPage({
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground">
-                    Δεν βρέθηκαν πελάτες.
+                  <TableCell colSpan={9} className="text-center text-muted-foreground">
+                    {useRecent ? "Δεν έχετε επισκεφθεί ακόμα κανέναν πελάτη." : "Δεν βρέθηκαν πελάτες."}
                   </TableCell>
                 </TableRow>
               )}
@@ -265,29 +343,42 @@ export default async function ClientsPage({
           <Button type="submit" variant="secondary" size="sm">
             Εφαρμογή φίλτρων
           </Button>
-          <PageSizeSelect perPage={perPage} />
+          {!useRecent && <PageSizeSelect perPage={perPage} />}
         </div>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          basePath="/dashboard/clients"
-          searchParams={{
-            code: filters.code,
-            name: filters.name,
-            afm: filters.afm,
-            phone: filters.phone,
-            city: filters.city,
-            email: filters.email,
-            region: filters.region,
-            postal_code: filters.postalCode,
-            agent: filters.agentId,
-            client_type: filters.clientType,
-            dob_from: filters.dobFrom,
-            dob_to: filters.dobTo,
-            show_inactive: filters.showInactive ? "1" : undefined,
-            per_page: sp.per_page,
-          }}
-        />
+        {useRecent ? (
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span>Τελευταίοι {clients.length} πελάτες που επισκεφθήκατε</span>
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={<Link href="/dashboard/clients?all=1">Προβολή όλων</Link>}
+            />
+          </div>
+        ) : (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            basePath="/dashboard/clients"
+            searchParams={{
+              code: filters.code,
+              name: filters.name,
+              afm: filters.afm,
+              phone: filters.phone,
+              city: filters.city,
+              email: filters.email,
+              region: filters.region,
+              postal_code: filters.postalCode,
+              agent: filters.agentId,
+              client_type: filters.clientType,
+              dob_from: filters.dobFrom,
+              dob_to: filters.dobTo,
+              show_inactive: filters.showInactive ? "1" : undefined,
+              per_page: sp.per_page,
+              all: showAll ? "1" : undefined,
+            }}
+          />
+        )}
       </form>
     </div>
   );

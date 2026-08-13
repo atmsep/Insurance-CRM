@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
-import { requireAgencyUser } from "@/lib/dal";
+import { requireAgencyUser, getCurrentAgencyUser } from "@/lib/dal";
 import type { ClientType, InteractionType } from "@/lib/database.types";
 import { isValidAfm, isValidAmka, isValidEmail } from "@/lib/validation";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
@@ -478,4 +478,18 @@ export async function updateClientProfile(
   });
 
   revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
+// Powers the clients list page's default "last 50 visited" view. Fired
+// from a client-side useEffect (VisitTracker), never called directly from
+// a server component render — Next.js runs server-component side effects
+// on <Link> prefetch too, which would log a "visit" from a plain hover.
+export async function recordClientVisit(clientId: string) {
+  const agencyUser = await getCurrentAgencyUser();
+  if (!agencyUser) return;
+  const supabase = await createSupabaseClient();
+  await supabase.from("client_visits").upsert(
+    { client_id: clientId, agency_user_id: agencyUser.id, visited_at: new Date().toISOString() },
+    { onConflict: "client_id,agency_user_id" },
+  );
 }

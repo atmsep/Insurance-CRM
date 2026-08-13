@@ -15,6 +15,7 @@ import { createTask } from "../../tasks/actions";
 import { resolveClientName } from "@/lib/client-name";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ClientHeader } from "./_components/client-header";
+import { VisitTracker } from "./_components/visit-tracker";
 import { DetailsTab } from "./_components/details-tab";
 import { ProfileTab } from "./_components/profile-tab";
 import { PoliciesTab, type Policy as ClientPolicy } from "./_components/policies-tab";
@@ -197,6 +198,7 @@ export default async function ClientDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <VisitTracker clientId={id} />
       <Breadcrumbs items={[{ label: "Πελάτες", href: "/dashboard/clients" }, { label: name }]} />
       <ClientHeader
         clientId={id}

@@ -154,6 +154,19 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["client_related_members"]["Row"]>;
       };
+      client_visits: {
+        Row: {
+          id: string;
+          client_id: string;
+          agency_user_id: string;
+          visited_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["client_visits"]["Row"]> & {
+          client_id: string;
+          agency_user_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["client_visits"]["Row"]>;
+      };
       client_individuals: {
         Row: {
           client_id: string;
