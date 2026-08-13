@@ -76,7 +76,9 @@ export default async function ClientDetailPage({
   ] = await Promise.all([
     supabase
       .from("policies")
-      .select("id, policy_number, status, end_date, premium_gross, renewal_number, insurance_lines(name_el)")
+      .select(
+        "id, policy_number, status, start_date, end_date, premium_gross, renewal_number, risk_label, insurance_lines(name_el), carriers(name)",
+      )
       .eq("client_id", id)
       .eq("is_current_term", true)
       .order("end_date", { ascending: false }),
