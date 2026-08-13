@@ -10,6 +10,7 @@ import { getCurrentAgencyUser } from "@/lib/dal";
 import { resolveClientName } from "@/lib/client-name";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { PolicyHeader } from "./_components/policy-header";
+import { VisitTracker } from "./_components/visit-tracker";
 import { DetailsTab } from "./_components/details-tab";
 import { InstallmentsTab } from "./_components/installments-tab";
 import { ClaimsTab } from "./_components/claims-tab";
@@ -136,6 +137,7 @@ export default async function PolicyDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <VisitTracker policyId={id} />
       <Breadcrumbs items={[{ label: "Συμβόλαια", href: "/dashboard/policies" }, { label: policy.policy_number }]} />
       <PolicyHeader
         policyId={id}

@@ -33,6 +33,33 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+type PolicyListRow = {
+  id: string;
+  policy_number: string;
+  status: string;
+  issue_date: string | null;
+  start_date: string;
+  end_date: string;
+  premium_gross: number;
+  premium_net: number | null;
+  risk_label: string | null;
+  renewal_number: number;
+  assigned_agent_id: string | null;
+  broker_office_id: string | null;
+  insurance_lines: { name_el: string } | null;
+  carriers: { name: string } | null;
+  broker_offices: { name: string } | null;
+  agency_users: { full_name: string } | null;
+  clients: {
+    display_name: string | null;
+    client_individuals: { first_name: string; last_name: string } | null;
+    client_legal_entities: { company_name: string } | null;
+  } | null;
+};
+
+const POLICY_LIST_SELECT =
+  "id, policy_number, status, issue_date, start_date, end_date, premium_gross, premium_net, risk_label, renewal_number, assigned_agent_id, broker_office_id, insurance_lines(name_el), carriers(name), broker_offices(name), agency_users!policies_assigned_agent_id_fkey(full_name), clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name))";
+
 export default async function PoliciesPage({
   searchParams,
 }: {
@@ -54,6 +81,7 @@ export default async function PoliciesPage({
     premium_to?: string;
     per_page?: string;
     page?: string;
+    all?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -75,26 +103,64 @@ export default async function PoliciesPage({
       : null,
   ]);
 
-  let query = supabase
-    .from("policies")
-    .select(
-      "id, policy_number, status, issue_date, start_date, end_date, premium_gross, premium_net, risk_label, renewal_number, insurance_lines(name_el), carriers(name), clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name))",
-      { count: "exact" },
-    )
-    .eq("is_current_term", true);
+  // Default landing view: the 50 policies this user last opened, most
+  // recent first — no pagination, driven by policy_visits (mirrors the
+  // same feature just built on the clients list). Applying any filter
+  // (including the "expiring" dashboard-widget param, which also drives
+  // sort order and a banner) or the "Προβολή όλων" escape hatch (?all=1)
+  // switches back to the full filtered/paginated directory below.
+  const hasAnyFilter = Boolean(
+    filters.q ||
+      filters.client ||
+      filters.line ||
+      filters.carrier ||
+      filters.status ||
+      filters.risk ||
+      filters.expiring ||
+      filters.agentId ||
+      filters.brokerOfficeId ||
+      filters.startFrom ||
+      filters.startTo ||
+      filters.endFrom ||
+      filters.endTo ||
+      filters.premiumFrom ||
+      filters.premiumTo,
+  );
+  const showAll = sp.all === "1";
+  const useRecent = !hasAnyFilter && !showAll;
 
-  query = filters.expiring
-    ? query.order("end_date", { ascending: true })
-    : query.order("created_at", { ascending: false });
+  let policies: PolicyListRow[] = [];
+  let totalPages = 1;
 
-  query = applyPolicyFilters(query, filters);
+  if (useRecent) {
+    const { data: visits } = await supabase
+      .from("policy_visits")
+      .select(`visited_at, policies(${POLICY_LIST_SELECT})`)
+      .eq("agency_user_id", agencyUser?.id ?? "")
+      .order("visited_at", { ascending: false })
+      .limit(50);
+    policies = (visits ?? []).map((v) => v.policies).filter(Boolean) as unknown as PolicyListRow[];
+  } else {
+    let query = supabase
+      .from("policies")
+      .select(POLICY_LIST_SELECT, { count: "exact" })
+      .eq("is_current_term", true);
 
-  const from = (page - 1) * perPage;
-  query = query.range(from, from + perPage - 1);
+    query = filters.expiring
+      ? query.order("end_date", { ascending: true })
+      : query.order("created_at", { ascending: false });
 
-  const { data: policies, count } = await query;
-  const totalPages = Math.max(1, Math.ceil((count ?? 0) / perPage));
-  const outstandingByPolicy = await getOutstandingByPolicy(supabase, policies ?? []);
+    query = applyPolicyFilters(query, filters);
+
+    const from = (page - 1) * perPage;
+    query = query.range(from, from + perPage - 1);
+
+    const { data, count } = await query;
+    policies = (data ?? []) as unknown as PolicyListRow[];
+    totalPages = Math.max(1, Math.ceil((count ?? 0) / perPage));
+  }
+
+  const outstandingByPolicy = await getOutstandingByPolicy(supabase, policies);
 
   const exportParams = new URLSearchParams();
   if (filters.q) exportParams.set("q", filters.q);
@@ -165,6 +231,8 @@ export default async function PoliciesPage({
               <TableHead>Αριθμός</TableHead>
               <TableHead>Κλάδος</TableHead>
               <TableHead>Εταιρεία</TableHead>
+              <TableHead>Συνεργάτης</TableHead>
+              <TableHead>Γραφείο</TableHead>
               <TableHead>Έκδοση</TableHead>
               <TableHead>Έναρξη</TableHead>
               <TableHead>Λήξη</TableHead>
@@ -227,6 +295,8 @@ export default async function PoliciesPage({
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
               <TableHead className="pb-2">
                 <FilterSelect
                   form="policy-filters"
@@ -249,6 +319,8 @@ export default async function PoliciesPage({
                 const name = resolveClientName(client);
                 const lineName = (policy.insurance_lines as unknown as { name_el: string } | null)?.name_el;
                 const carrierName = (policy.carriers as unknown as { name: string } | null)?.name;
+                const agentName = (policy.agency_users as unknown as { full_name: string } | null)?.full_name;
+                const brokerOfficeName = (policy.broker_offices as unknown as { name: string } | null)?.name;
                 const outstanding = outstandingByPolicy.get(policy.id);
                 return (
                   <ClickableRow key={policy.id} href={`/dashboard/policies/${policy.id}`}>
@@ -269,6 +341,8 @@ export default async function PoliciesPage({
                     </TableCell>
                     <TableCell>{lineName}</TableCell>
                     <TableCell>{carrierName}</TableCell>
+                    <TableCell>{agentName ?? "—"}</TableCell>
+                    <TableCell>{brokerOfficeName ?? "—"}</TableCell>
                     <TableCell>{policy.issue_date ? formatDate(policy.issue_date) : "—"}</TableCell>
                     <TableCell>{formatDate(policy.start_date)}</TableCell>
                     <TableCell>{formatDate(policy.end_date)}</TableCell>
@@ -288,6 +362,8 @@ export default async function PoliciesPage({
                         <QuickViewField label="Πελάτης" value={name} />
                         <QuickViewField label="Κλάδος" value={lineName} />
                         <QuickViewField label="Εταιρεία" value={carrierName} />
+                        <QuickViewField label="Συνεργάτης" value={agentName} />
+                        <QuickViewField label="Γραφείο" value={brokerOfficeName} />
                         <QuickViewField
                           label="Έκδοση"
                           value={policy.issue_date ? formatDate(policy.issue_date) : undefined}
@@ -321,8 +397,8 @@ export default async function PoliciesPage({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={14} className="text-center text-muted-foreground">
-                  Δεν βρέθηκαν συμβόλαια.
+                <TableCell colSpan={16} className="text-center text-muted-foreground">
+                  {useRecent ? "Δεν έχετε επισκεφθεί ακόμα κανένα συμβόλαιο." : "Δεν βρέθηκαν συμβόλαια."}
                 </TableCell>
               </TableRow>
             )}
@@ -343,31 +419,44 @@ export default async function PoliciesPage({
           <Button type="submit" variant="secondary" size="sm">
             Εφαρμογή φίλτρων
           </Button>
-          <PageSizeSelect perPage={perPage} />
+          {!useRecent && <PageSizeSelect perPage={perPage} />}
         </div>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          basePath="/dashboard/policies"
-          searchParams={{
-            q: filters.q,
-            client: filters.client,
-            line: filters.line,
-            carrier: filters.carrier,
-            status: filters.status,
-            risk: filters.risk,
-            expiring: filters.expiring,
-            agent: filters.agentId,
-            broker_office: filters.brokerOfficeId,
-            start_from: filters.startFrom,
-            start_to: filters.startTo,
-            end_from: filters.endFrom,
-            end_to: filters.endTo,
-            premium_from: filters.premiumFrom,
-            premium_to: filters.premiumTo,
-            per_page: sp.per_page,
-          }}
-        />
+        {useRecent ? (
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span>Τελευταία {policies.length} συμβόλαια που επισκεφθήκατε</span>
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={<Link href="/dashboard/policies?all=1">Προβολή όλων</Link>}
+            />
+          </div>
+        ) : (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            basePath="/dashboard/policies"
+            searchParams={{
+              q: filters.q,
+              client: filters.client,
+              line: filters.line,
+              carrier: filters.carrier,
+              status: filters.status,
+              risk: filters.risk,
+              expiring: filters.expiring,
+              agent: filters.agentId,
+              broker_office: filters.brokerOfficeId,
+              start_from: filters.startFrom,
+              start_to: filters.startTo,
+              end_from: filters.endFrom,
+              end_to: filters.endTo,
+              premium_from: filters.premiumFrom,
+              premium_to: filters.premiumTo,
+              per_page: sp.per_page,
+              all: showAll ? "1" : undefined,
+            }}
+          />
+        )}
       </form>
     </div>
   );

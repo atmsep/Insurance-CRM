@@ -3,7 +3,7 @@
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
-import { requireAgencyUser } from "@/lib/dal";
+import { requireAgencyUser, getCurrentAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
 import { CACHE_TAGS } from "@/lib/cache-tags";
@@ -696,4 +696,18 @@ export async function sendPolicyEmail(
 
   revalidatePath(`/dashboard/policies/${policyId}`);
   return { success: "Το email στάλθηκε." };
+}
+
+// Powers the policies list page's default "last 50 visited" view. Fired
+// from a client-side useEffect (VisitTracker), never called directly from
+// a server component render — Next.js runs server-component side effects
+// on <Link> prefetch too, which would log a "visit" from a plain hover.
+export async function recordPolicyVisit(policyId: string) {
+  const agencyUser = await getCurrentAgencyUser();
+  if (!agencyUser) return;
+  const supabase = await createSupabaseClient();
+  await supabase.from("policy_visits").upsert(
+    { policy_id: policyId, agency_user_id: agencyUser.id, visited_at: new Date().toISOString() },
+    { onConflict: "policy_id,agency_user_id" },
+  );
 }

@@ -248,6 +248,19 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["policies"]["Row"]>;
       };
+      policy_visits: {
+        Row: {
+          id: string;
+          policy_id: string;
+          agency_user_id: string;
+          visited_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["policy_visits"]["Row"]> & {
+          policy_id: string;
+          agency_user_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["policy_visits"]["Row"]>;
+      };
       policy_vehicle_details: {
         Row: {
           policy_id: string;
