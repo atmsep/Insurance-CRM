@@ -14,6 +14,7 @@ export async function createTask(formData: FormData) {
   const title = formData.get("title") as string;
   const dueDate = formData.get("due_date") as string;
   const priority = (formData.get("priority") as TaskPriority) || "medium";
+  const clientId = (formData.get("client_id") as string) || null;
 
   if (!title || !dueDate) return;
 
@@ -21,6 +22,7 @@ export async function createTask(formData: FormData) {
     title,
     due_date: dueDate,
     priority,
+    client_id: clientId,
     assigned_to: agencyUser.id,
     created_by: agencyUser.id,
   });
@@ -28,6 +30,7 @@ export async function createTask(formData: FormData) {
   revalidatePath("/dashboard/tasks");
   revalidatePath("/dashboard/tasks/calendar");
   revalidatePath("/dashboard");
+  if (clientId) revalidatePath(`/dashboard/clients/${clientId}`);
 }
 
 export async function completeTask(taskId: string) {

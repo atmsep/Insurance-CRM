@@ -576,7 +576,7 @@ export async function collectInstallmentPayment(
 
   const { data: installment } = await supabase
     .from("policy_installments")
-    .select("amount, paid_amount")
+    .select("amount, paid_amount, policies!inner(client_id)")
     .eq("id", installmentId)
     .single();
   if (!installment) return;
@@ -609,11 +609,14 @@ export async function collectInstallmentPayment(
     actorId: agencyUser.id,
   });
 
+  const collectClientId = (installment.policies as unknown as { client_id: string } | null)?.client_id;
+
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/installments");
   revalidatePath("/dashboard/cash-register");
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/reports");
+  if (collectClientId) revalidatePath(`/dashboard/clients/${collectClientId}`);
   updateTag(CACHE_TAGS.reports);
 }
 
@@ -654,11 +657,20 @@ export async function reverseInstallmentPayment(
     actorId: agencyUser.id,
   });
 
+  const { data: reversedInstallmentPolicy } = await supabase
+    .from("policies")
+    .select("client_id")
+    .eq("id", policyId)
+    .single();
+
   revalidatePath(`/dashboard/policies/${policyId}`);
   revalidatePath("/dashboard/installments");
   revalidatePath("/dashboard/cash-register");
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/reports");
+  if (reversedInstallmentPolicy?.client_id) {
+    revalidatePath(`/dashboard/clients/${reversedInstallmentPolicy.client_id}`);
+  }
   updateTag(CACHE_TAGS.reports);
 }
 

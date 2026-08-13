@@ -2,23 +2,57 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentAgencyUser } from "@/lib/dal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { updateClientNotes, createInteraction, updateIncomingCallNotes } from "../actions";
+import {
+  updateClientNotes,
+  createInteraction,
+  updateIncomingCallNotes,
+  updateClientProfile,
+  addRelatedMember,
+  removeRelatedMember,
+} from "../actions";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
 import { createTicket } from "../../tickets/actions";
+import { createTask } from "../../tasks/actions";
 import { resolveClientName } from "@/lib/client-name";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ClientHeader } from "./_components/client-header";
 import { DetailsTab } from "./_components/details-tab";
+import { ProfileTab } from "./_components/profile-tab";
 import { PoliciesTab, type Policy as ClientPolicy } from "./_components/policies-tab";
 import { InteractionsTab } from "./_components/interactions-tab";
 import { CallsTab } from "./_components/calls-tab";
 import { TicketsTab } from "./_components/tickets-tab";
-import { CommissionsTab, type Commission as ClientCommission } from "./_components/commissions-tab";
+import { CommissionsTab } from "./_components/commissions-tab";
 import { ReferralsTab, type ReferredClient } from "./_components/referrals-tab";
+import { RelatedMembersTab } from "./_components/related-members-tab";
+import { OutstandingTab } from "./_components/outstanding-tab";
+import { LedgerTab } from "./_components/ledger-tab";
 import { TasksTab } from "./_components/tasks-tab";
 import { ActivityFeed, type ActivityEntry } from "@/components/activity-feed";
 import { installmentApplied, installmentTip } from "../../policies/balance";
+
+type ClientInstallmentRow = {
+  id: string;
+  policy_id: string;
+  policy_number: string;
+  installment_number: number;
+  due_date: string;
+  amount: number;
+  status: string;
+  paid_amount: number | null;
+  installment_payments: { amount: number; paid_date: string; paid_at: string; is_reversed: boolean }[];
+};
+
+type ClientCommissionRow = {
+  id: string;
+  commission_type: string;
+  commission_amount: number;
+  status: string;
+  period: string | null;
+  policy_id: string;
+  policy_number: string;
+};
 
 export default async function ClientDetailPage({
   params,
@@ -54,6 +88,8 @@ export default async function ClientDetailPage({
     { data: referrals },
     { data: ownReferralRewards },
     { data: defaultRule },
+    { data: relatedMembersOwned },
+    { data: relatedMembersReverse },
   ] = await Promise.all([
     supabase
       .from("policies")
@@ -74,21 +110,31 @@ export default async function ClientDetailPage({
       .order("created_at", { ascending: false })
       .limit(50),
     getDocumentsFor("client", id),
-    supabase
-      .from("policy_installments")
-      .select("policy_id, amount, status, paid_amount, policies!inner(client_id)")
-      .eq("policies.client_id", id),
+    // Widened beyond what the totalBilled/totalPaid/outstanding math below
+    // needs (amount/paid_amount/status/policy_id) so the same call also
+    // feeds the Λογιστική Καρτέλα tab (installment_payments + policy_number)
+    // — one round-trip for both consumers, not two. This used to be a plain
+    // PostgREST embedded query (policies!inner + .eq("policies.client_id",…))
+    // but that shape hit a real statement timeout under an authenticated
+    // session — PostgREST's translation of the embedded filter defeats the
+    // planner's use of policies_client_idx (confirmed: the equivalent
+    // hand-written join runs in ~1ms). client_installments_ledger
+    // (migration 0070) is that same join as a security-definer RPC.
+    supabase.rpc("client_installments_ledger", { p_client_id: id }) as unknown as Promise<{
+      data: ClientInstallmentRow[] | null;
+    }>,
     supabase
       .from("client_tickets")
       .select("id, subject, description, status, priority, created_at, assigned_to, resolution_notes")
       .eq("client_id", id)
       .order("created_at", { ascending: false }),
     supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
-    supabase
-      .from("commissions")
-      .select("id, commission_type, commission_amount, status, period, policies!inner(id, policy_number, client_id)")
-      .eq("policies.client_id", id)
-      .order("created_at", { ascending: false }),
+    // Same PostgREST-embedded-filter timeout as the installments query
+    // above (pre-existing, found incidentally while verifying the new
+    // tabs) — client_commissions (migration 0070) is the same fix.
+    supabase.rpc("client_commissions", { p_client_id: id }) as unknown as Promise<{
+      data: ClientCommissionRow[] | null;
+    }>,
     supabase
       .from("tasks")
       .select("id, title, due_date, status, priority")
@@ -120,7 +166,19 @@ export default async function ClientDetailPage({
       .select("calc_type, rate_percent, fixed_amount")
       .eq("referrer_client_id", id)
       .maybeSingle(),
+    supabase
+      .from("client_related_members")
+      .select("id, relationship_type, related_client:related_client_id(id, display_name)")
+      .eq("client_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("client_related_members")
+      .select("id, relationship_type, owner:client_id(id, display_name)")
+      .eq("related_client_id", id)
+      .order("created_at", { ascending: false }),
   ]);
+
+  const installmentRows = installments ?? [];
 
   // "Billed"/"outstanding" are measured against each policy's actual
   // premium, not just the installment rows someone happened to create —
@@ -133,7 +191,7 @@ export default async function ClientDetailPage({
   // count toward these totals, keeping them consistent with totalBilled
   // (which is already derived from the is_current_term-filtered `policies`).
   const currentPolicyIds = new Set((policies ?? []).map((p) => p.id));
-  const currentInstallments = (installments ?? []).filter((i) => currentPolicyIds.has(i.policy_id));
+  const currentInstallments = installmentRows.filter((i) => currentPolicyIds.has(i.policy_id));
 
   const paidByPolicy = new Map<string, number>();
   for (const i of currentInstallments) {
@@ -163,9 +221,12 @@ export default async function ClientDetailPage({
   const referralRewardPolicyCount = activeOwnRewards.length;
 
   const updateAction = updateClientNotes.bind(null, id);
+  const updateProfileAction = updateClientProfile.bind(null, id);
   const addInteractionAction = createInteraction.bind(null, id);
   const addTicketAction = createTicket.bind(null, id);
   const updateCallNotesAction = updateIncomingCallNotes.bind(null, id);
+  const addRelatedMemberAction = addRelatedMember.bind(null, id);
+  const removeRelatedMemberAction = removeRelatedMember.bind(null, id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -182,12 +243,16 @@ export default async function ClientDetailPage({
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">Στοιχεία</TabsTrigger>
+          <TabsTrigger value="profile">Προφίλ</TabsTrigger>
           <TabsTrigger value="policies">Συμβόλαια</TabsTrigger>
+          <TabsTrigger value="outstanding">Ανείσπρακτα</TabsTrigger>
+          <TabsTrigger value="ledger">Λογιστική Καρτέλα</TabsTrigger>
           <TabsTrigger value="interactions">Επικοινωνία</TabsTrigger>
           <TabsTrigger value="calls">Κλήσεις</TabsTrigger>
           <TabsTrigger value="tickets">Αιτήματα</TabsTrigger>
           <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
           <TabsTrigger value="referrals">Συστάσεις</TabsTrigger>
+          <TabsTrigger value="related-members">Συσχετιζόμενα μέλη</TabsTrigger>
           <TabsTrigger value="tasks">Υπενθυμίσεις</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
           <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
@@ -208,8 +273,20 @@ export default async function ClientDetailPage({
           />
         </TabsContent>
 
+        <TabsContent value="profile" className="pt-4">
+          <ProfileTab client={client} updateAction={updateProfileAction} />
+        </TabsContent>
+
         <TabsContent value="policies" className="pt-4">
           <PoliciesTab policies={(policies ?? []) as unknown as ClientPolicy[]} />
+        </TabsContent>
+
+        <TabsContent value="outstanding" className="pt-4">
+          <OutstandingTab clientId={id} />
+        </TabsContent>
+
+        <TabsContent value="ledger" className="pt-4">
+          <LedgerTab clientId={id} installments={installmentRows} />
         </TabsContent>
 
         <TabsContent value="interactions" className="pt-4">
@@ -230,7 +307,7 @@ export default async function ClientDetailPage({
         </TabsContent>
 
         <TabsContent value="commissions" className="pt-4">
-          <CommissionsTab commissions={(commissions ?? []) as unknown as ClientCommission[]} />
+          <CommissionsTab commissions={commissions ?? []} />
         </TabsContent>
 
         <TabsContent value="referrals" className="pt-4">
@@ -242,8 +319,22 @@ export default async function ClientDetailPage({
           />
         </TabsContent>
 
+        <TabsContent value="related-members" className="pt-4">
+          <RelatedMembersTab
+            clientId={id}
+            ownedMembers={(relatedMembersOwned ?? []) as unknown as Parameters<
+              typeof RelatedMembersTab
+            >[0]["ownedMembers"]}
+            reverseMembers={(relatedMembersReverse ?? []) as unknown as Parameters<
+              typeof RelatedMembersTab
+            >[0]["reverseMembers"]}
+            addAction={addRelatedMemberAction}
+            removeAction={removeRelatedMemberAction}
+          />
+        </TabsContent>
+
         <TabsContent value="tasks" className="pt-4">
-          <TasksTab tasks={tasks ?? []} />
+          <TasksTab tasks={tasks ?? []} clientId={id} addTaskAction={createTask} />
         </TabsContent>
 
         <TabsContent value="documents" className="pt-4">

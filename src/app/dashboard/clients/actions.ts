@@ -250,6 +250,11 @@ export async function updateClientNotes(
     return { error: "Το email δεν είναι έγκυρο." };
   }
 
+  const afm = (formData.get("afm") as string) || null;
+  if (afm && !isValidAfm(afm)) {
+    return { error: "Το ΑΦΜ δεν είναι έγκυρο." };
+  }
+
   const referredByClientId = (formData.get("referred_by_client_id") as string) || null;
   if (referredByClientId === clientId) {
     return { error: "Ένας πελάτης δεν μπορεί να είναι συστήνων του εαυτού του." };
@@ -258,9 +263,13 @@ export async function updateClientNotes(
   const { error: clientError } = await supabase
     .from("clients")
     .update({
+      afm,
+      doy: (formData.get("doy") as string) || null,
       email,
       phone_mobile: (formData.get("phone_mobile") as string) || null,
       phone_landline: (formData.get("phone_landline") as string) || null,
+      address_street: (formData.get("address_street") as string) || null,
+      address_number: (formData.get("address_number") as string) || null,
       address_city: (formData.get("address_city") as string) || null,
       address_region: (formData.get("address_region") as string) || null,
       address_postal_code: (formData.get("address_postal_code") as string) || null,
@@ -278,17 +287,41 @@ export async function updateClientNotes(
   }
 
   if (formData.get("client_type") === "individual") {
+    const amka = (formData.get("amka") as string) || null;
+    if (amka && !isValidAmka(amka)) {
+      return { error: "Το ΑΜΚΑ δεν είναι έγκυρο." };
+    }
+
     const { error: individualError } = await supabase
       .from("client_individuals")
       .update({
         father_name: (formData.get("father_name") as string) || null,
         date_of_birth: (formData.get("date_of_birth") as string) || null,
         occupation: (formData.get("occupation") as string) || null,
+        id_document_type: (formData.get("id_document_type") as string) || null,
+        id_document_number: (formData.get("id_document_number") as string) || null,
+        amka,
       })
       .eq("client_id", clientId);
 
     if (individualError) {
       return { error: "Σφάλμα κατά την αποθήκευση: " + individualError.message };
+    }
+  }
+
+  if (formData.get("client_type") === "legal_entity") {
+    const { error: legalEntityError } = await supabase
+      .from("client_legal_entities")
+      .update({
+        legal_form: (formData.get("legal_form") as string) || null,
+        kad: (formData.get("kad") as string) || null,
+        gemi_number: (formData.get("gemi_number") as string) || null,
+        legal_representative_name: (formData.get("legal_representative_name") as string) || null,
+      })
+      .eq("client_id", clientId);
+
+    if (legalEntityError) {
+      return { error: "Σφάλμα κατά την αποθήκευση: " + legalEntityError.message };
     }
   }
 
@@ -385,6 +418,106 @@ export async function updateIncomingCallNotes(clientId: string, callId: string, 
   const notes = (formData.get("notes") as string) || null;
 
   await supabase.from("incoming_calls").update({ notes }).eq("id", callId);
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
+export async function updateClientProfile(
+  clientId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const marketingOptIn = formData.get("marketing_opt_in") === "on";
+  const priorConsentAt = (formData.get("prior_gdpr_consent_at") as string) || null;
+  // Checking the box for the first time stamps consent now; leaving it
+  // checked keeps the original consent date instead of bumping it on every
+  // unrelated profile edit; unchecking clears it.
+  const gdprConsentAt = marketingOptIn ? (priorConsentAt ?? new Date().toISOString()) : null;
+
+  const incomeRaw = formData.get("income") as string;
+  const income = incomeRaw ? Number(incomeRaw) : null;
+
+  const { error } = await supabase
+    .from("clients")
+    .update({
+      marketing_opt_in: marketingOptIn,
+      gdpr_consent_at: gdprConsentAt,
+      income,
+      marital_status: (formData.get("marital_status") as string) || null,
+      nationality: (formData.get("nationality") as string) || null,
+      language: (formData.get("language") as string) || null,
+    })
+    .eq("id", clientId);
+
+  if (error) {
+    return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+  }
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: clientId,
+    action: "profile_updated",
+    description: "Ενημερώθηκε το προφίλ.",
+    actorId: agencyUser.id,
+  });
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
+export async function addRelatedMember(
+  clientId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const relatedClientId = formData.get("related_client_id") as string;
+  const relationshipType = formData.get("relationship_type") as string;
+
+  if (!relatedClientId || !relationshipType) {
+    return { error: "Επίλεξε πελάτη και σχέση." };
+  }
+  if (relatedClientId === clientId) {
+    return { error: "Ένας πελάτης δεν μπορεί να συνδεθεί με τον εαυτό του." };
+  }
+
+  const { error } = await supabase.from("client_related_members").insert({
+    client_id: clientId,
+    related_client_id: relatedClientId,
+    relationship_type: relationshipType,
+    created_by: agencyUser.id,
+  });
+
+  if (error) {
+    return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+  }
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: clientId,
+    action: "related_member_added",
+    description: "Προστέθηκε συσχετιζόμενο μέλος.",
+    actorId: agencyUser.id,
+  });
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
+export async function removeRelatedMember(clientId: string, memberId: string) {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  await supabase.from("client_related_members").delete().eq("id", memberId).eq("client_id", clientId);
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: clientId,
+    action: "related_member_removed",
+    description: "Αφαιρέθηκε συσχετιζόμενο μέλος.",
+    actorId: agencyUser.id,
+  });
 
   revalidatePath(`/dashboard/clients/${clientId}`);
 }

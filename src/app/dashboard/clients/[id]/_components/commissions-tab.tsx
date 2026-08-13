@@ -18,7 +18,8 @@ export type Commission = {
   commission_amount: number;
   status: string;
   period: string | null;
-  policies: { id: string; policy_number: string } | null;
+  policy_id: string;
+  policy_number: string;
 };
 
 // Read-only roll-up across the client's policies — commissions belong to a
@@ -45,13 +46,9 @@ export function CommissionsTab({ commissions }: { commissions: Commission[] }) {
               commissions.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell>
-                    {c.policies ? (
-                      <Link href={`/dashboard/policies/${c.policies.id}`} className="hover:underline">
-                        {c.policies.policy_number}
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
+                    <Link href={`/dashboard/policies/${c.policy_id}`} className="hover:underline">
+                      {c.policy_number}
+                    </Link>
                   </TableCell>
                   <TableCell>{COMMISSION_TYPE_LABELS[c.commission_type] ?? c.commission_type}</TableCell>
                   <TableCell>{c.commission_amount.toFixed(2)} €</TableCell>

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -35,9 +37,17 @@ type Task = {
   priority: string;
 };
 
-// Read-only roll-up — full task management (creating/completing tasks)
-// stays on the dedicated Υπενθυμίσεις page.
-export function TasksTab({ tasks }: { tasks: Task[] }) {
+// Listing + inline creation here; completing/reassigning a task still
+// stays on the dedicated /dashboard/tasks page (linked below).
+export function TasksTab({
+  tasks,
+  clientId,
+  addTaskAction,
+}: {
+  tasks: Task[];
+  clientId: string;
+  addTaskAction: (formData: FormData) => void | Promise<void>;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -76,6 +86,37 @@ export function TasksTab({ tasks }: { tasks: Task[] }) {
             )}
           </TableBody>
         </Table>
+
+        <form action={addTaskAction} className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="client_id" value={clientId} />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="task-title">Τίτλος</Label>
+            <Input id="task-title" name="title" required className="w-56" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="task-due-date">Προθεσμία</Label>
+            <Input id="task-due-date" name="due_date" type="date" required className="w-40" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="task-priority">Προτεραιότητα</Label>
+            <select
+              id="task-priority"
+              name="priority"
+              defaultValue="medium"
+              className="h-9 rounded-lg border border-input bg-transparent px-3 text-sm"
+            >
+              {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button type="submit" variant="secondary">
+            Προσθήκη ενέργειας
+          </Button>
+        </form>
+
         <Button
           variant="outline"
           size="sm"

@@ -40,6 +40,14 @@ export type TaskType = "renewal_reminder" | "follow_up" | "payment_due" | "birth
 export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
 export type VehicleUsage = "private" | "commercial" | "taxi" | "rental" | "motorcycle" | "other";
 export type PropertyType = "apartment" | "house" | "commercial" | "industrial" | "land" | "other";
+export type ClientMaritalStatus =
+  | "single"
+  | "married"
+  | "divorced"
+  | "widowed"
+  | "cohabiting"
+  | "other";
+export type ClientRelationshipType = "spouse" | "child" | "parent" | "sibling" | "other";
 
 export interface Database {
   public: {
@@ -114,6 +122,12 @@ export interface Database {
           referral_source: string | null;
           referred_by_client_id: string | null;
           referrer_relationship: string | null;
+          marketing_opt_in: boolean;
+          gdpr_consent_at: string | null;
+          income: number | null;
+          marital_status: ClientMaritalStatus | null;
+          nationality: string | null;
+          language: string | null;
           is_active: boolean;
           created_by: string | null;
           created_at: string;
@@ -123,6 +137,22 @@ export interface Database {
           client_type: ClientType;
         };
         Update: Partial<Database["public"]["Tables"]["clients"]["Row"]>;
+      };
+      client_related_members: {
+        Row: {
+          id: string;
+          client_id: string;
+          related_client_id: string;
+          relationship_type: ClientRelationshipType;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["client_related_members"]["Row"]> & {
+          client_id: string;
+          related_client_id: string;
+          relationship_type: ClientRelationshipType;
+        };
+        Update: Partial<Database["public"]["Tables"]["client_related_members"]["Row"]>;
       };
       client_individuals: {
         Row: {
