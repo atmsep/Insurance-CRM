@@ -24,5 +24,16 @@ export function useFormValues(initial: Record<string, string> = {}) {
     [values, setValue],
   );
 
-  return { values, setValue, setValues, field };
+  // Booleans piggyback on the same string-keyed state ("true"/"") so a
+  // single hook instance can back both text/number inputs and Base UI
+  // checkboxes (which use checked/onCheckedChange, not a native onChange).
+  const checkboxField = useCallback(
+    (name: string) => ({
+      checked: values[name] === "true",
+      onCheckedChange: (checked: boolean) => setValue(name, checked ? "true" : ""),
+    }),
+    [values, setValue],
+  );
+
+  return { values, setValue, setValues, field, checkboxField };
 }

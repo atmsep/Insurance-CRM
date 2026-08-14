@@ -273,6 +273,28 @@ export interface Database {
           usage_type: VehicleUsage | null;
           kteo_expiry_date: string | null;
           insured_value: number | null;
+          zone_code: string | null;
+          insurance_package: string | null;
+          driver_gender: string | null;
+          horsepower: number | null;
+          body_type: string | null;
+          gross_weight_kg: number | null;
+          manufacture_month: number | null;
+          capacity_role: string | null;
+          protection_measures: string | null;
+          has_trailer: boolean;
+          discount_percent: number | null;
+          special_discount_percent: number | null;
+          surcharge_percent: number | null;
+          is_financed: boolean;
+          title_retained: boolean;
+          financing_bank: string | null;
+          seats: number | null;
+          manufacturer: string | null;
+          required_license_type: string | null;
+          color: string | null;
+          engine_number: string | null;
+          tonnage: number | null;
         };
         Insert: Partial<Database["public"]["Tables"]["policy_vehicle_details"]["Row"]> & {
           policy_id: string;

@@ -50,12 +50,20 @@ export function ClaimForm({
           <Input id="claim_number" name="claim_number" {...field("claim_number")} />
         </div>
         <div className="flex flex-col gap-2">
+          <Label htmlFor="file_number">Αρ. φακέλου</Label>
+          <Input id="file_number" name="file_number" {...field("file_number")} />
+        </div>
+        <div className="flex flex-col gap-2">
           <Label htmlFor="date_of_loss">Ημερομηνία ζημιάς</Label>
           <Input id="date_of_loss" name="date_of_loss" type="date" required max={today} {...field("date_of_loss")} />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="date_reported">Ημερομηνία αναφοράς</Label>
           <Input id="date_reported" name="date_reported" type="date" {...field("date_reported")} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="injured_party_name">Παθών</Label>
+          <Input id="injured_party_name" name="injured_party_name" {...field("injured_party_name")} />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="claim_amount_estimated">Εκτιμώμενο ποσό (€)</Label>

@@ -76,6 +76,8 @@ export default async function ClaimDetailPage({
             <CardTitle className="text-base">Στοιχεία ζημιάς</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
+            <InfoRow label="Αρ. φακέλου" value={claim.file_number ?? "—"} />
+            <InfoRow label="Παθών" value={claim.injured_party_name ?? "—"} />
             <InfoRow label="Ημ. ζημιάς" value={formatDate(claim.date_of_loss)} />
             <InfoRow label="Ημ. αναφοράς" value={formatDate(claim.date_reported)} />
             <InfoRow
@@ -86,6 +88,16 @@ export default async function ClaimDetailPage({
               label="Πληρωμένο ποσό"
               value={claim.claim_amount_paid != null ? `${claim.claim_amount_paid} €` : "—"}
             />
+            <InfoRow
+              label="Απομένον ποσό"
+              value={
+                claim.claim_amount_estimated != null
+                  ? `${(claim.claim_amount_estimated - (claim.claim_amount_paid ?? 0)).toFixed(2)} €`
+                  : "—"
+              }
+            />
+            <InfoRow label="Ημ. πληρωμής" value={claim.payment_date ? formatDate(claim.payment_date) : "—"} />
+            <InfoRow label="Ημ. διεκπεραίωσης" value={claim.closed_date ? formatDate(claim.closed_date) : "—"} />
           </CardContent>
         </Card>
 
@@ -99,6 +111,18 @@ export default async function ClaimDetailPage({
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="claim_number">Αριθμός ζημιάς</Label>
                   <Input id="claim_number" name="claim_number" defaultValue={claim.claim_number ?? ""} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="file_number">Αρ. φακέλου</Label>
+                  <Input id="file_number" name="file_number" defaultValue={claim.file_number ?? ""} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="injured_party_name">Παθών</Label>
+                  <Input
+                    id="injured_party_name"
+                    name="injured_party_name"
+                    defaultValue={claim.injured_party_name ?? ""}
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="claim_amount_estimated">Εκτιμώμενο ποσό (€)</Label>
@@ -119,6 +143,14 @@ export default async function ClaimDetailPage({
                     step="0.01"
                     defaultValue={claim.claim_amount_paid ?? ""}
                   />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="payment_date">Ημ. πληρωμής</Label>
+                  <Input id="payment_date" name="payment_date" type="date" defaultValue={claim.payment_date ?? ""} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="closed_date">Ημ. διεκπεραίωσης</Label>
+                  <Input id="closed_date" name="closed_date" type="date" defaultValue={claim.closed_date ?? ""} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="adjuster_name">Πραγματογνώμονας</Label>

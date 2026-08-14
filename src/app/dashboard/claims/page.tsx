@@ -41,7 +41,7 @@ export default async function ClaimsPage({
   let query = supabase
     .from("claims")
     .select(
-      "id, claim_number, status, date_of_loss, claim_amount_estimated, policies(policy_number, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
+      "id, claim_number, file_number, injured_party_name, status, date_of_loss, claim_amount_estimated, policies(policy_number, clients(client_individuals(first_name,last_name), client_legal_entities(company_name)))",
       { count: "exact" },
     )
     .order("date_of_loss", { ascending: false });

@@ -95,7 +95,7 @@ export async function getPolicyClaims(policyId: string) {
   const supabase = await createSupabaseClient();
   const { data: claims } = await supabase
     .from("claims")
-    .select("id, claim_number, status, date_of_loss, claim_amount_estimated")
+    .select("id, claim_number, file_number, injured_party_name, status, date_of_loss, claim_amount_estimated")
     .eq("policy_id", policyId)
     .order("date_of_loss", { ascending: false });
   return claims ?? [];
@@ -177,6 +177,48 @@ function str(formData: FormData, key: string) {
 function num(formData: FormData, key: string) {
   const v = str(formData, key);
   return v === null ? null : Number(v);
+}
+
+function bool(formData: FormData, key: string) {
+  return formData.get(key) === "on";
+}
+
+// Shared by createPolicy's insert and updatePolicyDetails' update so the
+// field list only lives in one place.
+function vehicleDetailsPayload(formData: FormData) {
+  return {
+    plate_number: str(formData, "plate_number"),
+    make: str(formData, "make"),
+    model: str(formData, "model"),
+    manufacturer: str(formData, "manufacturer"),
+    manufacture_year: num(formData, "manufacture_year"),
+    manufacture_month: num(formData, "manufacture_month"),
+    color: str(formData, "color"),
+    body_type: str(formData, "body_type"),
+    vin_chassis_number: str(formData, "vin_chassis_number"),
+    engine_number: str(formData, "engine_number"),
+    engine_cc: num(formData, "engine_cc"),
+    horsepower: num(formData, "horsepower"),
+    seats: num(formData, "seats"),
+    gross_weight_kg: num(formData, "gross_weight_kg"),
+    tonnage: num(formData, "tonnage"),
+    has_trailer: bool(formData, "has_trailer"),
+    usage_type: str(formData, "usage_type"),
+    driver_gender: str(formData, "driver_gender"),
+    capacity_role: str(formData, "capacity_role"),
+    zone_code: str(formData, "zone_code"),
+    insurance_package: str(formData, "insurance_package"),
+    protection_measures: str(formData, "protection_measures"),
+    kteo_expiry_date: str(formData, "kteo_expiry_date"),
+    insured_value: num(formData, "insured_value"),
+    discount_percent: num(formData, "discount_percent"),
+    special_discount_percent: num(formData, "special_discount_percent"),
+    surcharge_percent: num(formData, "surcharge_percent"),
+    required_license_type: str(formData, "required_license_type"),
+    is_financed: bool(formData, "is_financed"),
+    title_retained: bool(formData, "title_retained"),
+    financing_bank: str(formData, "financing_bank"),
+  };
 }
 
 // Every policy — whatever its payment_frequency or duration — is billed as
@@ -304,10 +346,7 @@ export async function createPolicy(
   if (line.requires_vehicle_details) {
     const { error } = await supabase.from("policy_vehicle_details").insert({
       policy_id: policy.id,
-      plate_number: str(formData, "plate_number"),
-      make: str(formData, "make"),
-      model: str(formData, "model"),
-      manufacture_year: num(formData, "manufacture_year"),
+      ...vehicleDetailsPayload(formData),
     });
     branchError = error?.message ?? null;
   } else if (line.requires_property_details) {
@@ -514,12 +553,7 @@ export async function updatePolicyDetails(
   if (hasVehicle) {
     const { error } = await supabase
       .from("policy_vehicle_details")
-      .update({
-        plate_number: str(formData, "plate_number"),
-        make: str(formData, "make"),
-        model: str(formData, "model"),
-        manufacture_year: num(formData, "manufacture_year"),
-      })
+      .update(vehicleDetailsPayload(formData))
       .eq("policy_id", policyId);
     if (error) return { error: "Σφάλμα κατά την αποθήκευση στοιχείων οχήματος: " + error.message };
   }

@@ -22,6 +22,8 @@ import { CLAIM_STATUS_LABELS } from "../../../claims/claim-labels";
 type Claim = {
   id: string;
   claim_number: string | null;
+  file_number: string | null;
+  injured_party_name: string | null;
   status: string;
   date_of_loss: string;
   claim_amount_estimated: number | null;
@@ -82,6 +84,8 @@ export function ClaimsTab({ policyId }: { policyId: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Αριθμός</TableHead>
+                <TableHead>Αρ. φακέλου</TableHead>
+                <TableHead>Παθών</TableHead>
                 <TableHead>Ημ. ζημιάς</TableHead>
                 <TableHead>Εκτιμώμενο ποσό</TableHead>
                 <TableHead>Κατάσταση</TableHead>
@@ -96,6 +100,8 @@ export function ClaimsTab({ policyId }: { policyId: string }) {
                         {claim.claim_number ?? "—"}
                       </Link>
                     </TableCell>
+                    <TableCell>{claim.file_number ?? "—"}</TableCell>
+                    <TableCell>{claim.injured_party_name ?? "—"}</TableCell>
                     <TableCell>{formatDate(claim.date_of_loss)}</TableCell>
                     <TableCell>
                       {claim.claim_amount_estimated != null ? `${claim.claim_amount_estimated} €` : "—"}
@@ -109,7 +115,7 @@ export function ClaimsTab({ policyId }: { policyId: string }) {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
                     Δεν υπάρχουν ζημιές.
                   </TableCell>
                 </TableRow>

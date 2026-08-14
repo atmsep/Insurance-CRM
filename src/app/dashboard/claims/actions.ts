@@ -38,9 +38,11 @@ export async function createClaim(
     .insert({
       policy_id: policyId,
       claim_number: str(formData, "claim_number"),
+      file_number: str(formData, "file_number"),
       date_of_loss: dateOfLoss,
       date_reported: str(formData, "date_reported") ?? new Date().toISOString().slice(0, 10),
       description: str(formData, "description"),
+      injured_party_name: str(formData, "injured_party_name"),
       claim_amount_estimated: num(formData, "claim_amount_estimated"),
       assigned_agent_id: agencyUser.id,
       created_by: agencyUser.id,
@@ -130,9 +132,13 @@ export async function updateClaimDetails(claimId: string, policyId: string, form
     .from("claims")
     .update({
       claim_number: str(formData, "claim_number"),
+      file_number: str(formData, "file_number"),
       description: str(formData, "description"),
+      injured_party_name: str(formData, "injured_party_name"),
       claim_amount_estimated: num(formData, "claim_amount_estimated"),
       claim_amount_paid: num(formData, "claim_amount_paid"),
+      payment_date: str(formData, "payment_date"),
+      closed_date: str(formData, "closed_date"),
       adjuster_name: str(formData, "adjuster_name"),
       adjuster_contact: str(formData, "adjuster_contact"),
     })
