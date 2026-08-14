@@ -8,7 +8,7 @@ import { sendEmail } from "@/lib/email";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import type { PaymentFrequency } from "@/lib/database.types";
-import { installmentRemaining } from "./balance";
+import { installmentRemaining, getOutstandingByPolicy } from "./balance";
 import { POLICY_STATUS_LABELS } from "./policy-labels";
 
 export type PolicyFormState = { error: string; field?: string } | undefined;
@@ -99,6 +99,52 @@ export async function getPolicyClaims(policyId: string) {
     .eq("policy_id", policyId)
     .order("date_of_loss", { ascending: false });
   return claims ?? [];
+}
+
+export type PolicyMovement = {
+  id: string;
+  document_label: string;
+  kind: "Συμβόλαιο" | "Ανανέωση";
+  created_at: string;
+  start_date: string;
+  end_date: string;
+  premium_net: number | null;
+  premium_gross: number;
+  agent_name: string | null;
+  outstanding: number;
+};
+
+// Powers the policy detail page's "Κινήσεις" tab — every renewal term of
+// the same policy_group_id chain as one row, mirroring Profia's document
+// list (which our schema doesn't model as a separate entity: policy_number
+// is shared across a whole chain per migration 0032, so each row's
+// "document number" is synthesized as policy_number/renewal_number here).
+export async function getPolicyMovements(policyGroupId: string): Promise<PolicyMovement[]> {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+  const { data: terms } = await supabase
+    .from("policies")
+    .select(
+      "id, policy_number, renewal_number, created_at, start_date, end_date, premium_net, premium_gross, status, agency_users!policies_assigned_agent_id_fkey(full_name)",
+    )
+    .eq("policy_group_id", policyGroupId)
+    .order("renewal_number", { ascending: true });
+
+  const rows = terms ?? [];
+  const outstandingByPolicy = await getOutstandingByPolicy(supabase, rows);
+
+  return rows.map((t) => ({
+    id: t.id,
+    document_label: `${t.policy_number}/${t.renewal_number}`,
+    kind: t.renewal_number > 1 ? "Ανανέωση" : "Συμβόλαιο",
+    created_at: t.created_at,
+    start_date: t.start_date,
+    end_date: t.end_date,
+    premium_net: t.premium_net,
+    premium_gross: t.premium_gross,
+    agent_name: (t.agency_users as unknown as { full_name: string } | null)?.full_name ?? null,
+    outstanding: outstandingByPolicy.get(t.id) ?? 0,
+  }));
 }
 
 export async function getClientAssignedAgent(clientId: string): Promise<string | null> {

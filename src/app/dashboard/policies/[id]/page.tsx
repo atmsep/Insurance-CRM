@@ -15,7 +15,7 @@ import { DetailsTab } from "./_components/details-tab";
 import { InstallmentsTab } from "./_components/installments-tab";
 import { ClaimsTab } from "./_components/claims-tab";
 import { CommissionsTab } from "./_components/commissions-tab";
-import { RenewalHistory } from "./_components/renewal-history";
+import { MovementsTab } from "./_components/movements-tab";
 import { ActivityFeed } from "@/components/activity-feed";
 import type { PolicyStatus } from "@/lib/database.types";
 
@@ -70,7 +70,6 @@ export default async function PolicyDetailPage({
     { data: agents },
     { data: brokerOffices },
     { data: emailTemplates },
-    { data: chainTerms },
     { data: activity },
   ] = await Promise.all([
     line?.requires_vehicle_details
@@ -105,11 +104,6 @@ export default async function PolicyDetailPage({
       .eq("is_active", true)
       .order("is_system", { ascending: false })
       .order("name"),
-    supabase
-      .from("policies")
-      .select("id, renewal_number, start_date, end_date, status")
-      .eq("policy_group_id", policy.policy_group_id)
-      .order("renewal_number", { ascending: true }),
     supabase
       .from("activity_log")
       .select("id, description, created_at, agency_users(full_name)")
@@ -158,6 +152,7 @@ export default async function PolicyDetailPage({
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">Στοιχεία</TabsTrigger>
+          <TabsTrigger value="movements">Κινήσεις</TabsTrigger>
           <TabsTrigger value="installments">Εισπράξεις</TabsTrigger>
           <TabsTrigger value="claims">Ζημιές</TabsTrigger>
           <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
@@ -175,9 +170,10 @@ export default async function PolicyDetailPage({
             brokerOffices={brokerOffices ?? []}
             updateDetailsAction={updateDetailsAction}
           />
-          {(chainTerms?.length ?? 0) > 1 && (
-            <RenewalHistory currentPolicyId={id} terms={chainTerms ?? []} />
-          )}
+        </TabsContent>
+
+        <TabsContent value="movements" className="pt-4">
+          <MovementsTab policyGroupId={policy.policy_group_id} currentPolicyId={id} />
         </TabsContent>
 
         <TabsContent value="installments" className="pt-4">
