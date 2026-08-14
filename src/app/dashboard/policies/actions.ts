@@ -104,7 +104,7 @@ export async function getPolicyClaims(policyId: string) {
 export type PolicyMovement = {
   id: string;
   document_label: string;
-  kind: "Συμβόλαιο" | "Ανανέωση";
+  kind: "Συμβόλαιο" | "Ανανέωση" | "Ακύρωση";
   created_at: string;
   start_date: string;
   end_date: string;
@@ -136,7 +136,7 @@ export async function getPolicyMovements(policyGroupId: string): Promise<PolicyM
   return rows.map((t) => ({
     id: t.id,
     document_label: `${t.policy_number}/${t.renewal_number}`,
-    kind: t.renewal_number > 1 ? "Ανανέωση" : "Συμβόλαιο",
+    kind: t.status === "cancelled" ? "Ακύρωση" : t.renewal_number > 1 ? "Ανανέωση" : "Συμβόλαιο",
     created_at: t.created_at,
     start_date: t.start_date,
     end_date: t.end_date,
@@ -145,6 +145,40 @@ export async function getPolicyMovements(policyGroupId: string): Promise<PolicyM
     agent_name: (t.agency_users as unknown as { full_name: string } | null)?.full_name ?? null,
     outstanding: outstandingByPolicy.get(t.id) ?? 0,
   }));
+}
+
+// Powers the "Απόδειξη" sheet opened from a Κινήσεις row — same shape
+// CommissionsSection/AddCommissionForm already consume on the full policy
+// page (page.tsx's own Promise.all), just self-fetched for whichever
+// movement/policyId the sheet was opened for, not necessarily the page's
+// own policy.
+export async function getPolicyCommissions(policyId: string) {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+  const [{ data: policy }, { data: commissions }, { data: payees }] = await Promise.all([
+    supabase
+      .from("policies")
+      .select("carrier_id, insurance_line_id, broker_office_id, premium_net")
+      .eq("id", policyId)
+      .single(),
+    supabase
+      .from("commissions")
+      .select(
+        "id, commission_type, direction, base_amount, commission_rate_percent, commission_amount, status, period, commission_payees(name)",
+      )
+      .eq("policy_id", policyId)
+      .order("period", { ascending: false }),
+    supabase.from("commission_payees").select("id, name").eq("is_active", true).order("name"),
+  ]);
+
+  return {
+    carrierId: policy?.carrier_id ?? null,
+    insuranceLineId: policy?.insurance_line_id ?? null,
+    brokerOfficeId: policy?.broker_office_id ?? null,
+    premiumNet: policy?.premium_net ?? null,
+    commissions: commissions ?? [],
+    payees: payees ?? [],
+  };
 }
 
 export async function getClientAssignedAgent(clientId: string): Promise<string | null> {

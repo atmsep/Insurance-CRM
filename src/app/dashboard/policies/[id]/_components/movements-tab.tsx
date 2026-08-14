@@ -13,24 +13,33 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ClickableRow } from "@/components/clickable-row";
 import { formatDate } from "@/lib/date";
 import { getPolicyMovements, type PolicyMovement } from "../../actions";
+import { MovementReceiptSheet } from "./movement-receipt-sheet";
 
 export function MovementsTab({
   policyGroupId,
   currentPolicyId,
+  isAdmin,
 }: {
   policyGroupId: string;
   currentPolicyId: string;
+  isAdmin: boolean;
 }) {
   const [movements, setMovements] = useState<PolicyMovement[] | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [selectedMovement, setSelectedMovement] = useState<PolicyMovement | null>(null);
 
   async function refetch() {
     try {
       setLoadError(false);
-      setMovements(await getPolicyMovements(policyGroupId));
+      const result = await getPolicyMovements(policyGroupId);
+      setMovements(result);
+      // Keep the open sheet's own summary card (Υπόλοιπο) in sync — it
+      // holds a snapshot of the movement object from whenever the row was
+      // clicked, which a collection made inside the sheet would otherwise
+      // leave stale.
+      setSelectedMovement((current) => (current ? (result.find((m) => m.id === current.id) ?? current) : current));
     } catch {
       setLoadError(true);
     }
@@ -54,6 +63,7 @@ export function MovementsTab({
   const latestTermId = movements?.[movements.length - 1]?.id ?? currentPolicyId;
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Κινήσεις</CardTitle>
@@ -90,25 +100,21 @@ export function MovementsTab({
               <TableBody>
                 {movements.length ? (
                   movements.map((m) => (
-                    <ClickableRow
+                    <TableRow
                       key={m.id}
-                      href={`/dashboard/policies/${m.id}`}
-                      className={m.id === currentPolicyId ? "bg-muted" : undefined}
+                      onClick={() => setSelectedMovement(m)}
+                      className={`cursor-pointer hover:bg-muted/50 ${m.id === currentPolicyId ? "bg-muted" : ""}`}
                     >
                       <TableCell>{formatDate(m.created_at)}</TableCell>
                       <TableCell>{m.kind}</TableCell>
-                      <TableCell>
-                        <Link href={`/dashboard/policies/${m.id}`} className="hover:underline">
-                          {m.document_label}
-                        </Link>
-                      </TableCell>
+                      <TableCell className="font-medium hover:underline">{m.document_label}</TableCell>
                       <TableCell>{m.agent_name ?? "—"}</TableCell>
                       <TableCell>{formatDate(m.start_date)}</TableCell>
                       <TableCell>{formatDate(m.end_date)}</TableCell>
                       <TableCell>{m.premium_net != null ? `${m.premium_net.toFixed(2)} €` : "—"}</TableCell>
                       <TableCell>{m.premium_gross.toFixed(2)} €</TableCell>
                       <TableCell>{m.outstanding.toFixed(2)} €</TableCell>
-                    </ClickableRow>
+                    </TableRow>
                   ))
                 ) : (
                   <TableRow>
@@ -127,11 +133,16 @@ export function MovementsTab({
               </p>
               <div className="flex items-center gap-2">
                 <Button
+                  type="button"
                   variant="outline"
                   size="sm"
-                  nativeButton={false}
-                  render={<Link href={`/dashboard/policies/${latestTermId}`}>Είσπραξη</Link>}
-                />
+                  onClick={() => {
+                    const latest = movements[movements.length - 1];
+                    if (latest) setSelectedMovement(latest);
+                  }}
+                >
+                  Είσπραξη
+                </Button>
                 <Button
                   size="sm"
                   nativeButton={false}
@@ -143,5 +154,15 @@ export function MovementsTab({
         )}
       </CardContent>
     </Card>
+    <MovementReceiptSheet
+      movement={selectedMovement}
+      open={selectedMovement !== null}
+      onOpenChange={(open) => {
+        if (!open) setSelectedMovement(null);
+      }}
+      isAdmin={isAdmin}
+      onPaymentCollected={refetch}
+    />
+    </>
   );
 }

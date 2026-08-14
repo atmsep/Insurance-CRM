@@ -173,7 +173,7 @@ export default async function PolicyDetailPage({
         </TabsContent>
 
         <TabsContent value="movements" className="pt-4">
-          <MovementsTab policyGroupId={policy.policy_group_id} currentPolicyId={id} />
+          <MovementsTab policyGroupId={policy.policy_group_id} currentPolicyId={id} isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="installments" className="pt-4">

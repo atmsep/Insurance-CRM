@@ -42,6 +42,7 @@ export function CommissionsSection({
   isAdmin,
   premiumNet,
   payees,
+  onCommissionAdded,
 }: {
   policyId: string;
   carrierId: string;
@@ -51,8 +52,16 @@ export function CommissionsSection({
   isAdmin: boolean;
   premiumNet?: number | null;
   payees: { id: string; name: string }[];
+  // Server components (the full policy page) rely on revalidatePath to
+  // refresh `commissions` on next render; client-fetched consumers (the
+  // Κινήσεις "Απόδειξη" sheet) have no such trigger and need an explicit
+  // nudge to refetch after a successful add.
+  onCommissionAdded?: () => void;
 }) {
-  const addAction = createCommission.bind(null, policyId, carrierId);
+  const addAction = async (formData: FormData) => {
+    await createCommission(policyId, carrierId, formData);
+    onCommissionAdded?.();
+  };
 
   return (
     <Card>
