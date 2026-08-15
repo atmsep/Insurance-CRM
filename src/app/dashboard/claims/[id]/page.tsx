@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusSelect } from "../status-select";
+import { ClaimCategorySelect } from "../claim-category-select";
 import { updateClaimDetails } from "../actions";
 import type { ClaimStatus } from "@/lib/database.types";
 import { DocumentsSection } from "../../documents/documents-section";
@@ -28,14 +29,21 @@ export default async function ClaimDetailPage({
   const { data: claim } = await supabase
     .from("claims")
     .select(
-      "*, policies(id, policy_number, clients(id, client_individuals(first_name,last_name), client_legal_entities(company_name)))",
+      "*, policies(id, policy_number, clients(id, client_individuals(first_name,last_name), client_legal_entities(company_name))), claim_categories(name)",
     )
     .eq("id", id)
     .single();
 
   if (!claim) notFound();
 
+  const { data: claimCategories } = await supabase
+    .from("claim_categories")
+    .select("id, name")
+    .eq("is_active", true)
+    .order("sort_order");
+
   const documents = await getDocumentsFor("claim", id);
+  const categoryName = (claim.claim_categories as unknown as { name: string } | null)?.name;
 
   const policy = claim.policies as unknown as {
     id: string;
@@ -76,6 +84,7 @@ export default async function ClaimDetailPage({
             <CardTitle className="text-base">Στοιχεία ζημιάς</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
+            <InfoRow label="Κατηγορία" value={categoryName ?? "—"} />
             <InfoRow label="Αρ. φακέλου" value={claim.file_number ?? "—"} />
             <InfoRow label="Παθών" value={claim.injured_party_name ?? "—"} />
             <InfoRow label="Ημ. ζημιάς" value={formatDate(claim.date_of_loss)} />
@@ -162,6 +171,13 @@ export default async function ClaimDetailPage({
                     id="adjuster_contact"
                     name="adjuster_contact"
                     defaultValue={claim.adjuster_contact ?? ""}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Κατηγορία ζημιάς</Label>
+                  <ClaimCategorySelect
+                    categories={claimCategories ?? []}
+                    defaultValue={claim.claim_category_id ?? undefined}
                   />
                 </div>
               </div>

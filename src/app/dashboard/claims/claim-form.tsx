@@ -10,13 +10,16 @@ import { Combobox } from "@/components/ui/combobox";
 import { createClaim, type ClaimFormState } from "./actions";
 import { searchPolicies } from "../policies/actions";
 import { useFormValues } from "@/hooks/use-form-values";
+import { ClaimCategorySelect } from "./claim-category-select";
 
 export function ClaimForm({
   defaultPolicyId,
   defaultPolicyLabel,
+  claimCategories,
 }: {
   defaultPolicyId?: string;
   defaultPolicyLabel?: string;
+  claimCategories: { id: string; name: string }[];
 }) {
   const [state, formAction, pending] = useActionState<ClaimFormState, FormData>(
     createClaim,
@@ -64,6 +67,10 @@ export function ClaimForm({
         <div className="flex flex-col gap-2">
           <Label htmlFor="injured_party_name">Παθών</Label>
           <Input id="injured_party_name" name="injured_party_name" {...field("injured_party_name")} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label>Κατηγορία ζημιάς</Label>
+          <ClaimCategorySelect categories={claimCategories} />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="claim_amount_estimated">Εκτιμώμενο ποσό (€)</Label>

@@ -10,6 +10,12 @@ export default async function NewClaimPage({
   const { policy_id } = await searchParams;
   const supabase = await createClient();
 
+  const { data: claimCategories } = await supabase
+    .from("claim_categories")
+    .select("id, name")
+    .eq("is_active", true)
+    .order("sort_order");
+
   let defaultPolicyLabel: string | undefined;
   if (policy_id) {
     const { data: policy } = await supabase
@@ -28,7 +34,11 @@ export default async function NewClaimPage({
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Νέα ζημιά</h1>
-      <ClaimForm defaultPolicyId={policy_id} defaultPolicyLabel={defaultPolicyLabel} />
+      <ClaimForm
+        defaultPolicyId={policy_id}
+        defaultPolicyLabel={defaultPolicyLabel}
+        claimCategories={claimCategories ?? []}
+      />
     </div>
   );
 }

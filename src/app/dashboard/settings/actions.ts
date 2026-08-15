@@ -34,7 +34,7 @@ export async function updatePassword(
   return { success: "Ο κωδικός άλλαξε επιτυχώς." };
 }
 
-async function requireAdmin() {
+export async function requireAdmin() {
   const agencyUser = await requireAgencyUser();
   if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
     throw new Error("Δεν έχεις δικαίωμα για αυτή την ενέργεια.");

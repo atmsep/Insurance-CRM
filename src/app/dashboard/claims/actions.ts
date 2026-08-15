@@ -44,6 +44,7 @@ export async function createClaim(
       description: str(formData, "description"),
       injured_party_name: str(formData, "injured_party_name"),
       claim_amount_estimated: num(formData, "claim_amount_estimated"),
+      claim_category_id: str(formData, "claim_category_id"),
       assigned_agent_id: agencyUser.id,
       created_by: agencyUser.id,
     })
@@ -137,6 +138,7 @@ export async function updateClaimDetails(claimId: string, policyId: string, form
       injured_party_name: str(formData, "injured_party_name"),
       claim_amount_estimated: num(formData, "claim_amount_estimated"),
       claim_amount_paid: num(formData, "claim_amount_paid"),
+      claim_category_id: str(formData, "claim_category_id"),
       payment_date: str(formData, "payment_date"),
       closed_date: str(formData, "closed_date"),
       adjuster_name: str(formData, "adjuster_name"),
