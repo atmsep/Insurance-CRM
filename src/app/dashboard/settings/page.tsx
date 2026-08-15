@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
-import { installmentRemaining } from "../policies/balance";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileTab } from "./profile-tab";
 import { CarriersTab } from "./carriers-tab";
@@ -44,11 +43,9 @@ export default async function SettingsPage() {
       ? supabase.from("agency_users").select("*").order("full_name")
       : Promise.resolve({ data: [] }),
     isAdmin
-      ? supabase
-          .from("policy_installments")
-          .select("amount, status, paid_amount, policies!inner(assigned_agent_id, status)")
-          .neq("status", "paid")
-          .not("policies.status", "in", "(draft,cancelled)")
+      ? (supabase.rpc("agent_outstanding_balances") as unknown as Promise<{
+          data: { agent_id: string; outstanding: number }[] | null;
+        }>)
       : Promise.resolve({ data: [] }),
     isAdmin
       ? supabase.from("commission_payees").select("*").order("name")
@@ -94,16 +91,9 @@ export default async function SettingsPage() {
       : Promise.resolve({ data: [] }),
   ]);
 
-  const outstandingByAgent = new Map<string, number>();
-  for (const row of outstandingRows ?? []) {
-    const agentId = (row.policies as unknown as { assigned_agent_id: string | null } | null)
-      ?.assigned_agent_id;
-    if (!agentId) continue;
-    outstandingByAgent.set(
-      agentId,
-      (outstandingByAgent.get(agentId) ?? 0) + installmentRemaining(row),
-    );
-  }
+  const outstandingByAgent = new Map(
+    (outstandingRows ?? []).map((row) => [row.agent_id, row.outstanding]),
+  );
 
   return (
     <div className="flex flex-col gap-6">
