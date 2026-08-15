@@ -20,11 +20,9 @@ import { MovementReceiptDialog } from "./movement-receipt-dialog";
 export function MovementsTab({
   policyGroupId,
   currentPolicyId,
-  isAdmin,
 }: {
   policyGroupId: string;
   currentPolicyId: string;
-  isAdmin: boolean;
 }) {
   const [movements, setMovements] = useState<PolicyMovement[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -160,7 +158,6 @@ export function MovementsTab({
       onOpenChange={(open) => {
         if (!open) setSelectedMovement(null);
       }}
-      isAdmin={isAdmin}
       onPaymentCollected={refetch}
     />
     </>

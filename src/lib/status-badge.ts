@@ -20,13 +20,6 @@ export function claimStatusVariant(status: string): StatusBadgeVariant {
   return "outline";
 }
 
-export function commissionStatusVariant(status: string): StatusBadgeVariant {
-  if (status === "paid") return "success";
-  if (status === "pending") return "warning";
-  if (status === "invoiced") return "info";
-  return "outline";
-}
-
 export function installmentStatusVariant(status: string): StatusBadgeVariant {
   if (status === "paid") return "success";
   if (status === "overdue" || status === "cancelled") return "destructive";

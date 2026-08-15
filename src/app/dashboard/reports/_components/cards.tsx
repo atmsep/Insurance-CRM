@@ -7,12 +7,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { COMMISSION_DIRECTION_LABELS } from "../../commissions/direction-labels";
 import {
   getBillingSummary,
-  getCarrierSummary,
   getClaimsByStatus,
-  getCommissionsByStatus,
   getPoliciesByLine,
   getPoliciesByStatus,
   getReferralBreakdown,
@@ -36,13 +33,6 @@ const CLAIM_STATUS_LABELS: Record<string, string> = {
   closed: "Έκλεισε",
 };
 
-const COMMISSION_STATUS_LABELS: Record<string, string> = {
-  pending: "Εκκρεμεί",
-  invoiced: "Τιμολογήθηκε",
-  paid: "Πληρώθηκε",
-  cancelled: "Ακυρώθηκε",
-};
-
 function StatCard({
   label,
   value,
@@ -63,30 +53,18 @@ function StatCard({
   );
 }
 
-// One boundary for the whole stat row: it draws from 3 different RPCs
-// (policies-by-status, billing, commissions-by-status), each already
-// deduped via the cache()-wrapped getters against the table cards below
-// that use the same data — splitting the row itself into 6 tiny boundaries
-// wouldn't reduce any DB round-trips, only add layout churn.
+// One boundary for the whole stat row: it draws from 2 different RPCs
+// (policies-by-status, billing), each already deduped via the
+// cache()-wrapped getters against the table cards below that use the same
+// data — splitting the row itself into 5 tiny boundaries wouldn't reduce
+// any DB round-trips, only add layout churn.
 export async function ReportsStatsRow() {
-  const [policiesByStatusRows, billing, commissionsByStatusRows] = await Promise.all([
-    getPoliciesByStatus(),
-    getBillingSummary(),
-    getCommissionsByStatus(),
-  ]);
+  const [policiesByStatusRows, billing] = await Promise.all([getPoliciesByStatus(), getBillingSummary()]);
 
   const activePremium = policiesByStatusRows.find((r) => r.status === "active")?.premium_sum ?? 0;
 
-  const totalIncoming = commissionsByStatusRows
-    .filter((r) => r.direction === "incoming")
-    .reduce((sum, r) => sum + r.amount_sum, 0);
-  const totalOutgoing = commissionsByStatusRows
-    .filter((r) => r.direction === "outgoing")
-    .reduce((sum, r) => sum + r.amount_sum, 0);
-  const netCommissions = totalIncoming - totalOutgoing;
-
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
       <StatCard label="Ενεργό ασφάλιστρο" value={`${activePremium.toFixed(2)} €`} />
       <StatCard label="Χρεωθέν σύνολο εισπράξεων" value={`${billing.total_billed.toFixed(2)} €`} />
       <StatCard label="Εισπραγμένο" value={`${billing.total_collected.toFixed(2)} €`} />
@@ -95,11 +73,6 @@ export async function ReportsStatsRow() {
         label="Ανείσπρακτο υπόλοιπο"
         value={`${billing.outstanding.toFixed(2)} €`}
         tone={billing.outstanding > 0 ? "warning" : "neutral"}
-      />
-      <StatCard
-        label="Καθαρές προμήθειες"
-        value={`${netCommissions.toFixed(2)} €`}
-        tone={netCommissions < 0 ? "warning" : "neutral"}
       />
     </div>
   );
@@ -204,65 +177,6 @@ export async function ClaimsByStatusTable() {
   );
 }
 
-function CommissionsDirectionTable({
-  direction,
-  rows,
-}: {
-  direction: "incoming" | "outgoing";
-  rows: { status: string; commission_count: number; amount_sum: number }[];
-}) {
-  const total = rows.reduce((sum, r) => sum + r.amount_sum, 0);
-  const emptyLabel =
-    direction === "incoming" ? "Δεν υπάρχουν εισερχόμενες προμήθειες." : "Δεν υπάρχουν εξερχόμενες προμήθειες.";
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
-          {COMMISSION_DIRECTION_LABELS[direction]} προμήθειες ανά κατάσταση — σύνολο {total.toFixed(2)} €
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Κατάσταση</TableHead>
-              <TableHead>Πλήθος</TableHead>
-              <TableHead>Ποσό</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length ? (
-              rows.map((r) => (
-                <TableRow key={r.status}>
-                  <TableCell>{COMMISSION_STATUS_LABELS[r.status] ?? r.status}</TableCell>
-                  <TableCell>{r.commission_count}</TableCell>
-                  <TableCell>{r.amount_sum.toFixed(2)} €</TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={3} className="text-center text-muted-foreground">
-                  {emptyLabel}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
-
-export async function IncomingCommissionsTable() {
-  const rows = (await getCommissionsByStatus()).filter((r) => r.direction === "incoming");
-  return <CommissionsDirectionTable direction="incoming" rows={rows} />;
-}
-
-export async function OutgoingCommissionsTable() {
-  const rows = (await getCommissionsByStatus()).filter((r) => r.direction === "outgoing");
-  return <CommissionsDirectionTable direction="outgoing" rows={rows} />;
-}
-
 export async function ReferralBreakdownTable() {
   const rows = [...(await getReferralBreakdown())].sort((a, b) => b.client_count - a.client_count);
   return (
@@ -300,49 +214,3 @@ export async function ReferralBreakdownTable() {
   );
 }
 
-export async function CarrierSummaryTable() {
-  const rows = await getCarrierSummary();
-  return (
-    <Card className="lg:col-span-2">
-      <CardHeader>
-        <CardTitle className="text-base">Καρτέλα ανά ασφαλιστική εταιρεία</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="mb-3 text-xs text-muted-foreground">
-          &quot;Οφειλή προς εταιρεία&quot; = εισπραγμένο ασφάλιστρο μείον το σύνολο των προμηθειών μας —
-          ενδεικτικός υπολογισμός, όχι επίσημη λογιστική καρτέλα.
-        </p>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Εταιρεία</TableHead>
-              <TableHead>Εισπραγμένο ασφάλιστρο</TableHead>
-              <TableHead>Προμήθειά μας</TableHead>
-              <TableHead>Εκκρεμής προμήθεια (μας οφείλει)</TableHead>
-              <TableHead>Οφειλή προς εταιρεία (εκτίμηση)</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length ? (
-              rows.map((r) => (
-                <TableRow key={r.carrier_id}>
-                  <TableCell>{r.carrier_name}</TableCell>
-                  <TableCell>{r.collected.toFixed(2)} €</TableCell>
-                  <TableCell>{r.commission_total.toFixed(2)} €</TableCell>
-                  <TableCell>{r.commission_pending.toFixed(2)} €</TableCell>
-                  <TableCell>{(r.collected - r.commission_total).toFixed(2)} €</TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν δεδομένα ακόμα.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}

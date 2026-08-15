@@ -147,40 +147,6 @@ export async function getPolicyMovements(policyGroupId: string): Promise<PolicyM
   }));
 }
 
-// Powers the "Απόδειξη" sheet opened from a Κινήσεις row — same shape
-// CommissionsSection/AddCommissionForm already consume on the full policy
-// page (page.tsx's own Promise.all), just self-fetched for whichever
-// movement/policyId the sheet was opened for, not necessarily the page's
-// own policy.
-export async function getPolicyCommissions(policyId: string) {
-  await requireAgencyUser();
-  const supabase = await createSupabaseClient();
-  const [{ data: policy }, { data: commissions }, { data: payees }] = await Promise.all([
-    supabase
-      .from("policies")
-      .select("carrier_id, insurance_line_id, broker_office_id, premium_net")
-      .eq("id", policyId)
-      .single(),
-    supabase
-      .from("commissions")
-      .select(
-        "id, commission_type, direction, base_amount, commission_rate_percent, commission_amount, status, period, commission_payees(name)",
-      )
-      .eq("policy_id", policyId)
-      .order("period", { ascending: false }),
-    supabase.from("commission_payees").select("id, name").eq("is_active", true).order("name"),
-  ]);
-
-  return {
-    carrierId: policy?.carrier_id ?? null,
-    insuranceLineId: policy?.insurance_line_id ?? null,
-    brokerOfficeId: policy?.broker_office_id ?? null,
-    premiumNet: policy?.premium_net ?? null,
-    commissions: commissions ?? [],
-    payees: payees ?? [],
-  };
-}
-
 export async function getClientAssignedAgent(clientId: string): Promise<string | null> {
   await requireAgencyUser();
   const supabase = await createSupabaseClient();
@@ -190,63 +156,6 @@ export async function getClientAssignedAgent(clientId: string): Promise<string |
     .eq("id", clientId)
     .single();
   return data?.assigned_agent_id ?? null;
-}
-
-// Looks up the agreed commission % for a broker/carrier/line combination, as
-// of today — non-blocking: returns null (no prefill, plain manual entry)
-// when no agreement is configured rather than erroring.
-export async function getCommissionRate(
-  brokerOfficeId: string,
-  carrierId: string,
-  insuranceLineId: string,
-): Promise<number | null> {
-  await requireAgencyUser();
-  const supabase = await createSupabaseClient();
-  const today = new Date().toISOString().slice(0, 10);
-
-  const { data } = await supabase
-    .from("carrier_commission_rates")
-    .select("default_commission_percent")
-    .eq("broker_office_id", brokerOfficeId)
-    .eq("carrier_id", carrierId)
-    .eq("insurance_line_id", insuranceLineId)
-    .eq("is_active", true)
-    .lte("valid_from", today)
-    .or(`valid_to.is.null,valid_to.gte.${today}`)
-    .order("valid_from", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  return data?.default_commission_percent ?? null;
-}
-
-// Same lookup as getCommissionRate, but for what we pay OUT to a
-// συνεργάτης (commission_payees) instead of what comes in from a broker
-// office — mirrors the outgoing agreement structure added alongside the
-// incoming one (see commission-agreements-tab.tsx).
-export async function getPayeeCommissionRate(
-  payeeId: string,
-  carrierId: string,
-  insuranceLineId: string,
-): Promise<number | null> {
-  await requireAgencyUser();
-  const supabase = await createSupabaseClient();
-  const today = new Date().toISOString().slice(0, 10);
-
-  const { data } = await supabase
-    .from("carrier_commission_rates")
-    .select("default_commission_percent")
-    .eq("payee_id", payeeId)
-    .eq("carrier_id", carrierId)
-    .eq("insurance_line_id", insuranceLineId)
-    .eq("is_active", true)
-    .lte("valid_from", today)
-    .or(`valid_to.is.null,valid_to.gte.${today}`)
-    .order("valid_from", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  return data?.default_commission_percent ?? null;
 }
 
 function str(formData: FormData, key: string) {
@@ -459,32 +368,6 @@ export async function createPolicy(
   await supabase
     .from("policy_installments")
     .insert(buildInstallmentRows(policy.id, startDate, premiumGross));
-
-  // Auto-record the incoming commission owed by the carrier, using whatever
-  // rate is agreed for this broker/carrier/line combination — skipped
-  // (not zeroed) when there's no broker office or no matching agreement,
-  // since commissions have no amount-edit UI today; the admin can still add
-  // one manually via "Προσθήκη προμήθειας" for those cases. Renewals are
-  // tagged "renewal" instead of "new_business" so the commissions list
-  // reflects the actual nature of the sale.
-  if (brokerOfficeId) {
-    const ratePercent = await getCommissionRate(brokerOfficeId, carrierId, insuranceLineId);
-    if (ratePercent != null) {
-      const baseAmount = premiumNet ?? 0;
-      const commissionAmount = Math.round(((baseAmount * ratePercent) / 100) * 100) / 100;
-      await supabase.from("commissions").insert({
-        policy_id: policy.id,
-        agent_id: assignedAgentId,
-        carrier_id: carrierId,
-        commission_type: renewFromPolicyId ? "renewal" : "new_business",
-        direction: "incoming",
-        base_amount: baseAmount,
-        commission_rate_percent: ratePercent,
-        commission_amount: commissionAmount,
-        period: startDate || null,
-      });
-    }
-  }
 
   await logActivity(supabase, {
     entityType: "policy",

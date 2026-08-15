@@ -22,12 +22,7 @@ export default async function AgentDetailPage({
   const { data: agent } = await supabase.from("agency_users").select("*").eq("id", id).single();
   if (!agent) notFound();
 
-  const [
-    { count: clientsCount },
-    { count: activePoliciesCount },
-    outstandingResult,
-    { data: commissions },
-  ] = await Promise.all([
+  const [{ count: clientsCount }, { count: activePoliciesCount }, outstandingResult] = await Promise.all([
     supabase
       .from("clients")
       .select("id", { count: "exact", head: true })
@@ -42,11 +37,6 @@ export default async function AgentDetailPage({
     supabase.rpc("agent_outstanding_balance", { p_agent_id: id }) as unknown as Promise<{
       data: number | null;
     }>,
-    supabase
-      .from("commissions")
-      .select("commission_amount, status")
-      .eq("agent_id", id)
-      .eq("direction", "incoming"),
   ]);
 
   // True per-agent sum via SQL (agent_outstanding_balance, migration 0063) —
@@ -54,12 +44,6 @@ export default async function AgentDetailPage({
   // PostgREST's 1,000-row cap, which risked silently undercounting exactly
   // the agents with the largest books after the Profia import.
   const outstanding = outstandingResult.data ?? 0;
-  const commissionsPaid = (commissions ?? [])
-    .filter((c) => c.status === "paid")
-    .reduce((sum, c) => sum + c.commission_amount, 0);
-  const commissionsPending = (commissions ?? [])
-    .filter((c) => c.status !== "paid" && c.status !== "cancelled")
-    .reduce((sum, c) => sum + c.commission_amount, 0);
 
   const updateAction = updateAgencyUserProfile.bind(null, id);
   const isSelf = agent.id === currentUser.id;
@@ -98,14 +82,6 @@ export default async function AgentDetailPage({
               <span className={`text-right font-medium ${outstanding > 0 ? "text-warning" : ""}`}>
                 {outstanding.toFixed(2)} €
               </span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Προμήθειες (πληρωμένες)</span>
-              <span className="text-right font-medium">{commissionsPaid.toFixed(2)} €</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Προμήθειες (εκκρεμείς)</span>
-              <span className="text-right font-medium">{commissionsPending.toFixed(2)} €</span>
             </div>
           </CardContent>
         </Card>

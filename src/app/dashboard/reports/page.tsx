@@ -3,10 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAgencyUser } from "@/lib/dal";
 import { StatTileGridSkeleton, TableCardSkeleton } from "../_components/skeletons";
 import {
-  CarrierSummaryTable,
   ClaimsByStatusTable,
-  IncomingCommissionsTable,
-  OutgoingCommissionsTable,
   PoliciesByLineTable,
   PoliciesByStatusTable,
   ReferralBreakdownTable,
@@ -23,7 +20,7 @@ export default async function ReportsPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Αναφορές</h1>
 
-      <Suspense fallback={<StatTileGridSkeleton count={6} />}>
+      <Suspense fallback={<StatTileGridSkeleton count={5} />}>
         <ReportsStatsRow />
       </Suspense>
 
@@ -37,17 +34,8 @@ export default async function ReportsPage() {
         <Suspense fallback={<TableCardSkeleton title="Ζημιές ανά κατάσταση" />}>
           <ClaimsByStatusTable />
         </Suspense>
-        <Suspense fallback={<TableCardSkeleton title="Εισερχόμενες προμήθειες ανά κατάσταση" />}>
-          <IncomingCommissionsTable />
-        </Suspense>
-        <Suspense fallback={<TableCardSkeleton title="Εξερχόμενες προμήθειες ανά κατάσταση" />}>
-          <OutgoingCommissionsTable />
-        </Suspense>
         <Suspense fallback={<TableCardSkeleton title="Πελάτες ανά πηγή σύστασης" />}>
           <ReferralBreakdownTable />
-        </Suspense>
-        <Suspense fallback={<TableCardSkeleton title="Καρτέλα ανά ασφαλιστική εταιρεία" columns={5} />}>
-          <CarrierSummaryTable />
         </Suspense>
       </div>
     </div>

@@ -4,13 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileTab } from "./profile-tab";
 import { CarriersTab } from "./carriers-tab";
 import { TeamTab } from "./team-tab";
-import { PayeesTab } from "./payees-tab";
 import { BrokerOfficesTab } from "./broker-offices-tab";
-import {
-  CommissionAgreementsTab,
-  type BrokerOfficeWithAgreements,
-  type PayeeWithAgreements,
-} from "./commission-agreements-tab";
 import { PaymentMethodsTab } from "./payment-methods-tab";
 import { AutomationsTab } from "./automations-tab";
 import { EmailTemplatesTab } from "./email-templates-tab";
@@ -26,11 +20,7 @@ export default async function SettingsPage() {
     { data: carriers },
     { data: users },
     { data: outstandingRows },
-    { data: payees },
     { data: brokerOffices },
-    { data: insuranceLines },
-    { data: brokerOfficesWithAgreements },
-    { data: payeesWithAgreements },
     { data: paymentMethods },
     { data: appSettings },
     { data: emailTemplates },
@@ -48,30 +38,7 @@ export default async function SettingsPage() {
         }>)
       : Promise.resolve({ data: [] }),
     isAdmin
-      ? supabase.from("commission_payees").select("*").order("name")
-      : Promise.resolve({ data: [] }),
-    isAdmin
       ? supabase.from("broker_offices").select("*").order("is_direct", { ascending: false }).order("name")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("insurance_lines").select("id, name_el").eq("is_active", true).order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase
-          .from("broker_offices")
-          .select(
-            "id, name, is_direct, is_active, commission_agreements(id, name, notes, is_active, carrier_commission_rates(id, carrier_id, insurance_line_id, default_commission_percent, valid_from, valid_to, is_active, carriers(name), insurance_lines(name_el)))",
-          )
-          .order("is_direct", { ascending: false })
-          .order("name")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase
-          .from("commission_payees")
-          .select(
-            "id, name, is_external, is_active, commission_agreements(id, name, notes, is_active, carrier_commission_rates(id, carrier_id, insurance_line_id, default_commission_percent, valid_from, valid_to, is_active, carriers(name), insurance_lines(name_el)))",
-          )
-          .order("name")
       : Promise.resolve({ data: [] }),
     isAdmin
       ? supabase.from("payment_methods").select("*").order("sort_order")
@@ -104,9 +71,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="profile">Προφίλ</TabsTrigger>
           {isAdmin && <TabsTrigger value="carriers">Ασφαλιστικές εταιρείες</TabsTrigger>}
           {isAdmin && <TabsTrigger value="team">Συνεργάτες</TabsTrigger>}
-          {isAdmin && <TabsTrigger value="payees">Δικαιούχοι Προμηθειών</TabsTrigger>}
           {isAdmin && <TabsTrigger value="brokers">Συνεργαζόμενα Γραφεία</TabsTrigger>}
-          {isAdmin && <TabsTrigger value="agreements">Συμβάσεις Προμηθειών</TabsTrigger>}
           {isAdmin && <TabsTrigger value="payment-methods">Μέθοδοι Πληρωμής</TabsTrigger>}
           {isAdmin && <TabsTrigger value="parametric">Παραμετρικοί Πίνακες</TabsTrigger>}
           {isAdmin && <TabsTrigger value="automations">Αυτοματισμοί</TabsTrigger>}
@@ -131,23 +96,8 @@ export default async function SettingsPage() {
           </TabsContent>
         )}
         {isAdmin && (
-          <TabsContent value="payees" className="pt-4">
-            <PayeesTab payees={payees ?? []} />
-          </TabsContent>
-        )}
-        {isAdmin && (
           <TabsContent value="brokers" className="pt-4">
             <BrokerOfficesTab brokerOffices={brokerOffices ?? []} />
-          </TabsContent>
-        )}
-        {isAdmin && (
-          <TabsContent value="agreements" className="pt-4">
-            <CommissionAgreementsTab
-              brokerOffices={(brokerOfficesWithAgreements ?? []) as unknown as BrokerOfficeWithAgreements[]}
-              payees={(payeesWithAgreements ?? []) as unknown as PayeeWithAgreements[]}
-              carriers={carriers ?? []}
-              insuranceLines={insuranceLines ?? []}
-            />
           </TabsContent>
         )}
         {isAdmin && (

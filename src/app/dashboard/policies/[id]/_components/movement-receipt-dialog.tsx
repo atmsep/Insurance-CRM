@@ -24,13 +24,11 @@ import { installmentStatusVariant } from "@/lib/status-badge";
 import { formatDate } from "@/lib/date";
 import { installmentRemaining } from "../../balance";
 import {
-  getPolicyCommissions,
   getPolicyInstallments,
   collectInstallmentPayment,
   type PolicyMovement,
   type InstallmentWithPayments,
 } from "../../actions";
-import { CommissionsSection } from "../../../commissions/commissions-section";
 import { CollectPaymentDialog } from "./collect-payment-dialog";
 
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
@@ -40,27 +38,17 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   partially_paid: "Μερική πληρωμή",
 };
 
-async function getReceiptData(movementId: string) {
-  const [commissionData, installmentData] = await Promise.all([
-    getPolicyCommissions(movementId),
-    getPolicyInstallments(movementId),
-  ]);
-  return { ...commissionData, ...installmentData };
-}
-
-type ReceiptData = Awaited<ReturnType<typeof getReceiptData>>;
+type ReceiptData = Awaited<ReturnType<typeof getPolicyInstallments>>;
 
 export function MovementReceiptDialog({
   movement,
   open,
   onOpenChange,
-  isAdmin,
   onPaymentCollected,
 }: {
   movement: PolicyMovement | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  isAdmin: boolean;
   // The outer Κινήσεις list has its own copy of each movement's Υπόλοιπο
   // (and the chain-wide total) fetched once when the tab loads — a
   // collection made in here would otherwise leave that summary stale
@@ -76,7 +64,7 @@ export function MovementReceiptDialog({
     if (!movementId) return;
     try {
       setLoadError(false);
-      setData(await getReceiptData(movementId));
+      setData(await getPolicyInstallments(movementId));
     } catch {
       setLoadError(true);
     }
@@ -85,7 +73,7 @@ export function MovementReceiptDialog({
   useEffect(() => {
     if (!open || !movementId) return;
     let cancelled = false;
-    getReceiptData(movementId)
+    getPolicyInstallments(movementId)
       .then((result) => {
         if (!cancelled) setData(result);
       })
@@ -155,20 +143,6 @@ export function MovementReceiptDialog({
               </div>
             ) : (
               <>
-                {movementId && (
-                  <CommissionsSection
-                    policyId={movementId}
-                    carrierId={data.carrierId ?? ""}
-                    insuranceLineId={data.insuranceLineId ?? ""}
-                    brokerOfficeId={data.brokerOfficeId}
-                    commissions={data.commissions}
-                    isAdmin={isAdmin}
-                    premiumNet={data.premiumNet}
-                    payees={data.payees}
-                    onCommissionAdded={refetch}
-                  />
-                )}
-
                 <div className="flex flex-col gap-2">
                   <h3 className="text-sm font-medium">Δόσεις</h3>
                   <Table>

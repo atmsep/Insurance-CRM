@@ -15,20 +15,7 @@ export type BillingSummaryRow = {
   outstanding: number;
 };
 export type ClaimsByStatusRow = { status: string; claim_count: number; amount_sum: number };
-export type CommissionsByStatusRow = {
-  direction: "incoming" | "outgoing";
-  status: string;
-  commission_count: number;
-  amount_sum: number;
-};
 export type ReferralBreakdownRow = { source: string; client_count: number };
-export type CarrierSummaryRow = {
-  carrier_id: string;
-  carrier_name: string;
-  collected: number;
-  commission_total: number;
-  commission_pending: number;
-};
 
 // These RPCs are whole-agency aggregates (reports/page.tsx already
 // redirects non-owner/admin away before any of this runs — there's no
@@ -97,20 +84,6 @@ export const getClaimsByStatus = cache(
   ),
 );
 
-export const getCommissionsByStatus = cache(
-  unstable_cache(
-    async (): Promise<CommissionsByStatusRow[]> => {
-      const admin = createAdminClient();
-      const { data } = (await admin.rpc("report_commissions_by_status")) as unknown as {
-        data: CommissionsByStatusRow[] | null;
-      };
-      return data ?? [];
-    },
-    ["report-commissions-by-status"],
-    { revalidate: 60, tags: [CACHE_TAGS.reports] },
-  ),
-);
-
 export const getReferralBreakdown = cache(
   unstable_cache(
     async (): Promise<ReferralBreakdownRow[]> => {
@@ -121,20 +94,6 @@ export const getReferralBreakdown = cache(
       return data ?? [];
     },
     ["report-referral-breakdown"],
-    { revalidate: 60, tags: [CACHE_TAGS.reports] },
-  ),
-);
-
-export const getCarrierSummary = cache(
-  unstable_cache(
-    async (): Promise<CarrierSummaryRow[]> => {
-      const admin = createAdminClient();
-      const { data } = (await admin.rpc("report_carrier_summary")) as unknown as {
-        data: CarrierSummaryRow[] | null;
-      };
-      return data ?? [];
-    },
-    ["report-carrier-summary"],
     { revalidate: 60, tags: [CACHE_TAGS.reports] },
   ),
 );

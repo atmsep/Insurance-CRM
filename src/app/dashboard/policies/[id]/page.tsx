@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { updatePolicyDetails } from "../actions";
 import { buildPolicyMergeFields } from "@/lib/email";
-import type { Commission } from "../../commissions/commissions-section";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
 import { getCurrentAgencyUser } from "@/lib/dal";
@@ -14,7 +13,6 @@ import { VisitTracker } from "./_components/visit-tracker";
 import { DetailsTab } from "./_components/details-tab";
 import { InstallmentsTab } from "./_components/installments-tab";
 import { ClaimsTab } from "./_components/claims-tab";
-import { CommissionsTab } from "./_components/commissions-tab";
 import { MovementsTab } from "./_components/movements-tab";
 import { ActivityFeed } from "@/components/activity-feed";
 import type { PolicyStatus } from "@/lib/database.types";
@@ -56,16 +54,14 @@ export default async function PolicyDetailPage({
   // Only what the header and the default-open Details tab need on first
   // paint. Installments/Claims are fetched lazily by their own tab
   // components on mount, since those queries used to run unconditionally
-  // here even when the user never opened those tabs. Commissions/Documents
-  // stay eager for now — they're shared components used elsewhere too, so
-  // moving their data-fetching contract is lower-risk left for later.
+  // here even when the user never opened those tabs. Documents stays
+  // eager for now — it's a shared component used elsewhere too, so
+  // moving its data-fetching contract is lower-risk left for later.
   const [
     { data: vehicle },
     { data: property },
     { data: lifeHealth },
     documents,
-    { data: commissions },
-    { data: payees },
     agencyUser,
     { data: agents },
     { data: brokerOffices },
@@ -82,14 +78,6 @@ export default async function PolicyDetailPage({
       ? supabase.from("policy_life_health_details").select("*").eq("policy_id", id).maybeSingle()
       : Promise.resolve({ data: null }),
     getDocumentsFor("policy", id),
-    supabase
-      .from("commissions")
-      .select(
-        "id, commission_type, direction, base_amount, commission_rate_percent, commission_amount, status, period, commission_payees(name)",
-      )
-      .eq("policy_id", id)
-      .order("period", { ascending: false }),
-    supabase.from("commission_payees").select("id, name").eq("is_active", true).order("name"),
     getCurrentAgencyUser(),
     supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
     supabase
@@ -155,7 +143,6 @@ export default async function PolicyDetailPage({
           <TabsTrigger value="movements">Κινήσεις</TabsTrigger>
           <TabsTrigger value="installments">Εισπράξεις</TabsTrigger>
           <TabsTrigger value="claims">Ζημιές</TabsTrigger>
-          <TabsTrigger value="commissions">Προμήθειες</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
           <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
         </TabsList>
@@ -173,7 +160,7 @@ export default async function PolicyDetailPage({
         </TabsContent>
 
         <TabsContent value="movements" className="pt-4">
-          <MovementsTab policyGroupId={policy.policy_group_id} currentPolicyId={id} isAdmin={isAdmin} />
+          <MovementsTab policyGroupId={policy.policy_group_id} currentPolicyId={id} />
         </TabsContent>
 
         <TabsContent value="installments" className="pt-4">
@@ -182,19 +169,6 @@ export default async function PolicyDetailPage({
 
         <TabsContent value="claims" className="pt-4">
           <ClaimsTab policyId={id} />
-        </TabsContent>
-
-        <TabsContent value="commissions" className="pt-4">
-          <CommissionsTab
-            policyId={id}
-            carrierId={policy.carrier_id}
-            insuranceLineId={policy.insurance_line_id}
-            brokerOfficeId={policy.broker_office_id}
-            commissions={(commissions ?? []) as unknown as Commission[]}
-            isAdmin={isAdmin}
-            premiumNet={policy.premium_net}
-            payees={payees ?? []}
-          />
         </TabsContent>
 
         <TabsContent value="documents" className="pt-4">

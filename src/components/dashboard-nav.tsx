@@ -7,7 +7,6 @@ import {
   FileText,
   Users,
   Receipt,
-  Percent,
   Wallet,
   ShieldAlert,
   MessageSquare,
@@ -35,7 +34,6 @@ const navItems: NavItem[] = [
     group: "Τυπώνω - Πληρώνω",
     links: [
       { href: "/dashboard/installments", label: "Εισπράξεις", icon: Receipt },
-      { href: "/dashboard/commissions", label: "Προμήθειες", icon: Percent },
       { href: "/dashboard/cash-register", label: "Ταμείο", icon: Wallet },
     ],
   },
