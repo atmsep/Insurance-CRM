@@ -20,18 +20,24 @@ export function CollectPaymentForm({
   amount,
   alreadyPaid = 0,
   paymentMethods,
+  embedded = false,
+  onCancel,
 }: {
   installmentId: string;
   collectAction: (formData: FormData) => void;
   amount: number;
   alreadyPaid?: number;
   paymentMethods: PaymentMethod[];
+  // Skips the internal toggle-button/open state when the form is already
+  // being rendered inside its own trigger surface (e.g. a dedicated Dialog).
+  embedded?: boolean;
+  onCancel?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [methodId, setMethodId] = useState("");
   const remaining = Math.max(amount - alreadyPaid, 0);
 
-  if (!open) {
+  if (!embedded && !open) {
     return (
       <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
         Είσπραξη
@@ -79,7 +85,12 @@ export function CollectPaymentForm({
       <Button type="submit" size="sm">
         Καταχώρηση
       </Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={() => (embedded ? onCancel?.() : setOpen(false))}
+      >
         Άκυρο
       </Button>
     </form>

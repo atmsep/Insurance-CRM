@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/date";
 import { getPolicyMovements, type PolicyMovement } from "../../actions";
-import { MovementReceiptSheet } from "./movement-receipt-sheet";
+import { MovementReceiptDialog } from "./movement-receipt-dialog";
 
 export function MovementsTab({
   policyGroupId,
@@ -154,7 +154,7 @@ export function MovementsTab({
         )}
       </CardContent>
     </Card>
-    <MovementReceiptSheet
+    <MovementReceiptDialog
       movement={selectedMovement}
       open={selectedMovement !== null}
       onOpenChange={(open) => {
