@@ -1,7 +1,7 @@
 import { SimpleLookupTab, type LookupRow } from "./simple-lookup-tab";
 import { createLookupRow, updateLookupRow, toggleLookupRowActive, deleteLookupRow } from "./lookup-actions";
 
-export function ClaimCategoriesTab({ rows }: { rows: LookupRow[] }) {
+export function ClaimCategoriesTab({ rows, onChanged }: { rows: LookupRow[]; onChanged?: () => void }) {
   return (
     <SimpleLookupTab
       columnLabel="Κατηγορία ζημιάς"
@@ -12,6 +12,7 @@ export function ClaimCategoriesTab({ rows }: { rows: LookupRow[] }) {
       updateAction={updateLookupRow.bind(null, "claim_categories")}
       toggleAction={toggleLookupRowActive.bind(null, "claim_categories")}
       deleteAction={deleteLookupRow.bind(null, "claim_categories")}
+      onChanged={onChanged}
     />
   );
 }

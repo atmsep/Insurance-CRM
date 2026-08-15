@@ -1,7 +1,7 @@
 import { SimpleLookupTab, type LookupRow } from "./simple-lookup-tab";
 import { createLookupRow, updateLookupRow, toggleLookupRowActive, deleteLookupRow } from "./lookup-actions";
 
-export function CurrenciesTab({ rows }: { rows: LookupRow[] }) {
+export function CurrenciesTab({ rows, onChanged }: { rows: LookupRow[]; onChanged?: () => void }) {
   return (
     <SimpleLookupTab
       columnLabel="Νόμισμα"
@@ -12,6 +12,7 @@ export function CurrenciesTab({ rows }: { rows: LookupRow[] }) {
       updateAction={updateLookupRow.bind(null, "currencies")}
       toggleAction={toggleLookupRowActive.bind(null, "currencies")}
       deleteAction={deleteLookupRow.bind(null, "currencies")}
+      onChanged={onChanged}
     />
   );
 }

@@ -63,15 +63,30 @@ function FlagsFields({ line }: { line?: InsuranceLine }) {
   );
 }
 
-export function InsuranceLinesTab({ lines }: { lines: InsuranceLine[] }) {
+export function InsuranceLinesTab({ lines, onChanged }: { lines: InsuranceLine[]; onChanged?: () => void }) {
   const [pending, startTransition] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  function handleCreate(formData: FormData) {
+    createInsuranceLine(formData);
+    onChanged?.();
+  }
 
   function handleUpdate(id: string, formData: FormData) {
     startTransition(async () => {
       const result = await updateInsuranceLine(id, formData);
       if (result?.error) toast.error(result.error);
-      else setEditingId(null);
+      else {
+        setEditingId(null);
+        onChanged?.();
+      }
+    });
+  }
+
+  function handleToggle(id: string, isActive: boolean) {
+    startTransition(async () => {
+      await toggleInsuranceLineActive(id, isActive);
+      onChanged?.();
     });
   }
 
@@ -80,6 +95,7 @@ export function InsuranceLinesTab({ lines }: { lines: InsuranceLine[] }) {
     startTransition(async () => {
       const result = await deleteInsuranceLine(id);
       if (result?.error) toast.error(result.error);
+      else onChanged?.();
     });
   }
 
@@ -150,7 +166,7 @@ export function InsuranceLinesTab({ lines }: { lines: InsuranceLine[] }) {
                           size="sm"
                           variant="outline"
                           disabled={pending}
-                          onClick={() => startTransition(() => toggleInsuranceLineActive(line.id, !line.is_active))}
+                          onClick={() => handleToggle(line.id, !line.is_active)}
                         >
                           {line.is_active ? "Απενεργοποίηση" : "Ενεργοποίηση"}
                         </Button>
@@ -178,7 +194,7 @@ export function InsuranceLinesTab({ lines }: { lines: InsuranceLine[] }) {
         </Table>
       </div>
 
-      <form action={createInsuranceLine} className="flex flex-col gap-3 rounded-md border p-3">
+      <form action={handleCreate} className="flex flex-col gap-3 rounded-md border p-3">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-2">
             <Label htmlFor="new_line_code">Κωδικός</Label>

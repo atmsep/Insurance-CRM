@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,15 +18,42 @@ import { createArea, updateArea, toggleAreaActive, deleteArea } from "./lookup-a
 
 export type Area = { id: string; postal_code: string | null; city: string; region: string | null; is_active: boolean };
 
-export function AreasTab({ areas }: { areas: Area[] }) {
+export function AreasTab({ areas, onChanged }: { areas: Area[]; onChanged?: () => void }) {
   const [pending, startTransition] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+
+  const filteredAreas = useMemo(() => {
+    const q = filter.trim().toLocaleLowerCase("el");
+    if (!q) return areas;
+    return areas.filter(
+      (a) =>
+        a.city.toLocaleLowerCase("el").includes(q) ||
+        a.postal_code?.includes(q) ||
+        a.region?.toLocaleLowerCase("el").includes(q),
+    );
+  }, [filter, areas]);
+
+  function handleCreate(formData: FormData) {
+    createArea(formData);
+    onChanged?.();
+  }
 
   function handleUpdate(id: string, formData: FormData) {
     startTransition(async () => {
       const result = await updateArea(id, formData);
       if (result?.error) toast.error(result.error);
-      else setEditingId(null);
+      else {
+        setEditingId(null);
+        onChanged?.();
+      }
+    });
+  }
+
+  function handleToggle(id: string, isActive: boolean) {
+    startTransition(async () => {
+      await toggleAreaActive(id, isActive);
+      onChanged?.();
     });
   }
 
@@ -35,11 +62,19 @@ export function AreasTab({ areas }: { areas: Area[] }) {
     startTransition(async () => {
       const result = await deleteArea(id);
       if (result?.error) toast.error(result.error);
+      else onChanged?.();
     });
   }
 
   return (
     <div className="flex flex-col gap-6">
+      <Input
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder={`Αναζήτηση ΤΚ/πόλης/περιφέρειας (${areas.length})...`}
+        className="w-72"
+      />
+
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -52,8 +87,8 @@ export function AreasTab({ areas }: { areas: Area[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {areas.length ? (
-              areas.map((area) =>
+            {filteredAreas.length ? (
+              filteredAreas.map((area) =>
                 editingId === area.id ? (
                   <TableRow key={area.id}>
                     <TableCell colSpan={3}>
@@ -105,7 +140,7 @@ export function AreasTab({ areas }: { areas: Area[] }) {
                           size="sm"
                           variant="outline"
                           disabled={pending}
-                          onClick={() => startTransition(() => toggleAreaActive(area.id, !area.is_active))}
+                          onClick={() => handleToggle(area.id, !area.is_active)}
                         >
                           {area.is_active ? "Απενεργοποίηση" : "Ενεργοποίηση"}
                         </Button>
@@ -125,7 +160,7 @@ export function AreasTab({ areas }: { areas: Area[] }) {
             ) : (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν περιοχές.
+                  {areas.length ? "Καμία αντιστοιχία." : "Δεν υπάρχουν περιοχές."}
                 </TableCell>
               </TableRow>
             )}
@@ -133,7 +168,7 @@ export function AreasTab({ areas }: { areas: Area[] }) {
         </Table>
       </div>
 
-      <form action={createArea} className="flex flex-wrap items-end gap-3">
+      <form action={handleCreate} className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-2">
           <Label htmlFor="area_postal_code">ΤΚ</Label>
           <Input id="area_postal_code" name="postal_code" className="w-24" />

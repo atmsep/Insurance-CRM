@@ -28,6 +28,33 @@ function assertTable(table: SimpleLookupTable) {
   }
 }
 
+// The parametric-tables tab fetches each sub-tab's rows lazily (on first
+// activation) instead of the settings page loading all of them eagerly —
+// some of these (occupations, areas) run into the thousands of rows, which
+// made the whole Ρυθμίσεις page slow to load even when nobody opened that
+// tab. Paginated with .range() because PostgREST caps every response at
+// its own db-max-rows setting (1000 here) no matter what .limit() the
+// client asks for — occupations already has 630 rows and could grow past
+// that silently.
+export async function getLookupRows(table: SimpleLookupTable) {
+  assertTable(table);
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  const pageSize = 1000;
+  const all: { id: string; name: string; is_active: boolean }[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data } = await supabase
+      .from(table)
+      .select("id, name, is_active")
+      .order("sort_order")
+      .range(from, from + pageSize - 1);
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+  }
+  return all;
+}
+
 export async function createLookupRow(table: SimpleLookupTable, formData: FormData) {
   assertTable(table);
   await requireAdmin();
@@ -82,6 +109,29 @@ export async function deleteLookupRow(table: SimpleLookupTable, id: string): Pro
 // Areas (ΤΚ/Πόλη/Περιφέρεια) has its own shape (no single "name" field), so
 // it gets its own small set of actions instead of going through the
 // generic simple-lookup table whitelist above.
+
+export async function getAreas() {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  // PostgREST caps every response at its own db-max-rows setting (1000 on
+  // this project) no matter what .limit() the client asks for — areas has
+  // 1429 rows, so a single request silently truncates. Page through with
+  // .range() until a page comes back short.
+  const pageSize = 1000;
+  const all: { id: string; postal_code: string | null; city: string; region: string | null; is_active: boolean }[] =
+    [];
+  for (let from = 0; ; from += pageSize) {
+    const { data } = await supabase
+      .from("areas")
+      .select("id, postal_code, city, region, is_active")
+      .order("postal_code")
+      .range(from, from + pageSize - 1);
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+  }
+  return all;
+}
 
 export async function createArea(formData: FormData) {
   await requireAdmin();
@@ -139,6 +189,18 @@ export async function deleteArea(id: string): Promise<{ error?: string }> {
 
 // insurance_lines has richer columns (code, feature flags) than the simple
 // lookups above but the same UI shape — its own dedicated actions.
+
+export async function getInsuranceLinesFull() {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+  const { data } = await supabase
+    .from("insurance_lines")
+    .select(
+      "id, code, name_el, requires_vehicle_details, requires_property_details, requires_life_health_details, is_active",
+    )
+    .order("sort_order");
+  return data ?? [];
+}
 
 export async function createInsuranceLine(formData: FormData) {
   await requireAdmin();

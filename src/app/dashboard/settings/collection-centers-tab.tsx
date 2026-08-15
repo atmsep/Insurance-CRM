@@ -1,7 +1,7 @@
 import { SimpleLookupTab, type LookupRow } from "./simple-lookup-tab";
 import { createLookupRow, updateLookupRow, toggleLookupRowActive, deleteLookupRow } from "./lookup-actions";
 
-export function CollectionCentersTab({ rows }: { rows: LookupRow[] }) {
+export function CollectionCentersTab({ rows, onChanged }: { rows: LookupRow[]; onChanged?: () => void }) {
   return (
     <SimpleLookupTab
       columnLabel="Κέντρο είσπραξης"
@@ -12,6 +12,7 @@ export function CollectionCentersTab({ rows }: { rows: LookupRow[] }) {
       updateAction={updateLookupRow.bind(null, "collection_centers")}
       toggleAction={toggleLookupRowActive.bind(null, "collection_centers")}
       deleteAction={deleteLookupRow.bind(null, "collection_centers")}
+      onChanged={onChanged}
     />
   );
 }

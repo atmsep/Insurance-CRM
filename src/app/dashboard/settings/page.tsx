@@ -16,18 +16,7 @@ import { PaymentMethodsTab } from "./payment-methods-tab";
 import { AutomationsTab } from "./automations-tab";
 import { EmailTemplatesTab } from "./email-templates-tab";
 import { ErrorsTab } from "./errors-tab";
-import { BanksTab } from "./banks-tab";
-import { ClientCategoriesTab } from "./client-categories-tab";
-import { LeadSourcesTab } from "./lead-sources-tab";
-import { SpecialtiesTab } from "./specialties-tab";
-import { VehicleBrandsTab } from "./vehicle-brands-tab";
-import { VehicleUsagesTab } from "./vehicle-usages-tab";
-import { CurrenciesTab } from "./currencies-tab";
-import { CollectionCentersTab } from "./collection-centers-tab";
-import { OccupationsTab } from "./occupations-tab";
-import { ClaimCategoriesTab } from "./claim-categories-tab";
-import { AreasTab } from "./areas-tab";
-import { InsuranceLinesTab } from "./insurance-lines-tab";
+import { ParametricTablesTab } from "./parametric-tables-tab";
 
 export default async function SettingsPage() {
   const agencyUser = await requireAgencyUser();
@@ -47,18 +36,6 @@ export default async function SettingsPage() {
     { data: appSettings },
     { data: emailTemplates },
     { data: recentErrors },
-    { data: banks },
-    { data: clientCategories },
-    { data: leadSources },
-    { data: specialties },
-    { data: vehicleBrands },
-    { data: vehicleUsages },
-    { data: currencies },
-    { data: collectionCenters },
-    { data: occupations },
-    { data: claimCategories },
-    { data: areas },
-    { data: allInsuranceLines },
   ] = await Promise.all([
     isAdmin
       ? supabase.from("carriers").select("*").order("name")
@@ -114,45 +91,6 @@ export default async function SettingsPage() {
           .select("id, context, message, url, created_at")
           .order("created_at", { ascending: false })
           .limit(100)
-      : Promise.resolve({ data: [] }),
-    isAdmin ? supabase.from("banks").select("id, name, is_active").order("sort_order") : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("client_categories").select("id, name, is_active").order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("lead_sources").select("id, name, is_active").order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("specialties").select("id, name, is_active").order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("vehicle_brands").select("id, name, is_active").order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("vehicle_usages").select("id, name, is_active").order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("currencies").select("id, name, is_active").order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("collection_centers").select("id, name, is_active").order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("occupations").select("id, name, is_active").order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("claim_categories").select("id, name, is_active").order("sort_order")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("areas").select("id, postal_code, city, region, is_active").order("postal_code")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase
-          .from("insurance_lines")
-          .select(
-            "id, code, name_el, requires_vehicle_details, requires_property_details, requires_life_health_details, is_active",
-          )
-          .order("sort_order")
       : Promise.resolve({ data: [] }),
   ]);
 
@@ -229,58 +167,7 @@ export default async function SettingsPage() {
         )}
         {isAdmin && (
           <TabsContent value="parametric" className="pt-4">
-            <Tabs defaultValue="banks">
-              <TabsList className="flex-wrap">
-                <TabsTrigger value="banks">Τράπεζες</TabsTrigger>
-                <TabsTrigger value="client-categories">Κατηγορίες Πελατών</TabsTrigger>
-                <TabsTrigger value="lead-sources">Πηγές Προέλευσης</TabsTrigger>
-                <TabsTrigger value="specialties">Ειδικότητες</TabsTrigger>
-                <TabsTrigger value="vehicle-brands">Μάρκες Οχημάτων</TabsTrigger>
-                <TabsTrigger value="vehicle-usages">Χρήσεις Οχήματος</TabsTrigger>
-                <TabsTrigger value="currencies">Νομίσματα</TabsTrigger>
-                <TabsTrigger value="collection-centers">Κέντρα Είσπραξης</TabsTrigger>
-                <TabsTrigger value="occupations">Επαγγέλματα</TabsTrigger>
-                <TabsTrigger value="claim-categories">Κατηγορίες Ζημιών</TabsTrigger>
-                <TabsTrigger value="areas">Περιοχές</TabsTrigger>
-                <TabsTrigger value="insurance-lines">Κλάδοι Ασφάλισης</TabsTrigger>
-              </TabsList>
-              <TabsContent value="banks" className="pt-4">
-                <BanksTab rows={banks ?? []} />
-              </TabsContent>
-              <TabsContent value="client-categories" className="pt-4">
-                <ClientCategoriesTab rows={clientCategories ?? []} />
-              </TabsContent>
-              <TabsContent value="lead-sources" className="pt-4">
-                <LeadSourcesTab rows={leadSources ?? []} />
-              </TabsContent>
-              <TabsContent value="specialties" className="pt-4">
-                <SpecialtiesTab rows={specialties ?? []} />
-              </TabsContent>
-              <TabsContent value="vehicle-brands" className="pt-4">
-                <VehicleBrandsTab rows={vehicleBrands ?? []} />
-              </TabsContent>
-              <TabsContent value="vehicle-usages" className="pt-4">
-                <VehicleUsagesTab rows={vehicleUsages ?? []} />
-              </TabsContent>
-              <TabsContent value="currencies" className="pt-4">
-                <CurrenciesTab rows={currencies ?? []} />
-              </TabsContent>
-              <TabsContent value="collection-centers" className="pt-4">
-                <CollectionCentersTab rows={collectionCenters ?? []} />
-              </TabsContent>
-              <TabsContent value="occupations" className="pt-4">
-                <OccupationsTab rows={occupations ?? []} />
-              </TabsContent>
-              <TabsContent value="claim-categories" className="pt-4">
-                <ClaimCategoriesTab rows={claimCategories ?? []} />
-              </TabsContent>
-              <TabsContent value="areas" className="pt-4">
-                <AreasTab areas={areas ?? []} />
-              </TabsContent>
-              <TabsContent value="insurance-lines" className="pt-4">
-                <InsuranceLinesTab lines={allInsuranceLines ?? []} />
-              </TabsContent>
-            </Tabs>
+            <ParametricTablesTab />
           </TabsContent>
         )}
         {isAdmin && (
