@@ -27,6 +27,10 @@ export function AdvancedPolicySearchSheet({
   endTo,
   premiumFrom,
   premiumTo,
+  issueFrom,
+  issueTo,
+  premiumNetFrom,
+  premiumNetTo,
   agents,
   brokerOffices,
 }: {
@@ -39,6 +43,10 @@ export function AdvancedPolicySearchSheet({
   endTo?: string;
   premiumFrom?: string;
   premiumTo?: string;
+  issueFrom?: string;
+  issueTo?: string;
+  premiumNetFrom?: string;
+  premiumNetTo?: string;
   agents?: Option[];
   brokerOffices?: Option[];
 }) {
@@ -51,6 +59,10 @@ export function AdvancedPolicySearchSheet({
     endTo,
     premiumFrom,
     premiumTo,
+    issueFrom,
+    issueTo,
+    premiumNetFrom,
+    premiumNetTo,
   ].filter(Boolean).length;
 
   return (
@@ -135,6 +147,36 @@ export function AdvancedPolicySearchSheet({
                 step="0.01"
                 defaultValue={premiumTo ?? ""}
               />
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Καθαρό ασφάλιστρο (€)</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                aria-label="Από"
+                form={form}
+                name="premium_net_from"
+                type="number"
+                step="0.01"
+                defaultValue={premiumNetFrom ?? ""}
+              />
+              <span className="text-sm text-muted-foreground">έως</span>
+              <Input
+                aria-label="Έως"
+                form={form}
+                name="premium_net_to"
+                type="number"
+                step="0.01"
+                defaultValue={premiumNetTo ?? ""}
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Ημερομηνία έκδοσης</Label>
+            <div className="flex items-center gap-2">
+              <Input aria-label="Από" form={form} name="issue_from" type="date" defaultValue={issueFrom ?? ""} />
+              <span className="text-sm text-muted-foreground">έως</span>
+              <Input aria-label="Έως" form={form} name="issue_to" type="date" defaultValue={issueTo ?? ""} />
             </div>
           </div>
         </div>

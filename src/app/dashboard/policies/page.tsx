@@ -13,6 +13,7 @@ import { ListPageHeader } from "@/components/list-page-header";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { QuickView, QuickViewField } from "@/components/quick-view";
 import { ClickableRow } from "@/components/clickable-row";
+import { SortableHeader } from "@/components/sortable-header";
 import {
   BulkSelectionProvider,
   BulkSelectCheckbox,
@@ -59,6 +60,30 @@ type PolicyListRow = {
 const POLICY_LIST_SELECT =
   "id, policy_number, status, issue_date, start_date, end_date, premium_gross, premium_net, risk_label, renewal_number, assigned_agent_id, broker_office_id, insurance_lines(name_el), carriers(name), broker_offices(name), agency_users!policies_assigned_agent_id_fkey(full_name), clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name))";
 
+// Maps a `sort` URL param to the underlying column to order by. Columns
+// from a joined table use PostgREST's embedded-resource order syntax
+// (`"table(column)"` passed straight through as the order column) — this
+// orders the *parent* rows by the related row's value. Supabase-js's own
+// `{ referencedTable }` option looks like the right tool but actually
+// orders rows *within* a to-many embed, not the parent by a to-one
+// relation, so it's deliberately not used here (verified against
+// production data before relying on it).
+const SORTABLE_COLUMNS: Record<string, { column: string }> = {
+  risk: { column: "risk_label" },
+  q: { column: "policy_number" },
+  client: { column: "clients(display_name)" },
+  line: { column: "insurance_lines(name_el)" },
+  carrier: { column: "carriers(name)" },
+  agent: { column: "agency_users(full_name)" },
+  broker_office: { column: "broker_offices(name)" },
+  issue_date: { column: "issue_date" },
+  start_date: { column: "start_date" },
+  end_date: { column: "end_date" },
+  premium_gross: { column: "premium_gross" },
+  premium_net: { column: "premium_net" },
+  status: { column: "status" },
+};
+
 export default async function PoliciesPage({
   searchParams,
 }: {
@@ -78,6 +103,12 @@ export default async function PoliciesPage({
     end_to?: string;
     premium_from?: string;
     premium_to?: string;
+    issue_from?: string;
+    issue_to?: string;
+    premium_net_from?: string;
+    premium_net_to?: string;
+    sort?: string;
+    dir?: string;
     per_page?: string;
     page?: string;
     all?: string;
@@ -123,7 +154,12 @@ export default async function PoliciesPage({
       filters.endFrom ||
       filters.endTo ||
       filters.premiumFrom ||
-      filters.premiumTo,
+      filters.premiumTo ||
+      filters.issueFrom ||
+      filters.issueTo ||
+      filters.premiumNetFrom ||
+      filters.premiumNetTo ||
+      filters.sort,
   );
   const showAll = sp.all === "1";
   const useRecent = !hasAnyFilter && !showAll;
@@ -145,9 +181,14 @@ export default async function PoliciesPage({
       .select(POLICY_LIST_SELECT, { count: "exact" })
       .eq("is_current_term", true);
 
-    query = filters.expiring
-      ? query.order("end_date", { ascending: true })
-      : query.order("created_at", { ascending: false });
+    const sortable = filters.sort ? SORTABLE_COLUMNS[filters.sort] : undefined;
+    if (sortable) {
+      query = query.order(sortable.column, { ascending: filters.dir !== "desc" });
+    } else if (filters.expiring) {
+      query = query.order("end_date", { ascending: true });
+    } else {
+      query = query.order("created_at", { ascending: false });
+    }
 
     query = applyPolicyFilters(query, filters);
 
@@ -175,6 +216,10 @@ export default async function PoliciesPage({
   if (filters.endTo) exportParams.set("end_to", filters.endTo);
   if (filters.premiumFrom) exportParams.set("premium_from", filters.premiumFrom);
   if (filters.premiumTo) exportParams.set("premium_to", filters.premiumTo);
+  if (filters.issueFrom) exportParams.set("issue_from", filters.issueFrom);
+  if (filters.issueTo) exportParams.set("issue_to", filters.issueTo);
+  if (filters.premiumNetFrom) exportParams.set("premium_net_from", filters.premiumNetFrom);
+  if (filters.premiumNetTo) exportParams.set("premium_net_to", filters.premiumNetTo);
 
   return (
     <div className="flex flex-col gap-6">
@@ -200,6 +245,10 @@ export default async function PoliciesPage({
               endTo={filters.endTo}
               premiumFrom={filters.premiumFrom}
               premiumTo={filters.premiumTo}
+              issueFrom={filters.issueFrom}
+              issueTo={filters.issueTo}
+              premiumNetFrom={filters.premiumNetFrom}
+              premiumNetTo={filters.premiumNetTo}
               agents={agents?.map((a) => ({ id: a.id, label: a.full_name }))}
               brokerOffices={(brokerOffices ?? []).map((b) => ({ id: b.id, label: b.name }))}
             />
@@ -223,19 +272,45 @@ export default async function PoliciesPage({
               <TableHead className="w-8">
                 <BulkSelectAllCheckbox ids={(policies ?? []).map((p) => p.id)} />
               </TableHead>
-              <TableHead>Χαρακτ/κό</TableHead>
-              <TableHead>Πελάτης</TableHead>
-              <TableHead>Αριθμός</TableHead>
-              <TableHead>Κλάδος</TableHead>
-              <TableHead>Εταιρεία</TableHead>
-              <TableHead>Συνεργάτης</TableHead>
-              <TableHead>Γραφείο</TableHead>
-              <TableHead>Έκδοση</TableHead>
-              <TableHead>Έναρξη</TableHead>
-              <TableHead>Λήξη</TableHead>
-              <TableHead>Μικτά</TableHead>
-              <TableHead>Καθαρά</TableHead>
-              <TableHead>Κατάσταση</TableHead>
+              <TableHead>
+                <SortableHeader sortKey="risk" label="Χαρακτ/κό" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="client" label="Πελάτης" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="q" label="Αριθμός" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="line" label="Κλάδος" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="carrier" label="Εταιρεία" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="agent" label="Συνεργάτης" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="broker_office" label="Γραφείο" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="issue_date" label="Έκδοση" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="start_date" label="Έναρξη" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="end_date" label="Λήξη" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="premium_gross" label="Μικτά" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="premium_net" label="Καθαρά" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="status" label="Κατάσταση" />
+              </TableHead>
               <TableHead className="w-8" />
             </TableRow>
             <TableRow>
@@ -441,6 +516,12 @@ export default async function PoliciesPage({
               end_to: filters.endTo,
               premium_from: filters.premiumFrom,
               premium_to: filters.premiumTo,
+              issue_from: filters.issueFrom,
+              issue_to: filters.issueTo,
+              premium_net_from: filters.premiumNetFrom,
+              premium_net_to: filters.premiumNetTo,
+              sort: filters.sort,
+              dir: filters.dir,
               per_page: sp.per_page,
               all: showAll ? "1" : undefined,
             }}

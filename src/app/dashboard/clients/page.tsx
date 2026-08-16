@@ -24,6 +24,7 @@ import {
 import { deactivateClients } from "./actions";
 import { QuickView, QuickViewField } from "@/components/quick-view";
 import { ClickableRow } from "@/components/clickable-row";
+import { SortableHeader } from "@/components/sortable-header";
 import { AdvancedSearchSheet } from "./_components/advanced-search-sheet";
 import { PageSizeSelect } from "./_components/page-size-select";
 import { parseClientFilters, applyClientFilters, needsIndividualJoin, parsePerPage } from "./filters";
@@ -43,6 +44,19 @@ type ClientListRow = {
   client_individuals: { first_name: string; last_name: string } | null;
   client_legal_entities: { company_name: string } | null;
   agency_users: { full_name: string } | null;
+};
+
+// See policies/page.tsx SORTABLE_COLUMNS for why joined columns use the
+// `"table(column)"` embed-path form instead of supabase-js's
+// `{ referencedTable }` option.
+const SORTABLE_COLUMNS: Record<string, { column: string }> = {
+  code: { column: "client_code" },
+  name: { column: "display_name" },
+  afm: { column: "afm" },
+  phone: { column: "phone_mobile" },
+  city: { column: "address_city" },
+  agent: { column: "agency_users(full_name)" },
+  status: { column: "is_active" },
 };
 
 function formatAddress(client: ClientListRow): string {
@@ -68,6 +82,8 @@ export default async function ClientsPage({
     dob_from?: string;
     dob_to?: string;
     show_inactive?: string;
+    sort?: string;
+    dir?: string;
     per_page?: string;
     page?: string;
     all?: string;
@@ -112,7 +128,8 @@ export default async function ClientsPage({
       filters.clientType ||
       filters.dobFrom ||
       filters.dobTo ||
-      filters.showInactive,
+      filters.showInactive ||
+      filters.sort,
   );
   const showAll = sp.all === "1";
   const useRecent = !hasAnyFilter && !showAll;
@@ -136,8 +153,12 @@ export default async function ClientsPage({
       .select(
         `id, client_code, client_type, afm, phone_mobile, phone_landline, address_street, address_number, address_city, assigned_agent_id, is_active, ${individualSelect}, client_legal_entities(company_name), agency_users!clients_assigned_agent_id_fkey(full_name)`,
         { count: "exact" },
-      )
-      .order("created_at", { ascending: false });
+      );
+
+    const sortable = filters.sort ? SORTABLE_COLUMNS[filters.sort] : undefined;
+    query = sortable
+      ? query.order(sortable.column, { ascending: filters.dir !== "desc" })
+      : query.order("created_at", { ascending: false });
 
     query = applyClientFilters(query, filters);
 
@@ -207,13 +228,27 @@ export default async function ClientsPage({
                 <TableHead className="w-8">
                   <BulkSelectAllCheckbox ids={clientIds} />
                 </TableHead>
-                <TableHead>Κωδ.</TableHead>
-                <TableHead>Ονομα / Επωνυμία</TableHead>
-                <TableHead>ΑΦΜ</TableHead>
-                <TableHead>Τηλέφωνα</TableHead>
-                <TableHead>Διεύθυνση</TableHead>
-                <TableHead>Συνεργάτης</TableHead>
-                <TableHead>Κατάσταση</TableHead>
+                <TableHead>
+                  <SortableHeader sortKey="code" label="Κωδ." />
+                </TableHead>
+                <TableHead>
+                  <SortableHeader sortKey="name" label="Ονομα / Επωνυμία" />
+                </TableHead>
+                <TableHead>
+                  <SortableHeader sortKey="afm" label="ΑΦΜ" />
+                </TableHead>
+                <TableHead>
+                  <SortableHeader sortKey="phone" label="Τηλέφωνα" />
+                </TableHead>
+                <TableHead>
+                  <SortableHeader sortKey="city" label="Διεύθυνση" />
+                </TableHead>
+                <TableHead>
+                  <SortableHeader sortKey="agent" label="Συνεργάτης" />
+                </TableHead>
+                <TableHead>
+                  <SortableHeader sortKey="status" label="Κατάσταση" />
+                </TableHead>
                 <TableHead className="w-8" />
               </TableRow>
               <TableRow>
@@ -374,6 +409,8 @@ export default async function ClientsPage({
               dob_from: filters.dobFrom,
               dob_to: filters.dobTo,
               show_inactive: filters.showInactive ? "1" : undefined,
+              sort: filters.sort,
+              dir: filters.dir,
               per_page: sp.per_page,
               all: showAll ? "1" : undefined,
             }}

@@ -17,9 +17,16 @@ import {
 } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/date";
 import { updateCallNotes } from "./actions";
+import { SortableHeader } from "@/components/sortable-header";
 
 const PAGE_SIZE = 30;
 const FILTERS_FORM_ID = "calls-filters";
+
+const SORTABLE_COLUMNS: Record<string, { column: string }> = {
+  created_at: { column: "created_at" },
+  q: { column: "phone_number" },
+  client: { column: "client_name" },
+};
 
 export default async function CallsPage({
   searchParams,
@@ -31,16 +38,33 @@ export default async function CallsPage({
     matched?: string;
     date_from?: string;
     date_to?: string;
+    notes?: string;
+    sort?: string;
+    dir?: string;
   }>;
 }) {
-  const { page: pageParam, q, client, matched, date_from: dateFrom, date_to: dateTo } = await searchParams;
+  const {
+    page: pageParam,
+    q,
+    client,
+    matched,
+    date_from: dateFrom,
+    date_to: dateTo,
+    notes,
+    sort,
+    dir,
+  } = await searchParams;
   const supabase = await createClient();
   const page = Math.max(1, Number(pageParam) || 1);
 
   let query = supabase
     .from("incoming_calls")
-    .select("id, phone_number, client_id, client_name, notes, created_at", { count: "exact" })
-    .order("created_at", { ascending: false });
+    .select("id, phone_number, client_id, client_name, notes, created_at", { count: "exact" });
+
+  const sortable = sort ? SORTABLE_COLUMNS[sort] : undefined;
+  query = sortable
+    ? query.order(sortable.column, { ascending: dir !== "desc" })
+    : query.order("created_at", { ascending: false });
 
   if (q) query = query.ilike("phone_number", `%${q}%`);
   if (client) query = query.ilike("client_name", `%${client}%`);
@@ -48,6 +72,7 @@ export default async function CallsPage({
   else if (matched === "no") query = query.is("client_id", null);
   if (dateFrom) query = query.gte("created_at", `${dateFrom}T00:00:00.000Z`);
   if (dateTo) query = query.lte("created_at", `${dateTo}T23:59:59.999Z`);
+  if (notes) query = query.ilike("notes", `%${notes}%`);
 
   const from = (page - 1) * PAGE_SIZE;
   query = query.range(from, from + PAGE_SIZE - 1);
@@ -94,10 +119,14 @@ export default async function CallsPage({
           <Label htmlFor="date_to">Έως</Label>
           <Input id="date_to" name="date_to" type="date" defaultValue={dateTo ?? ""} className="w-40" />
         </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="notes">Σημείωση</Label>
+          <Input id="notes" name="notes" defaultValue={notes ?? ""} placeholder="Αναζήτηση σημείωσης..." className="w-56" />
+        </div>
         <Button type="submit" variant="secondary" size="sm">
           Εφαρμογή φίλτρων
         </Button>
-        {(q || client || matched || dateFrom || dateTo) && (
+        {(q || client || matched || dateFrom || dateTo || notes) && (
           <Button type="button" variant="ghost" size="sm" nativeButton={false} render={<Link href="/dashboard/calls">Καθαρισμός</Link>} />
         )}
       </form>
@@ -106,9 +135,15 @@ export default async function CallsPage({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Ημ/νία</TableHead>
-              <TableHead>Τηλέφωνο</TableHead>
-              <TableHead>Πελάτης</TableHead>
+              <TableHead>
+                <SortableHeader sortKey="created_at" label="Ημ/νία" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="q" label="Τηλέφωνο" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="client" label="Πελάτης" />
+              </TableHead>
               <TableHead>Σημείωση (τι ειπώθηκε)</TableHead>
             </TableRow>
           </TableHeader>
@@ -157,7 +192,7 @@ export default async function CallsPage({
         page={page}
         totalPages={totalPages}
         basePath="/dashboard/calls"
-        searchParams={{ q, client, matched, date_from: dateFrom, date_to: dateTo }}
+        searchParams={{ q, client, matched, date_from: dateFrom, date_to: dateTo, notes, sort, dir }}
       />
     </div>
   );

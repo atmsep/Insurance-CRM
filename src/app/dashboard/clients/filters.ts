@@ -12,6 +12,8 @@ export type ClientFilters = {
   dobFrom?: string;
   dobTo?: string;
   showInactive: boolean;
+  sort?: string;
+  dir?: string;
 };
 
 type SearchParamsInput = Record<string, string | undefined>;
@@ -31,6 +33,8 @@ export function parseClientFilters(sp: SearchParamsInput): ClientFilters {
     dobFrom: sp.dob_from || undefined,
     dobTo: sp.dob_to || undefined,
     showInactive: sp.show_inactive === "1",
+    sort: sp.sort || undefined,
+    dir: sp.dir === "asc" || sp.dir === "desc" ? sp.dir : undefined,
   };
 }
 

@@ -14,6 +14,12 @@ export type PolicyFilters = {
   endTo?: string;
   premiumFrom?: string;
   premiumTo?: string;
+  issueFrom?: string;
+  issueTo?: string;
+  premiumNetFrom?: string;
+  premiumNetTo?: string;
+  sort?: string;
+  dir?: string;
 };
 
 type SearchParamsInput = Record<string, string | undefined>;
@@ -35,6 +41,12 @@ export function parsePolicyFilters(sp: SearchParamsInput): PolicyFilters {
     endTo: sp.end_to || undefined,
     premiumFrom: sp.premium_from || undefined,
     premiumTo: sp.premium_to || undefined,
+    issueFrom: sp.issue_from || undefined,
+    issueTo: sp.issue_to || undefined,
+    premiumNetFrom: sp.premium_net_from || undefined,
+    premiumNetTo: sp.premium_net_to || undefined,
+    sort: sp.sort || undefined,
+    dir: sp.dir === "asc" || sp.dir === "desc" ? sp.dir : undefined,
   };
 }
 
@@ -72,6 +84,10 @@ export function applyPolicyFilters<T extends FilterableQuery<T>>(query: T, filte
   if (filters.endTo) q = q.lte("end_date", filters.endTo);
   if (filters.premiumFrom) q = q.gte("premium_gross", Number(filters.premiumFrom));
   if (filters.premiumTo) q = q.lte("premium_gross", Number(filters.premiumTo));
+  if (filters.issueFrom) q = q.gte("issue_date", filters.issueFrom);
+  if (filters.issueTo) q = q.lte("issue_date", filters.issueTo);
+  if (filters.premiumNetFrom) q = q.gte("premium_net", Number(filters.premiumNetFrom));
+  if (filters.premiumNetTo) q = q.lte("premium_net", Number(filters.premiumNetTo));
   return q;
 }
 

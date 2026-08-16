@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 import { ListPageHeader } from "@/components/list-page-header";
 import { FilterSelect } from "@/components/ui/filter-select";
@@ -13,6 +14,7 @@ import {
 import { BulkStatusBar } from "@/components/bulk-status-bar";
 import { bulkUpdateTicketStatus } from "./actions";
 import { ClickableRow } from "@/components/clickable-row";
+import { SortableHeader } from "@/components/sortable-header";
 import {
   Table,
   TableBody,
@@ -37,6 +39,17 @@ const PRIORITY_LABELS: Record<string, string> = {
 
 const PAGE_SIZE = 20;
 
+// See policies/page.tsx SORTABLE_COLUMNS for why joined columns use the
+// `"table(column)"` embed-path form instead of supabase-js's
+// `{ referencedTable }` option.
+const SORTABLE_COLUMNS: Record<string, { column: string }> = {
+  client: { column: "clients(display_name)" },
+  subject: { column: "subject" },
+  priority: { column: "priority" },
+  created_at: { column: "created_at" },
+  status: { column: "status" },
+};
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }
@@ -44,22 +57,47 @@ function formatDate(value: string) {
 export default async function TicketsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; open?: string; page?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    open?: string;
+    assigned_to?: string;
+    priority?: string;
+    resolution?: string;
+    sort?: string;
+    dir?: string;
+    page?: string;
+  }>;
 }) {
-  const { status, open, page: pageParam } = await searchParams;
+  const {
+    status,
+    open,
+    assigned_to: assignedTo,
+    priority,
+    resolution,
+    sort,
+    dir,
+    page: pageParam,
+  } = await searchParams;
   const supabase = await createClient();
   const page = Math.max(1, Number(pageParam) || 1);
 
   let query = supabase
     .from("client_tickets")
     .select(
-      "id, client_id, subject, status, priority, created_at, assigned_to, resolution_notes, clients(client_individuals(first_name,last_name), client_legal_entities(company_name))",
+      "id, client_id, subject, status, priority, created_at, assigned_to, resolution_notes, clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name))",
       { count: "exact" },
-    )
-    .order("created_at", { ascending: false });
+    );
+
+  const sortable = sort ? SORTABLE_COLUMNS[sort] : undefined;
+  query = sortable
+    ? query.order(sortable.column, { ascending: dir !== "desc" })
+    : query.order("created_at", { ascending: false });
 
   if (status) query = query.eq("status", status);
   else if (open) query = query.not("status", "in", "(resolved,closed)");
+  if (assignedTo) query = query.eq("assigned_to", assignedTo);
+  if (priority) query = query.eq("priority", priority);
+  if (resolution) query = query.ilike("resolution_notes", `%${resolution}%`);
 
   const from = (page - 1) * PAGE_SIZE;
   query = query.range(from, from + PAGE_SIZE - 1);
@@ -73,6 +111,9 @@ export default async function TicketsPage({
   const exportParams = new URLSearchParams();
   if (status) exportParams.set("status", status);
   if (open) exportParams.set("open", open);
+  if (assignedTo) exportParams.set("assigned_to", assignedTo);
+  if (priority) exportParams.set("priority", priority);
+  if (resolution) exportParams.set("resolution", resolution);
 
   return (
     <div className="flex flex-col gap-6">
@@ -98,20 +139,45 @@ export default async function TicketsPage({
               <TableHead className="w-8">
                 <BulkSelectAllCheckbox ids={(tickets ?? []).map((t) => t.id)} />
               </TableHead>
-              <TableHead>Πελάτης</TableHead>
-              <TableHead>Θέμα</TableHead>
+              <TableHead>
+                <SortableHeader sortKey="client" label="Πελάτης" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="subject" label="Θέμα" />
+              </TableHead>
               <TableHead>Ανάθεση</TableHead>
-              <TableHead>Προτεραιότητα</TableHead>
-              <TableHead>Ημ/νία</TableHead>
-              <TableHead>Κατάσταση</TableHead>
+              <TableHead>
+                <SortableHeader sortKey="priority" label="Προτεραιότητα" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="created_at" label="Ημ/νία" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader sortKey="status" label="Κατάσταση" />
+              </TableHead>
               <TableHead>Περιγραφή διεκπεραίωσης</TableHead>
             </TableRow>
             <TableRow>
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
-              <TableHead className="pb-2" />
-              <TableHead className="pb-2" />
-              <TableHead className="pb-2" />
+              <TableHead className="pb-2">
+                <FilterSelect
+                  form="ticket-filters"
+                  name="assigned_to"
+                  defaultValue={assignedTo ?? ""}
+                  allLabel="Όλοι"
+                  options={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
+                />
+              </TableHead>
+              <TableHead className="pb-2">
+                <FilterSelect
+                  form="ticket-filters"
+                  name="priority"
+                  defaultValue={priority ?? ""}
+                  allLabel="Όλες"
+                  options={Object.entries(PRIORITY_LABELS).map(([value, label]) => ({ id: value, label }))}
+                />
+              </TableHead>
               <TableHead className="pb-2" />
               <TableHead className="pb-2">
                 <FilterSelect
@@ -122,7 +188,15 @@ export default async function TicketsPage({
                   options={Object.entries(TICKET_STATUS_LABELS).map(([value, label]) => ({ id: value, label }))}
                 />
               </TableHead>
-              <TableHead className="pb-2" />
+              <TableHead className="pb-2">
+                <Input
+                  form="ticket-filters"
+                  name="resolution"
+                  placeholder="Περιγραφή..."
+                  defaultValue={resolution ?? ""}
+                  className="h-7 text-xs"
+                />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -200,7 +274,15 @@ export default async function TicketsPage({
           page={page}
           totalPages={totalPages}
           basePath="/dashboard/tickets"
-          searchParams={{ status, open }}
+          searchParams={{
+            status,
+            open,
+            assigned_to: assignedTo,
+            priority,
+            resolution,
+            sort,
+            dir,
+          }}
         />
       </form>
     </div>
