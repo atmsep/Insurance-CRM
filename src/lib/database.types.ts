@@ -27,6 +27,7 @@ export type ReferralRewardStatus = "pending" | "paid" | "cancelled";
 export type ReferralRewardCalcType = "percent" | "fixed";
 export type ReferralRewardSource = "auto" | "manual";
 export type CommissionDirection = "incoming" | "outgoing";
+export type PolicyMovementKind = "policy" | "renewal" | "endorsement" | "cancellation";
 export type ClaimStatus =
   | "reported"
   | "under_review"
@@ -352,6 +353,7 @@ export interface Database {
           cancelled_by: string | null;
           cancelled_at: string | null;
           cancellation_reason: string | null;
+          movement_id: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["policy_installments"]["Row"]> & {
           policy_id: string;
@@ -376,12 +378,46 @@ export interface Database {
           reversed_at: string | null;
           reversal_reason: string | null;
           created_at: string;
+          cheque_bank: string | null;
+          cheque_number: string | null;
+          cheque_due_date: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["installment_payments"]["Row"]> & {
           installment_id: string;
           amount: number;
         };
         Update: Partial<Database["public"]["Tables"]["installment_payments"]["Row"]>;
+      };
+      policy_movements: {
+        Row: {
+          id: string;
+          policy_id: string;
+          kind: PolicyMovementKind;
+          document_number: string | null;
+          application_number: string | null;
+          issue_date: string;
+          start_date: string;
+          end_date: string;
+          premium_net: number | null;
+          premium_gross: number;
+          insurance_package: string | null;
+          description: string | null;
+          outgoing_agent_id: string | null;
+          notes: string | null;
+          premium_remitted_at: string | null;
+          outgoing_commission_remitted_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["policy_movements"]["Row"]> & {
+          policy_id: string;
+          kind: PolicyMovementKind;
+          start_date: string;
+          end_date: string;
+          premium_gross: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["policy_movements"]["Row"]>;
       };
       incoming_calls: {
         Row: {
@@ -526,6 +562,9 @@ export interface Database {
           period: string | null;
           direction: CommissionDirection;
           payee_id: string | null;
+          reference_rate_percent: number | null;
+          reference_amount: number | null;
+          is_manual_override: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -553,6 +592,7 @@ export interface Database {
           paid_at: string | null;
           notes: string | null;
           source: ReferralRewardSource;
+          policy_movement_id: string | null;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -621,6 +661,24 @@ export interface Database {
           default_commission_percent: number;
         };
         Update: Partial<Database["public"]["Tables"]["carrier_commission_rates"]["Row"]>;
+      };
+      carrier_commission_defaults: {
+        Row: {
+          id: string;
+          carrier_id: string;
+          insurance_line_id: string;
+          default_percent: number;
+          valid_from: string;
+          valid_to: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["carrier_commission_defaults"]["Row"]> & {
+          carrier_id: string;
+          insurance_line_id: string;
+          default_percent: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["carrier_commission_defaults"]["Row"]>;
       };
       commission_agreements: {
         Row: {

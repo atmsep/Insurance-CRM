@@ -8,6 +8,7 @@ import { sendEmail } from "@/lib/email";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
 import type { PaymentFrequency } from "@/lib/database.types";
 import { POLICY_STATUS_LABELS } from "./policy-labels";
+import { createMovementForPolicy } from "./movements-actions";
 
 export type PolicyFormState = { error: string; field?: string } | undefined;
 export type SendEmailState = { error: string } | { success: string } | undefined;
@@ -119,6 +120,19 @@ function vehicleDetailsPayload(formData: FormData) {
   };
 }
 
+// Permanent-policy model (Profia rebuild, see the plan): a policy created
+// or renewed from here on lives as ONE policies row for its whole life —
+// a renewal UPDATEs that same row instead of inserting a new one, and
+// records the event as a policy_movements row instead. Renewal chains that
+// already existed before this shipped (previous_policy_id/policy_group_id,
+// multiple policies rows) are left completely alone and keep behaving
+// exactly as they always have — EXCEPT the one renewal that happens to be
+// their first one after this change ships, which "locks" the chain: it
+// backfills one movement capturing the row's current (about-to-be-
+// overwritten) state, re-parents its existing installments onto that
+// movement, and from then on the row is permanent too. See
+// getPolicyMovements for how the still-untouched older ancestors keep
+// showing up as read-only synthetic history either way.
 export async function createPolicy(
   _prevState: PolicyFormState,
   formData: FormData,
@@ -143,19 +157,6 @@ export async function createPolicy(
   if (!line) return { error: "Άγνωστος κλάδος ασφάλισης." };
 
   const renewFromPolicyId = str(formData, "renew_from_policy_id");
-  const policyGroupId = str(formData, "policy_group_id");
-
-  let renewalNumber = 1;
-  let previousTerm: { renewal_number: number; status: string; status_auto_managed: boolean } | null = null;
-  if (renewFromPolicyId) {
-    const { data } = await supabase
-      .from("policies")
-      .select("renewal_number, status, status_auto_managed")
-      .eq("id", renewFromPolicyId)
-      .single();
-    previousTerm = data;
-    renewalNumber = (previousTerm?.renewal_number ?? 1) + 1;
-  }
 
   const assignedAgentId = str(formData, "assigned_agent_id") ?? agencyUser.id;
   const brokerOfficeId = str(formData, "broker_office_id");
@@ -163,102 +164,175 @@ export async function createPolicy(
   const premiumGross = num(formData, "premium_gross") ?? 0;
   const paymentFrequency = (str(formData, "payment_frequency") ?? "annual") as PaymentFrequency;
   const startDate = str(formData, "start_date") ?? "";
+  const endDate = str(formData, "end_date") ?? "";
+  const policyNumber = str(formData, "policy_number") ?? "";
 
-  const { data: policy, error: policyError } = await supabase
-    .from("policies")
-    .insert({
-      policy_number: str(formData, "policy_number") ?? "",
-      client_id: clientId,
-      carrier_id: carrierId,
-      insurance_line_id: insuranceLineId,
-      assigned_agent_id: assignedAgentId,
-      broker_office_id: brokerOfficeId,
-      start_date: startDate,
-      end_date: str(formData, "end_date") ?? "",
-      premium_gross: premiumGross,
-      premium_net: premiumNet,
-      taxes_fees: num(formData, "taxes_fees"),
-      payment_frequency: paymentFrequency,
-      status: "active",
-      created_by: agencyUser.id,
-      ...(renewFromPolicyId
-        ? {
-            previous_policy_id: renewFromPolicyId,
-            policy_group_id: policyGroupId,
-            is_renewal: true,
-            renewal_number: renewalNumber,
-          }
-        : {}),
-    })
-    .select("id")
-    .single();
+  let policyId: string;
+  let renewalNumber = 1;
 
-  if (policyError?.code === "23505") {
-    return {
-      error: "Υπάρχει ήδη συμβόλαιο με αυτόν τον αριθμό, την ίδια εταιρεία και ημερομηνία έναρξης.",
-      field: "policy_number",
-    };
-  }
-  if (policyError || !policy) {
-    return { error: "Σφάλμα κατά τη δημιουργία συμβολαίου: " + (policyError?.message ?? "") };
-  }
-
-  // The new term is now the current one — the term it renewed no longer is,
-  // so it drops out of policy lists (which filter on is_current_term) while
-  // remaining reachable through the renewal history on the policy detail
-  // page. Also expire the old term's status immediately (rather than
-  // leaving it stale until tonight's automatic recompute) — but only if
-  // it's still auto-managed and not already in a terminal manual state, so
-  // a manually-set 'cancelled'/'lapsed' term is never silently overwritten.
   if (renewFromPolicyId) {
-    const shouldExpireOldTerm =
-      previousTerm?.status_auto_managed !== false &&
-      previousTerm?.status !== "cancelled" &&
-      previousTerm?.status !== "lapsed";
+    const { data: source } = await supabase
+      .from("policies")
+      .select(
+        "id, policy_number, renewal_number, status, status_auto_managed, start_date, end_date, premium_net, premium_gross, assigned_agent_id, created_by",
+      )
+      .eq("id", renewFromPolicyId)
+      .single();
+    if (!source) return { error: "Δεν βρέθηκε το συμβόλαιο προς ανανέωση." };
 
-    await supabase
+    renewalNumber = source.renewal_number + 1;
+    policyId = source.id;
+
+    const { count: existingMovements } = await supabase
+      .from("policy_movements")
+      .select("id", { count: "exact", head: true })
+      .eq("policy_id", source.id);
+
+    if (!existingMovements) {
+      // Legacy chain, first renewal since this feature shipped — backfill
+      // just the LEDGER ENTRY for the row's current (soon to be
+      // overwritten) state, and re-parent its already-existing
+      // installments onto it. Deliberately does NOT fabricate new
+      // commission rows here — real historical commissions for this
+      // policy_id already exist from whenever this term was originally
+      // issued/renewed (unlinked to any movement, exactly as before this
+      // feature), and duplicating them would double-count.
+      const { data: backfillMovement } = await supabase
+        .from("policy_movements")
+        .insert({
+          policy_id: source.id,
+          kind: source.renewal_number > 1 ? "renewal" : "policy",
+          document_number: `${source.policy_number}/${source.renewal_number}`,
+          issue_date: source.start_date,
+          start_date: source.start_date,
+          end_date: source.end_date,
+          premium_net: source.premium_net,
+          premium_gross: source.premium_gross,
+          outgoing_agent_id: source.assigned_agent_id,
+          created_by: source.created_by ?? agencyUser.id,
+        })
+        .select("id")
+        .single();
+
+      if (backfillMovement) {
+        await supabase
+          .from("policy_installments")
+          .update({ movement_id: backfillMovement.id })
+          .eq("policy_id", source.id)
+          .is("movement_id", null);
+      }
+    }
+
+    const { error: updateError } = await supabase
       .from("policies")
       .update({
-        is_current_term: false,
-        ...(shouldExpireOldTerm ? { status: "expired" } : {}),
+        policy_number: policyNumber,
+        carrier_id: carrierId,
+        insurance_line_id: insuranceLineId,
+        assigned_agent_id: assignedAgentId,
+        broker_office_id: brokerOfficeId,
+        start_date: startDate,
+        end_date: endDate,
+        premium_gross: premiumGross,
+        premium_net: premiumNet,
+        taxes_fees: num(formData, "taxes_fees"),
+        payment_frequency: paymentFrequency,
+        renewal_number: renewalNumber,
+        is_renewal: true,
+        status: "active",
+        status_auto_managed: true,
       })
-      .eq("id", renewFromPolicyId);
+      .eq("id", policyId);
+    if (updateError) {
+      return { error: "Σφάλμα κατά την ανανέωση συμβολαίου: " + updateError.message };
+    }
+  } else {
+    const { data: policy, error: policyError } = await supabase
+      .from("policies")
+      .insert({
+        policy_number: policyNumber,
+        client_id: clientId,
+        carrier_id: carrierId,
+        insurance_line_id: insuranceLineId,
+        assigned_agent_id: assignedAgentId,
+        broker_office_id: brokerOfficeId,
+        start_date: startDate,
+        end_date: endDate,
+        premium_gross: premiumGross,
+        premium_net: premiumNet,
+        taxes_fees: num(formData, "taxes_fees"),
+        payment_frequency: paymentFrequency,
+        status: "active",
+        created_by: agencyUser.id,
+      })
+      .select("id")
+      .single();
+
+    if (policyError?.code === "23505") {
+      return {
+        error: "Υπάρχει ήδη συμβόλαιο με αυτόν τον αριθμό, την ίδια εταιρεία και ημερομηνία έναρξης.",
+        field: "policy_number",
+      };
+    }
+    if (policyError || !policy) {
+      return { error: "Σφάλμα κατά τη δημιουργία συμβολαίου: " + (policyError?.message ?? "") };
+    }
+    policyId = policy.id;
   }
 
   let branchError: string | null = null;
 
   if (line.requires_vehicle_details) {
-    const { error } = await supabase.from("policy_vehicle_details").insert({
-      policy_id: policy.id,
-      ...vehicleDetailsPayload(formData),
-    });
+    const payload = vehicleDetailsPayload(formData);
+    const { error } = renewFromPolicyId
+      ? await supabase.from("policy_vehicle_details").update(payload).eq("policy_id", policyId)
+      : await supabase.from("policy_vehicle_details").insert({ policy_id: policyId, ...payload });
     branchError = error?.message ?? null;
   } else if (line.requires_property_details) {
-    const { error } = await supabase.from("policy_property_details").insert({
-      policy_id: policy.id,
+    const payload = {
       address_street: str(formData, "address_street"),
       address_city: str(formData, "address_city"),
       square_meters: num(formData, "square_meters"),
       commercial_value: num(formData, "commercial_value"),
-    });
+    };
+    const { error } = renewFromPolicyId
+      ? await supabase.from("policy_property_details").update(payload).eq("policy_id", policyId)
+      : await supabase.from("policy_property_details").insert({ policy_id: policyId, ...payload });
     branchError = error?.message ?? null;
   } else if (line.requires_life_health_details) {
-    const { error } = await supabase.from("policy_life_health_details").insert({
-      policy_id: policy.id,
+    const payload = {
       coverage_type: str(formData, "coverage_type"),
       sum_insured: num(formData, "sum_insured"),
-    });
+    };
+    const { error } = renewFromPolicyId
+      ? await supabase.from("policy_life_health_details").update(payload).eq("policy_id", policyId)
+      : await supabase.from("policy_life_health_details").insert({ policy_id: policyId, ...payload });
     branchError = error?.message ?? null;
   }
 
   if (branchError) {
-    await supabase.from("policies").delete().eq("id", policy.id);
+    if (!renewFromPolicyId) await supabase.from("policies").delete().eq("id", policyId);
     return { error: "Σφάλμα κατά την αποθήκευση στοιχείων κλάδου: " + branchError };
   }
 
+  await createMovementForPolicy(supabase, {
+    policyId,
+    kind: renewFromPolicyId ? "renewal" : "policy",
+    startDate,
+    endDate,
+    premiumNet,
+    premiumGross,
+    documentNumber: policyNumber,
+    carrierId,
+    insuranceLineId,
+    brokerOfficeId,
+    assignedAgentId,
+    createdBy: agencyUser.id,
+  });
+
   await logActivity(supabase, {
     entityType: "policy",
-    entityId: policy.id,
+    entityId: policyId,
     action: renewFromPolicyId ? "renewed" : "created",
     description: renewFromPolicyId
       ? `Ανανεώθηκε το συμβόλαιο (περίοδος #${renewalNumber}).`
@@ -267,8 +341,8 @@ export async function createPolicy(
   });
 
   revalidatePath("/dashboard/policies");
-  if (renewFromPolicyId) revalidatePath(`/dashboard/policies/${renewFromPolicyId}`);
-  redirect(`/dashboard/policies/${policy.id}?toast=${encodeURIComponent("Το συμβόλαιο δημιουργήθηκε.")}`);
+  revalidatePath(`/dashboard/policies/${policyId}`);
+  redirect(`/dashboard/policies/${policyId}?toast=${encodeURIComponent("Το συμβόλαιο δημιουργήθηκε.")}`);
 }
 
 export async function updatePolicyStatus(policyId: string, status: string) {

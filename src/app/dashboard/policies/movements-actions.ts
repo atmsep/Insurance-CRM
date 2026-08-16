@@ -1,0 +1,712 @@
+"use server";
+
+import { revalidatePath, updateTag } from "next/cache";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
+import { requireAgencyUser } from "@/lib/dal";
+import { logActivity } from "@/lib/activity-log";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { installmentRemaining, isBillablePolicyStatus } from "./balance";
+import { POLICY_MOVEMENT_KIND_LABELS } from "./movement-labels";
+import type { PolicyMovementKind } from "@/lib/database.types";
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseClient>>;
+
+export type MovementRow = {
+  id: string;
+  // Real policy_movements rows can be opened (Απόδειξη dialog); synthetic
+  // rows reconstructed from a legacy renewal chain (see module doc below)
+  // are history-only — this app never had per-term installments/commissions
+  // to show for them individually, only the flat total the term's policy
+  // row already carried.
+  isReal: boolean;
+  kind: PolicyMovementKind;
+  kindLabel: string;
+  documentNumber: string | null;
+  agentName: string | null;
+  startDate: string;
+  endDate: string;
+  premiumNet: number | null;
+  premiumGross: number;
+  outstanding: number;
+  producedAt: string;
+};
+
+type LegacyTermRow = {
+  id: string;
+  policy_number: string;
+  renewal_number: number;
+  status: string;
+  start_date: string;
+  end_date: string;
+  premium_net: number | null;
+  premium_gross: number;
+  previous_policy_id: string | null;
+  created_at: string;
+  agency_users: { full_name: string } | { full_name: string }[] | null;
+};
+
+// Legacy renewal chains (policy_group_id/previous_policy_id, pre-dating
+// this feature) are never migrated into policy_movements — see the plan's
+// "Παραμένουν αναλλοίωτα" section. Instead, each ancestor term is shown as
+// a read-only synthetic movement, computed the same way the old (removed)
+// movements tab derived "kind" from renewal_number/status. If the CURRENT
+// policy row has no real movement yet either (either a never-renewed
+// pre-feature policy, or a legacy chain that hasn't been renewed again
+// since this shipped), its own current state is synthesized too — once it
+// gets its first real movement (createPolicy backfills one on first
+// renewal, see there), this stops including the current row itself.
+// Synthesizes exactly ONE term row (no chain-walking) — the building block
+// both getLegacyAncestorMovements (walks previous_policy_id) and
+// getPolicyMovements (the current row alone, when it has no real movement
+// of its own yet) are built from, so a term is never synthesized twice.
+async function synthesizeTermMovement(
+  supabase: SupabaseServerClient,
+  termId: string,
+): Promise<{ row: MovementRow; previousPolicyId: string | null } | null> {
+  const termResult = await supabase
+    .from("policies")
+    .select(
+      "id, policy_number, renewal_number, status, start_date, end_date, premium_net, premium_gross, previous_policy_id, created_at, agency_users!policies_assigned_agent_id_fkey(full_name)",
+    )
+    .eq("id", termId)
+    .maybeSingle();
+  const term = termResult.data as unknown as LegacyTermRow | null;
+  if (!term) return null;
+
+  const { data: installments } = await supabase
+    .from("policy_installments")
+    .select("amount, paid_amount")
+    .eq("policy_id", term.id)
+    .is("movement_id", null);
+
+  const paid = (installments ?? []).reduce((sum, i) => sum + Math.min(i.paid_amount ?? 0, i.amount), 0);
+  const totalAmount = (installments ?? []).reduce((sum, i) => sum + i.amount, 0);
+  const outstanding = isBillablePolicyStatus(term.status)
+    ? Math.max((totalAmount || term.premium_gross) - paid, 0)
+    : 0;
+
+  const kind: PolicyMovementKind =
+    term.status === "cancelled" ? "cancellation" : term.renewal_number > 1 ? "renewal" : "policy";
+
+  return {
+    row: {
+      id: term.id,
+      isReal: false,
+      kind,
+      kindLabel: POLICY_MOVEMENT_KIND_LABELS[kind],
+      documentNumber: `${term.policy_number}/${term.renewal_number}`,
+      agentName: (term.agency_users as unknown as { full_name: string } | null)?.full_name ?? null,
+      startDate: term.start_date,
+      endDate: term.end_date,
+      premiumNet: term.premium_net,
+      premiumGross: term.premium_gross,
+      outstanding,
+      producedAt: term.created_at,
+    },
+    previousPolicyId: term.previous_policy_id,
+  };
+}
+
+async function getLegacyAncestorMovements(
+  supabase: SupabaseServerClient,
+  policyId: string,
+): Promise<MovementRow[]> {
+  const rows: MovementRow[] = [];
+  let cursor: string | null = policyId;
+  const visited = new Set<string>();
+
+  while (cursor && !visited.has(cursor)) {
+    visited.add(cursor);
+    const result = await synthesizeTermMovement(supabase, cursor);
+    if (!result) break;
+    rows.push(result.row);
+    cursor = result.previousPolicyId;
+  }
+
+  return rows;
+}
+
+export async function getPolicyMovements(policyId: string): Promise<MovementRow[]> {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const { data: policy } = await supabase
+    .from("policies")
+    .select("id, previous_policy_id, status")
+    .eq("id", policyId)
+    .single();
+  if (!policy) return [];
+
+  const { data: movements } = await supabase
+    .from("policy_movements")
+    .select(
+      "id, kind, document_number, start_date, end_date, premium_net, premium_gross, created_at, outgoing_agent_id, agency_users!policy_movements_outgoing_agent_id_fkey(full_name)",
+    )
+    .eq("policy_id", policyId)
+    .order("created_at", { ascending: true });
+
+  const realMovements = movements ?? [];
+
+  let installmentsByMovement = new Map<string, { amount: number; paid_amount: number | null }[]>();
+  if (realMovements.length > 0) {
+    const { data: installments } = await supabase
+      .from("policy_installments")
+      .select("movement_id, amount, paid_amount")
+      .in(
+        "movement_id",
+        realMovements.map((m) => m.id),
+      );
+    installmentsByMovement = new Map();
+    for (const i of installments ?? []) {
+      if (!i.movement_id) continue;
+      const list = installmentsByMovement.get(i.movement_id) ?? [];
+      list.push(i);
+      installmentsByMovement.set(i.movement_id, list);
+    }
+  }
+
+  const realRows: MovementRow[] = realMovements.map((m) => {
+    const insts = installmentsByMovement.get(m.id) ?? [];
+    const paid = insts.reduce((sum, i) => sum + Math.min(i.paid_amount ?? 0, i.amount), 0);
+    const total = insts.reduce((sum, i) => sum + i.amount, 0);
+    return {
+      id: m.id,
+      isReal: true,
+      kind: m.kind,
+      kindLabel: POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind,
+      documentNumber: m.document_number,
+      agentName: (m.agency_users as unknown as { full_name: string } | null)?.full_name ?? null,
+      startDate: m.start_date,
+      endDate: m.end_date,
+      premiumNet: m.premium_net,
+      premiumGross: m.premium_gross,
+      outstanding: Math.max((total || m.premium_gross) - paid, 0),
+      producedAt: m.created_at,
+    };
+  });
+
+  // Ancestors (previous_policy_id chain) are always synthetic. The current
+  // row itself is only synthesized when it has no real movement of its own
+  // yet — as soon as createPolicy backfills one on first renewal, the real
+  // row takes over.
+  const ancestorStart = policy.previous_policy_id;
+  const ancestorRows = ancestorStart
+    ? await getLegacyAncestorMovements(supabase, ancestorStart)
+    : [];
+  const currentTerm = realRows.length === 0 ? await synthesizeTermMovement(supabase, policyId) : null;
+  const currentRow = currentTerm ? [currentTerm.row] : [];
+
+  return [...ancestorRows.reverse(), ...currentRow, ...realRows].sort(
+    (a, b) => new Date(a.producedAt).getTime() - new Date(b.producedAt).getTime(),
+  );
+}
+
+export type MovementReceiptData = {
+  movement: {
+    id: string;
+    kind: PolicyMovementKind;
+    documentNumber: string | null;
+    applicationNumber: string | null;
+    issueDate: string;
+    startDate: string;
+    endDate: string;
+    premiumNet: number | null;
+    premiumGross: number;
+    insurancePackage: string | null;
+    description: string | null;
+    notes: string | null;
+    premiumRemittedAt: string | null;
+    outgoingCommissionRemittedAt: string | null;
+    outgoingAgentId: string | null;
+    outgoingAgentName: string | null;
+  };
+  incoming: {
+    id: string;
+    referenceRatePercent: number | null;
+    referenceAmount: number | null;
+    rateePercent: number | null;
+    amount: number;
+    isManualOverride: boolean;
+  } | null;
+  outgoing: {
+    id: string;
+    ratePercent: number | null;
+    amount: number;
+    isManualOverride: boolean;
+  } | null;
+  installments: {
+    id: string;
+    installmentNumber: number;
+    dueDate: string;
+    amount: number;
+    paidAmount: number | null;
+    status: string;
+  }[];
+  paymentMethods: { id: string; name: string }[];
+};
+
+export async function getMovementReceipt(movementId: string): Promise<MovementReceiptData | null> {
+  await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const { data: movement } = await supabase
+    .from("policy_movements")
+    .select(
+      "id, kind, document_number, application_number, issue_date, start_date, end_date, premium_net, premium_gross, insurance_package, description, notes, premium_remitted_at, outgoing_commission_remitted_at, outgoing_agent_id, agency_users!policy_movements_outgoing_agent_id_fkey(full_name)",
+    )
+    .eq("id", movementId)
+    .maybeSingle();
+  if (!movement) return null;
+
+  const [{ data: installments }, { data: paymentMethods }] = await Promise.all([
+    supabase
+      .from("policy_installments")
+      .select("id, installment_number, due_date, amount, paid_amount, status")
+      .eq("movement_id", movementId)
+      .order("installment_number", { ascending: true }),
+    supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
+  ]);
+
+  const installmentIds = (installments ?? []).map((i) => i.id);
+  const { data: commissions } = installmentIds.length
+    ? await supabase
+        .from("commissions")
+        .select(
+          "id, direction, reference_rate_percent, reference_amount, commission_rate_percent, commission_amount, is_manual_override",
+        )
+        .in("policy_installment_id", installmentIds)
+    : { data: [] as never[] };
+
+  const incomingRow = (commissions ?? []).find((c) => c.direction === "incoming") ?? null;
+  const outgoingRow = (commissions ?? []).find((c) => c.direction === "outgoing") ?? null;
+
+  return {
+    movement: {
+      id: movement.id,
+      kind: movement.kind,
+      documentNumber: movement.document_number,
+      applicationNumber: movement.application_number,
+      issueDate: movement.issue_date,
+      startDate: movement.start_date,
+      endDate: movement.end_date,
+      premiumNet: movement.premium_net,
+      premiumGross: movement.premium_gross,
+      insurancePackage: movement.insurance_package,
+      description: movement.description,
+      notes: movement.notes,
+      premiumRemittedAt: movement.premium_remitted_at,
+      outgoingCommissionRemittedAt: movement.outgoing_commission_remitted_at,
+      outgoingAgentId: movement.outgoing_agent_id,
+      outgoingAgentName: (movement.agency_users as unknown as { full_name: string } | null)?.full_name ?? null,
+    },
+    incoming: incomingRow
+      ? {
+          id: incomingRow.id,
+          referenceRatePercent: incomingRow.reference_rate_percent,
+          referenceAmount: incomingRow.reference_amount,
+          rateePercent: incomingRow.commission_rate_percent,
+          amount: incomingRow.commission_amount,
+          isManualOverride: incomingRow.is_manual_override,
+        }
+      : null,
+    outgoing: outgoingRow
+      ? {
+          id: outgoingRow.id,
+          ratePercent: outgoingRow.commission_rate_percent,
+          amount: outgoingRow.commission_amount,
+          isManualOverride: outgoingRow.is_manual_override,
+        }
+      : null,
+    installments: (installments ?? []).map((i) => ({
+      id: i.id,
+      installmentNumber: i.installment_number,
+      dueDate: i.due_date,
+      amount: i.amount,
+      paidAmount: i.paid_amount,
+      status: i.status,
+    })),
+    paymentMethods: paymentMethods ?? [],
+  };
+}
+
+function str(formData: FormData, key: string) {
+  const v = formData.get(key);
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+function num(formData: FormData, key: string) {
+  const v = str(formData, key);
+  return v === null ? null : Number(v);
+}
+
+// "Βάσει εταιρίας" — the carrier's own agreement-independent reference
+// rate (carrier_commission_defaults, new table, see migration 0081).
+async function getCarrierDefaultRate(
+  supabase: SupabaseServerClient,
+  carrierId: string,
+  insuranceLineId: string,
+): Promise<number | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data } = await supabase
+    .from("carrier_commission_defaults")
+    .select("default_percent")
+    .eq("carrier_id", carrierId)
+    .eq("insurance_line_id", insuranceLineId)
+    .lte("valid_from", today)
+    .or(`valid_to.is.null,valid_to.gte.${today}`)
+    .order("valid_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.default_percent ?? null;
+}
+
+// "Βάσει σύμβασης" — the actually-applied rate, resolved from the broker
+// office's negotiated commission_agreements/carrier_commission_rates
+// (unchanged from before this feature: recovered from the pre-removal
+// getCommissionRate).
+async function getContractRate(
+  supabase: SupabaseServerClient,
+  brokerOfficeId: string,
+  carrierId: string,
+  insuranceLineId: string,
+): Promise<number | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data } = await supabase
+    .from("carrier_commission_rates")
+    .select("default_commission_percent")
+    .eq("broker_office_id", brokerOfficeId)
+    .eq("carrier_id", carrierId)
+    .eq("insurance_line_id", insuranceLineId)
+    .eq("is_active", true)
+    .lte("valid_from", today)
+    .or(`valid_to.is.null,valid_to.gte.${today}`)
+    .order("valid_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.default_commission_percent ?? null;
+}
+
+// Outgoing rates are keyed to commission_payees, not agency_users directly
+// — every agency_users row is mirrored 1:1 into commission_payees by
+// syncPayeeForAgencyUser (settings/actions.ts), so this just follows that
+// link.
+async function getPayeeIdForAgent(supabase: SupabaseServerClient, agentId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("commission_payees")
+    .select("id")
+    .eq("agency_user_id", agentId)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+async function getOutgoingRate(
+  supabase: SupabaseServerClient,
+  payeeId: string,
+  carrierId: string,
+  insuranceLineId: string,
+): Promise<number | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data } = await supabase
+    .from("carrier_commission_rates")
+    .select("default_commission_percent")
+    .eq("payee_id", payeeId)
+    .eq("carrier_id", carrierId)
+    .eq("insurance_line_id", insuranceLineId)
+    .eq("is_active", true)
+    .lte("valid_from", today)
+    .or(`valid_to.is.null,valid_to.gte.${today}`)
+    .order("valid_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.default_commission_percent ?? null;
+}
+
+// Creates one policy_movements row plus its installment(s) and incoming
+// (+ optional outgoing) commission — the one place that shape gets built,
+// shared by createPolicy (new business + renewal, including the
+// legacy-chain backfill movement) and createManualMovement's callers.
+// Commission insertion is skipped (not zeroed) when no rate resolves,
+// matching the old behavior — an admin can still set one by hand later.
+export async function createMovementForPolicy(
+  supabase: SupabaseServerClient,
+  params: {
+    policyId: string;
+    kind: PolicyMovementKind;
+    startDate: string;
+    endDate: string;
+    premiumNet: number | null;
+    premiumGross: number;
+    documentNumber: string | null;
+    applicationNumber?: string | null;
+    issueDate?: string;
+    carrierId: string;
+    insuranceLineId: string;
+    brokerOfficeId: string | null;
+    assignedAgentId: string;
+    createdBy: string;
+  },
+): Promise<string | null> {
+  const { data: movement, error } = await supabase
+    .from("policy_movements")
+    .insert({
+      policy_id: params.policyId,
+      kind: params.kind,
+      document_number: params.documentNumber,
+      application_number: params.applicationNumber ?? params.documentNumber,
+      issue_date: params.issueDate ?? params.startDate,
+      start_date: params.startDate,
+      end_date: params.endDate,
+      premium_net: params.premiumNet,
+      premium_gross: params.premiumGross,
+      outgoing_agent_id: params.assignedAgentId,
+      created_by: params.createdBy,
+    })
+    .select("id")
+    .single();
+  if (error || !movement) return null;
+
+  const { data: installment } = await supabase
+    .from("policy_installments")
+    .insert({
+      policy_id: params.policyId,
+      movement_id: movement.id,
+      installment_number: 1,
+      due_date: params.startDate,
+      amount: params.premiumGross,
+    })
+    .select("id")
+    .single();
+
+  const baseAmount = params.premiumNet ?? 0;
+
+  const [referenceRatePercent, contractRatePercent] = await Promise.all([
+    getCarrierDefaultRate(supabase, params.carrierId, params.insuranceLineId),
+    params.brokerOfficeId
+      ? getContractRate(supabase, params.brokerOfficeId, params.carrierId, params.insuranceLineId)
+      : Promise.resolve(null),
+  ]);
+
+  if (installment && (referenceRatePercent != null || contractRatePercent != null)) {
+    const appliedRate = contractRatePercent ?? referenceRatePercent ?? 0;
+    await supabase.from("commissions").insert({
+      policy_id: params.policyId,
+      agent_id: params.assignedAgentId,
+      carrier_id: params.carrierId,
+      policy_installment_id: installment.id,
+      commission_type: params.kind === "renewal" ? "renewal" : "new_business",
+      direction: "incoming",
+      base_amount: baseAmount,
+      commission_rate_percent: appliedRate,
+      commission_amount: Math.round(((baseAmount * appliedRate) / 100) * 100) / 100,
+      reference_rate_percent: referenceRatePercent,
+      reference_amount:
+        referenceRatePercent != null ? Math.round(((baseAmount * referenceRatePercent) / 100) * 100) / 100 : null,
+      period: params.startDate,
+    });
+  }
+
+  if (installment) {
+    const payeeId = await getPayeeIdForAgent(supabase, params.assignedAgentId);
+    if (payeeId) {
+      const outgoingRate = await getOutgoingRate(supabase, payeeId, params.carrierId, params.insuranceLineId);
+      if (outgoingRate != null) {
+        await supabase.from("commissions").insert({
+          policy_id: params.policyId,
+          agent_id: params.assignedAgentId,
+          carrier_id: params.carrierId,
+          policy_installment_id: installment.id,
+          commission_type: params.kind === "renewal" ? "renewal" : "new_business",
+          direction: "outgoing",
+          payee_id: payeeId,
+          base_amount: baseAmount,
+          commission_rate_percent: outgoingRate,
+          commission_amount: Math.round(((baseAmount * outgoingRate) / 100) * 100) / 100,
+          period: params.startDate,
+        });
+      }
+    }
+  }
+
+  return movement.id;
+}
+
+// Καταχώρηση είσπραξης — one payment against one installment. Extends the
+// original collectInstallmentPayment (recovered from git history) with
+// cheque fields and the "Συμψηφισμός εξερχόμενων προμηθειών" checkbox,
+// which nets the outgoing commission off the collected amount instead of
+// paying it separately (purely informational on the movement — no separate
+// ledger row for the offset itself, matches how Profia just shows it as a
+// checkbox next to the collection).
+export async function collectInstallmentPayment(policyId: string, installmentId: string, formData: FormData) {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const { data: installment } = await supabase
+    .from("policy_installments")
+    .select("amount, paid_amount, movement_id, policies!inner(client_id)")
+    .eq("id", installmentId)
+    .single();
+  if (!installment) return;
+
+  const remainingDue = installmentRemaining(installment);
+  const enteredRaw = formData.get("paid_amount");
+  const entered = enteredRaw !== null && enteredRaw !== "" ? Number(enteredRaw) : NaN;
+  const newPayment = Number.isFinite(entered) && entered > 0 ? entered : remainingDue;
+  if (newPayment <= 0) return;
+
+  const paymentMethodId = str(formData, "payment_method_id");
+  const receiptNumber = str(formData, "receipt_number");
+  const chequeBank = str(formData, "cheque_bank");
+  const chequeNumber = str(formData, "cheque_number");
+  const chequeDueDate = str(formData, "cheque_due_date");
+
+  const { error } = await supabase.from("installment_payments").insert({
+    installment_id: installmentId,
+    amount: Math.round(newPayment * 100) / 100,
+    payment_method_id: paymentMethodId,
+    receipt_number: receiptNumber,
+    paid_by: agencyUser.id,
+    cheque_bank: chequeBank,
+    cheque_number: chequeNumber,
+    cheque_due_date: chequeDueDate,
+  });
+  if (error) return;
+
+  const tip = Math.max(Math.round((newPayment - remainingDue) * 100) / 100, 0);
+  const tipNote = tip > 0 ? ` (εκ των οποίων ${tip.toFixed(2)} € tip)` : "";
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "payment_collected",
+    description: `Εισπράχθηκαν ${newPayment.toFixed(2)} €${tipNote}.`,
+    actorId: agencyUser.id,
+  });
+
+  const collectClientId = (installment.policies as unknown as { client_id: string } | null)?.client_id;
+
+  revalidatePath(`/dashboard/policies/${policyId}`);
+  revalidatePath("/dashboard/remittances");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reports");
+  if (collectClientId) revalidatePath(`/dashboard/clients/${collectClientId}`);
+  updateTag(CACHE_TAGS.reports);
+}
+
+// Απόδοση ασφαλίστρων / εξερχόμενων προμηθειών — a reversible toggle
+// (clicking again clears the timestamp), admin-only per the RLS policy on
+// policy_movements.
+export async function togglePremiumRemittance(movementId: string, currentlyRemitted: boolean) {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+  await supabase
+    .from("policy_movements")
+    .update({ premium_remitted_at: currentlyRemitted ? null : new Date().toISOString() })
+    .eq("id", movementId);
+  revalidatePath("/dashboard/remittances");
+}
+
+export async function toggleOutgoingCommissionRemittance(movementId: string, currentlyRemitted: boolean) {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+  await supabase
+    .from("policy_movements")
+    .update({ outgoing_commission_remitted_at: currentlyRemitted ? null : new Date().toISOString() })
+    .eq("id", movementId);
+  revalidatePath("/dashboard/remittances");
+}
+
+// Μεταφορά παραστατικού σε άλλο συμβόλαιο — admin only. Basic existence
+// check on the target; no other validation (matches Profia, which lets the
+// user move a document freely between contracts).
+export async function transferMovement(
+  movementId: string,
+  targetPolicyId: string,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const { data: target } = await supabase.from("policies").select("id").eq("id", targetPolicyId).maybeSingle();
+  if (!target) return { error: "Δεν βρέθηκε το συμβόλαιο-στόχος." };
+
+  const { data: movement } = await supabase
+    .from("policy_movements")
+    .select("policy_id")
+    .eq("id", movementId)
+    .single();
+  if (!movement) return { error: "Δεν βρέθηκε η κίνηση." };
+
+  await supabase.from("policy_movements").update({ policy_id: targetPolicyId }).eq("id", movementId);
+  revalidatePath(`/dashboard/policies/${movement.policy_id}`);
+  revalidatePath(`/dashboard/policies/${targetPolicyId}`);
+}
+
+// Νέα Κίνηση — a manual, ledger-only movement (mainly "Πρόσθετη πράξη" or a
+// manually-recorded "Ακύρωση"), independent of policy coverage-detail
+// edits. Creates exactly one installment for the movement's premium, same
+// as every other movement.
+export async function createManualMovement(
+  policyId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const kind = str(formData, "kind") as PolicyMovementKind | null;
+  const startDate = str(formData, "start_date");
+  const endDate = str(formData, "end_date");
+  const premiumGross = num(formData, "premium_gross");
+
+  if (!kind || !startDate || !endDate || premiumGross === null) {
+    return { error: "Συμπλήρωσε είδος, ημερομηνίες και μικτό ασφάλιστρο." };
+  }
+
+  const { data: movement, error } = await supabase
+    .from("policy_movements")
+    .insert({
+      policy_id: policyId,
+      kind,
+      document_number: str(formData, "document_number"),
+      start_date: startDate,
+      end_date: endDate,
+      premium_net: num(formData, "premium_net"),
+      premium_gross: premiumGross,
+      description: str(formData, "description"),
+      notes: str(formData, "notes"),
+      created_by: agencyUser.id,
+    })
+    .select("id")
+    .single();
+
+  if (error || !movement) return { error: "Σφάλμα κατά τη δημιουργία κίνησης." };
+
+  await supabase.from("policy_installments").insert({
+    policy_id: policyId,
+    movement_id: movement.id,
+    installment_number: 1,
+    due_date: startDate,
+    amount: premiumGross,
+  });
+
+  if (kind === "cancellation") {
+    await supabase.from("policies").update({ status: "cancelled", status_auto_managed: false }).eq("id", policyId);
+  }
+
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "movement_created",
+    description: `Καταχωρήθηκε κίνηση: ${POLICY_MOVEMENT_KIND_LABELS[kind] ?? kind}.`,
+    actorId: agencyUser.id,
+  });
+
+  revalidatePath(`/dashboard/policies/${policyId}`);
+}

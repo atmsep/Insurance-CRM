@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentAgencyUser } from "@/lib/dal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { updatePolicyDetails } from "../actions";
 import { buildPolicyMergeFields } from "@/lib/email";
@@ -11,6 +12,7 @@ import { PolicyHeader } from "./_components/policy-header";
 import { VisitTracker } from "./_components/visit-tracker";
 import { DetailsTab } from "./_components/details-tab";
 import { ClaimsTab } from "./_components/claims-tab";
+import { MovementsTab } from "./_components/movements-tab";
 import { ActivityFeed } from "@/components/activity-feed";
 import type { PolicyStatus } from "@/lib/database.types";
 
@@ -21,6 +23,8 @@ export default async function PolicyDetailPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
+  const agencyUser = await getCurrentAgencyUser();
+  const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
 
   const { data: policy } = await supabase
     .from("policies")
@@ -133,6 +137,7 @@ export default async function PolicyDetailPage({
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">Στοιχεία</TabsTrigger>
+          <TabsTrigger value="movements">Κινήσεις</TabsTrigger>
           <TabsTrigger value="claims">Ζημιές</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
           <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
@@ -148,6 +153,10 @@ export default async function PolicyDetailPage({
             brokerOffices={brokerOffices ?? []}
             updateDetailsAction={updateDetailsAction}
           />
+        </TabsContent>
+
+        <TabsContent value="movements" className="pt-4">
+          <MovementsTab policyId={id} isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="claims" className="pt-4">
