@@ -685,7 +685,7 @@ export async function collectInstallmentPayment(policyId: string, installmentId:
 
   const { data: installment } = await supabase
     .from("policy_installments")
-    .select("amount, paid_amount, movement_id, policies!inner(client_id)")
+    .select("policy_id, movement_id, installment_number, due_date, amount, paid_amount, policies!inner(client_id)")
     .eq("id", installmentId)
     .single();
   if (!installment) return;
@@ -702,6 +702,20 @@ export async function collectInstallmentPayment(policyId: string, installmentId:
   const chequeNumber = str(formData, "cheque_number");
   const chequeDueDate = str(formData, "cheque_due_date");
 
+  // A payment that doesn't clear the δόση's whole remaining balance closes
+  // THIS δόση at exactly what's been collected on it — so it shows "paid"
+  // for the amount actually given — and opens a new pending δόση for what's
+  // left, so every partial collection is its own visible row (amount +
+  // date) instead of an invisible running total on one row. Only applies to
+  // movement-scoped δόσεις (always true for this action's only caller); a
+  // payment that fully settles (or overpays/tips) never splits.
+  const remainder = Math.round((remainingDue - newPayment) * 100) / 100;
+  const shouldSplit = remainder > 0 && Boolean(installment.movement_id);
+  if (shouldSplit) {
+    const settledAmount = Math.round(((installment.paid_amount ?? 0) + newPayment) * 100) / 100;
+    await supabase.from("policy_installments").update({ amount: settledAmount }).eq("id", installmentId);
+  }
+
   const { error } = await supabase.from("installment_payments").insert({
     installment_id: installmentId,
     amount: Math.round(newPayment * 100) / 100,
@@ -713,6 +727,23 @@ export async function collectInstallmentPayment(policyId: string, installmentId:
     cheque_due_date: chequeDueDate,
   });
   if (error) return;
+
+  if (shouldSplit && installment.movement_id) {
+    const { data: lastNumbered } = await supabase
+      .from("policy_installments")
+      .select("installment_number")
+      .eq("movement_id", installment.movement_id)
+      .order("installment_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    await supabase.from("policy_installments").insert({
+      policy_id: installment.policy_id,
+      movement_id: installment.movement_id,
+      installment_number: (lastNumbered?.installment_number ?? installment.installment_number) + 1,
+      due_date: installment.due_date,
+      amount: remainder,
+    });
+  }
 
   const tip = Math.max(Math.round((newPayment - remainingDue) * 100) / 100, 0);
   const tipNote = tip > 0 ? ` (εκ των οποίων ${tip.toFixed(2)} € tip)` : "";
