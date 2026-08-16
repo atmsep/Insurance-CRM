@@ -339,6 +339,148 @@ function num(formData: FormData, key: string) {
   return v === null ? null : Number(v);
 }
 
+// A movement can carry more than one δόση (see createMovementForPolicy /
+// the legacy-chain backfill in createPolicy) — commission always attaches
+// to the FIRST one, consistent with how it's auto-created, regardless of
+// how many δόσεις the movement ends up with.
+async function getFirstInstallmentId(supabase: SupabaseServerClient, movementId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("policy_installments")
+    .select("id")
+    .eq("movement_id", movementId)
+    .order("installment_number", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+// Χειροκίνητη εισερχόμενη προμήθεια — the "Ειδική εισερχόμενη προμήθεια"
+// checkbox in Profia: overrides (or fills in, when no rate ever resolved)
+// whatever createMovementForPolicy auto-calculated. Owner/admin only, same
+// boundary as every other commission write in this schema.
+export async function updateIncomingCommission(
+  movementId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const amount = num(formData, "commission_amount");
+  if (amount === null) return { error: "Συμπλήρωσε ποσό προμήθειας." };
+  const ratePercent = num(formData, "commission_rate_percent");
+  const isManualOverride = formData.get("is_manual_override") === "on";
+
+  const { data: movement } = await supabase
+    .from("policy_movements")
+    .select("policy_id, kind, premium_net, policies(carrier_id, assigned_agent_id)")
+    .eq("id", movementId)
+    .single();
+  if (!movement) return { error: "Δεν βρέθηκε η κίνηση." };
+
+  const installmentId = await getFirstInstallmentId(supabase, movementId);
+  if (!installmentId) return { error: "Η κίνηση δεν έχει δόση για να συνδεθεί η προμήθεια." };
+
+  const { data: existing } = await supabase
+    .from("commissions")
+    .select("id")
+    .eq("policy_installment_id", installmentId)
+    .eq("direction", "incoming")
+    .maybeSingle();
+
+  if (existing) {
+    await supabase
+      .from("commissions")
+      .update({ commission_rate_percent: ratePercent, commission_amount: amount, is_manual_override: isManualOverride })
+      .eq("id", existing.id);
+  } else {
+    const policy = movement.policies as unknown as { carrier_id: string; assigned_agent_id: string | null } | null;
+    if (!policy) return { error: "Δεν βρέθηκαν στοιχεία συμβολαίου." };
+    await supabase.from("commissions").insert({
+      policy_id: movement.policy_id,
+      agent_id: policy.assigned_agent_id ?? agencyUser.id,
+      carrier_id: policy.carrier_id,
+      policy_installment_id: installmentId,
+      commission_type: movement.kind === "renewal" ? "renewal" : "new_business",
+      direction: "incoming",
+      base_amount: movement.premium_net,
+      commission_rate_percent: ratePercent,
+      commission_amount: amount,
+      is_manual_override: isManualOverride,
+    });
+  }
+
+  revalidatePath(`/dashboard/policies/${movement.policy_id}`);
+}
+
+// Χειροκίνητη εξερχόμενη προμήθεια — same idea, for what the agency pays
+// OUT to the movement's servicing agent (outgoing_agent_id). Needs that
+// agent's mirrored commission_payees row to exist (see
+// syncPayeeForAgencyUser) since commissions.payee_id is required for any
+// outgoing row.
+export async function updateOutgoingCommission(
+  movementId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const amount = num(formData, "commission_amount");
+  if (amount === null) return { error: "Συμπλήρωσε ποσό προμήθειας." };
+  const ratePercent = num(formData, "commission_rate_percent");
+  const isManualOverride = formData.get("is_manual_override") === "on";
+
+  const { data: movement } = await supabase
+    .from("policy_movements")
+    .select("policy_id, kind, premium_net, outgoing_agent_id, policies(carrier_id)")
+    .eq("id", movementId)
+    .single();
+  if (!movement) return { error: "Δεν βρέθηκε η κίνηση." };
+  if (!movement.outgoing_agent_id) return { error: "Η κίνηση δεν έχει συνεργάτη για εξερχόμενη προμήθεια." };
+
+  const installmentId = await getFirstInstallmentId(supabase, movementId);
+  if (!installmentId) return { error: "Η κίνηση δεν έχει δόση για να συνδεθεί η προμήθεια." };
+
+  const { data: existing } = await supabase
+    .from("commissions")
+    .select("id")
+    .eq("policy_installment_id", installmentId)
+    .eq("direction", "outgoing")
+    .maybeSingle();
+
+  if (existing) {
+    await supabase
+      .from("commissions")
+      .update({ commission_rate_percent: ratePercent, commission_amount: amount, is_manual_override: isManualOverride })
+      .eq("id", existing.id);
+  } else {
+    const payeeId = await getPayeeIdForAgent(supabase, movement.outgoing_agent_id);
+    if (!payeeId) return { error: "Ο συνεργάτης δεν έχει αντίστοιχο δικαιούχο προμήθειας." };
+    const policy = movement.policies as unknown as { carrier_id: string } | null;
+    if (!policy) return { error: "Δεν βρέθηκαν στοιχεία συμβολαίου." };
+    await supabase.from("commissions").insert({
+      policy_id: movement.policy_id,
+      agent_id: movement.outgoing_agent_id,
+      carrier_id: policy.carrier_id,
+      policy_installment_id: installmentId,
+      commission_type: movement.kind === "renewal" ? "renewal" : "new_business",
+      direction: "outgoing",
+      payee_id: payeeId,
+      base_amount: movement.premium_net,
+      commission_rate_percent: ratePercent,
+      commission_amount: amount,
+      is_manual_override: isManualOverride,
+    });
+  }
+
+  revalidatePath(`/dashboard/policies/${movement.policy_id}`);
+}
+
 // "Βάσει εταιρίας" — the carrier's own agreement-independent reference
 // rate (carrier_commission_defaults, new table, see migration 0081).
 async function getCarrierDefaultRate(

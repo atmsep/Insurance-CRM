@@ -12,6 +12,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -31,6 +33,8 @@ import {
   togglePremiumRemittance,
   toggleOutgoingCommissionRemittance,
   transferMovement,
+  updateIncomingCommission,
+  updateOutgoingCommission,
   type MovementReceiptData,
   type MovementRow,
 } from "../../movements-actions";
@@ -44,6 +48,80 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
 };
 
 type Installment = MovementReceiptData["installments"][number];
+
+// Shared by the incoming/outgoing commission blocks — "Ειδική
+// εισερχόμενη/εξερχόμενη προμήθεια" in Profia: check the box to reveal a
+// plain ποσοστό/ποσό form and overwrite (or, when nothing ever
+// auto-resolved, fill in for the first time) whatever
+// createMovementForPolicy calculated.
+function CommissionEditForm({
+  ratePercent,
+  amount,
+  isManualOverride,
+  action,
+  onSaved,
+}: {
+  ratePercent: number | null;
+  amount: number | null;
+  isManualOverride: boolean;
+  action: (formData: FormData) => Promise<{ error: string } | undefined>;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(isManualOverride);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(formData: FormData) {
+    setPending(true);
+    setError(null);
+    const result = await action(formData);
+    setPending(false);
+    if (result?.error) {
+      setError(result.error);
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="flex items-center gap-2 text-xs">
+        <Checkbox checked={editing} onCheckedChange={(v) => setEditing(v === true)} />
+        Ειδική προμήθεια (χειροκίνητα)
+      </label>
+      {editing && (
+        <form action={handleSubmit} className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs">Ποσοστό %</Label>
+            <Input
+              name="commission_rate_percent"
+              type="number"
+              step="0.01"
+              defaultValue={ratePercent ?? ""}
+              className="h-7 w-20 text-xs"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs">Ποσό €</Label>
+            <Input
+              name="commission_amount"
+              type="number"
+              step="0.01"
+              defaultValue={amount ?? ""}
+              required
+              className="h-7 w-24 text-xs"
+            />
+          </div>
+          <input type="hidden" name="is_manual_override" value="on" />
+          <Button type="submit" size="xs" disabled={pending}>
+            Αποθήκευση
+          </Button>
+        </form>
+      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
 
 export function MovementReceiptDialog({
   movementId,
@@ -198,6 +276,18 @@ export function MovementReceiptDialog({
                         </Button>
                       )}
                     </div>
+                    {isAdmin && movementId && (
+                      <CommissionEditForm
+                        ratePercent={data.incoming?.rateePercent ?? null}
+                        amount={data.incoming?.amount ?? null}
+                        isManualOverride={data.incoming?.isManualOverride ?? false}
+                        action={updateIncomingCommission.bind(null, movementId)}
+                        onSaved={async () => {
+                          await refetch();
+                          onChanged?.();
+                        }}
+                      />
+                    )}
                   </div>
                   <div className="flex flex-col gap-2">
                     <h3 className="text-sm font-medium">
@@ -237,6 +327,18 @@ export function MovementReceiptDialog({
                         </Button>
                       )}
                     </div>
+                    {isAdmin && movementId && (
+                      <CommissionEditForm
+                        ratePercent={data.outgoing?.ratePercent ?? null}
+                        amount={data.outgoing?.amount ?? null}
+                        isManualOverride={data.outgoing?.isManualOverride ?? false}
+                        action={updateOutgoingCommission.bind(null, movementId)}
+                        onSaved={async () => {
+                          await refetch();
+                          onChanged?.();
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
 
