@@ -35,6 +35,8 @@ import {
   transferMovement,
   updateIncomingCommission,
   updateOutgoingCommission,
+  updateInstallment,
+  deleteInstallment,
   type MovementReceiptData,
   type MovementRow,
 } from "../../movements-actions";
@@ -148,6 +150,72 @@ function CommissionEditForm({
   );
 }
 
+// "Αλλαγή Δόσεων" — fixes a δόση created with the wrong amount/due date
+// (hand-entered, or a wrong split from a mistyped partial payment).
+// Doesn't touch paid_amount; the server action recomputes status from the
+// new amount against whatever's already been collected.
+function InstallmentEditForm({
+  installment,
+  onCancel,
+  onSaved,
+}: {
+  installment: Installment;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [amount, setAmount] = useState(String(installment.amount));
+  const [dueDate, setDueDate] = useState(installment.dueDate.slice(0, 10));
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(formData: FormData) {
+    setPending(true);
+    setError(null);
+    const result = await updateInstallment(installment.id, formData);
+    setPending(false);
+    if (result?.error) {
+      setError(result.error);
+      return;
+    }
+    onSaved();
+  }
+
+  return (
+    <form action={handleSubmit} className="flex flex-wrap items-end gap-2">
+      <div className="flex flex-col gap-1">
+        <Label className="text-xs">Ποσό €</Label>
+        <Input
+          name="amount"
+          type="number"
+          step="0.01"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+          className="h-7 w-24 text-xs"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <Label className="text-xs">Ημ. λήξης</Label>
+        <Input
+          name="due_date"
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          required
+          className="h-7 w-32 text-xs"
+        />
+      </div>
+      <Button type="submit" size="xs" disabled={pending}>
+        Αποθήκευση
+      </Button>
+      <Button type="button" size="xs" variant="ghost" onClick={onCancel}>
+        Άκυρο
+      </Button>
+      {error && <p className="w-full text-xs text-destructive">{error}</p>}
+    </form>
+  );
+}
+
 export function MovementReceiptDialog({
   movementId,
   movementSummary,
@@ -168,6 +236,8 @@ export function MovementReceiptDialog({
   const [data, setData] = useState<MovementReceiptData | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [collectingInstallment, setCollectingInstallment] = useState<Installment | null>(null);
+  const [editingInstallmentId, setEditingInstallmentId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [transferTarget, setTransferTarget] = useState("");
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
@@ -385,6 +455,25 @@ export function MovementReceiptDialog({
                       {data.installments.length ? (
                         data.installments.map((inst) => {
                           const remaining = installmentRemaining({ amount: inst.amount, paid_amount: inst.paidAmount });
+                          const canDelete = !inst.paidAmount || inst.paidAmount <= 0;
+                          if (editingInstallmentId === inst.id) {
+                            return (
+                              <TableRow key={inst.id}>
+                                <TableCell>{inst.installmentNumber}</TableCell>
+                                <TableCell colSpan={4}>
+                                  <InstallmentEditForm
+                                    installment={inst}
+                                    onCancel={() => setEditingInstallmentId(null)}
+                                    onSaved={async () => {
+                                      setEditingInstallmentId(null);
+                                      await refetch();
+                                      onChanged?.();
+                                    }}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            );
+                          }
                           return (
                             <TableRow key={inst.id}>
                               <TableCell>{inst.installmentNumber}</TableCell>
@@ -403,18 +492,51 @@ export function MovementReceiptDialog({
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                {(inst.status === "pending" ||
-                                  inst.status === "overdue" ||
-                                  inst.status === "partially_paid") && (
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setCollectingInstallment(inst)}
-                                  >
-                                    Είσπραξη
-                                  </Button>
-                                )}
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {(inst.status === "pending" ||
+                                    inst.status === "overdue" ||
+                                    inst.status === "partially_paid") && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setCollectingInstallment(inst)}
+                                    >
+                                      Είσπραξη
+                                    </Button>
+                                  )}
+                                  {isAdmin && (
+                                    <Button
+                                      type="button"
+                                      size="xs"
+                                      variant="ghost"
+                                      onClick={() => setEditingInstallmentId(inst.id)}
+                                    >
+                                      Επεξεργασία
+                                    </Button>
+                                  )}
+                                  {isAdmin && canDelete && (
+                                    <Button
+                                      type="button"
+                                      size="xs"
+                                      variant="ghost"
+                                      className="text-destructive"
+                                      onClick={async () => {
+                                        if (!window.confirm(`Διαγραφή δόσης #${inst.installmentNumber};`)) return;
+                                        setDeleteError(null);
+                                        const result = await deleteInstallment(inst.id);
+                                        if (result?.error) {
+                                          setDeleteError(result.error);
+                                          return;
+                                        }
+                                        await refetch();
+                                        onChanged?.();
+                                      }}
+                                    >
+                                      Διαγραφή
+                                    </Button>
+                                  )}
+                                </div>
                               </TableCell>
                             </TableRow>
                           );
@@ -428,6 +550,7 @@ export function MovementReceiptDialog({
                       )}
                     </TableBody>
                   </Table>
+                  {deleteError && <p className="text-xs text-destructive">{deleteError}</p>}
                 </div>
 
                 {isAdmin && (

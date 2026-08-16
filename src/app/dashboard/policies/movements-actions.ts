@@ -765,6 +765,76 @@ export async function collectInstallmentPayment(policyId: string, installmentId:
   updateTag(CACHE_TAGS.reports);
 }
 
+// "Αλλαγή Δόσεων" — fixes a mistaken δόση (wrong amount/due date, whether
+// hand-entered or produced by the auto-split above). Admin/owner only,
+// same boundary as every other financial adjustment in this file. Doesn't
+// touch paid_amount (that stays the ledger's rollup) — only recomputes
+// status against the new amount, same 3-way rule the DB trigger uses
+// (recompute_installment_rollup, migration 0045), so editing a δόση after
+// the fact still leaves it in a consistent state.
+export async function updateInstallment(
+  installmentId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const amount = num(formData, "amount");
+  const dueDate = str(formData, "due_date");
+  if (amount === null || amount < 0 || !dueDate) {
+    return { error: "Συμπλήρωσε έγκυρο ποσό και ημερομηνία." };
+  }
+
+  const { data: installment } = await supabase
+    .from("policy_installments")
+    .select("policy_id, paid_amount")
+    .eq("id", installmentId)
+    .single();
+  if (!installment) return { error: "Δεν βρέθηκε η δόση." };
+
+  const paid = installment.paid_amount ?? 0;
+  const status = paid <= 0 ? "pending" : paid < amount ? "partially_paid" : "paid";
+
+  await supabase
+    .from("policy_installments")
+    .update({ amount, due_date: dueDate, status })
+    .eq("id", installmentId);
+
+  revalidatePath(`/dashboard/policies/${installment.policy_id}`);
+}
+
+// Deleting a δόση is only allowed while nothing has been collected against
+// it yet (a wrongly created/split row) — once real money is attached, the
+// permanent installment_payments ledger (migration 0045) shouldn't be
+// silently cascaded away, so removal is blocked at the app level (not just
+// relying on the FK on commissions.policy_installment_id, which only
+// protects the movement's first δόση).
+export async function deleteInstallment(installmentId: string): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const { data: installment } = await supabase
+    .from("policy_installments")
+    .select("policy_id, paid_amount")
+    .eq("id", installmentId)
+    .single();
+  if (!installment) return { error: "Δεν βρέθηκε η δόση." };
+  if ((installment.paid_amount ?? 0) > 0) {
+    return { error: "Δεν μπορεί να διαγραφεί δόση με καταχωρημένη είσπραξη." };
+  }
+
+  const { error } = await supabase.from("policy_installments").delete().eq("id", installmentId);
+  if (error) return { error: "Δεν ήταν δυνατή η διαγραφή — υπάρχει συνδεδεμένη προμήθεια." };
+
+  revalidatePath(`/dashboard/policies/${installment.policy_id}`);
+}
+
 // Απόδοση ασφαλίστρων / εξερχόμενων προμηθειών — a reversible toggle
 // (clicking again clears the timestamp), admin-only per the RLS policy on
 // policy_movements.
