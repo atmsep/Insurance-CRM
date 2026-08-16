@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ClickableRow } from "@/components/clickable-row";
 import { policyStatusVariant } from "@/lib/status-badge";
 import { formatDate } from "@/lib/date";
 import { POLICY_STATUS_LABELS } from "../../../policies/policy-labels";
@@ -184,7 +185,7 @@ export function PoliciesTab({ policies }: { policies: Policy[] }) {
           <TableBody>
             {visiblePolicies.length ? (
               visiblePolicies.map((policy) => (
-                <TableRow key={policy.id} className="cursor-pointer hover:bg-muted/50">
+                <ClickableRow key={policy.id} href={`/dashboard/policies/${policy.id}`}>
                   <TableCell>
                     <Link href={`/dashboard/policies/${policy.id}`} className="hover:underline">
                       {policy.policy_number}
@@ -207,7 +208,7 @@ export function PoliciesTab({ policies }: { policies: Policy[] }) {
                   <TableCell>{formatDate(policy.end_date)}</TableCell>
                   <TableCell>{formatDuration(policy.start_date, policy.end_date)}</TableCell>
                   <TableCell>{policy.premium_gross.toFixed(2)} €</TableCell>
-                </TableRow>
+                </ClickableRow>
               ))
             ) : (
               <TableRow>
