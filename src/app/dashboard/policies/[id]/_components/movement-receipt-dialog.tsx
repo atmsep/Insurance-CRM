@@ -445,7 +445,7 @@ export function MovementReceiptDialog({
                     <TableHeader>
                       <TableRow>
                         <TableHead>#</TableHead>
-                        <TableHead>Ημ. λήξης</TableHead>
+                        <TableHead>Ημ. πληρωμής</TableHead>
                         <TableHead>Ποσό</TableHead>
                         <TableHead>Κατάσταση</TableHead>
                         <TableHead />
@@ -477,7 +477,7 @@ export function MovementReceiptDialog({
                           return (
                             <TableRow key={inst.id}>
                               <TableCell>{inst.installmentNumber}</TableCell>
-                              <TableCell>{formatDate(inst.dueDate)}</TableCell>
+                              <TableCell>{formatDate(inst.paidDate ?? inst.dueDate)}</TableCell>
                               <TableCell>
                                 <div>{inst.amount.toFixed(2)} €</div>
                                 {inst.status === "partially_paid" && (

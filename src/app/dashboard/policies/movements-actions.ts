@@ -238,6 +238,7 @@ export type MovementReceiptData = {
     id: string;
     installmentNumber: number;
     dueDate: string;
+    paidDate: string | null;
     amount: number;
     paidAmount: number | null;
     status: string;
@@ -261,7 +262,7 @@ export async function getMovementReceipt(movementId: string): Promise<MovementRe
   const [{ data: installments }, { data: paymentMethods }] = await Promise.all([
     supabase
       .from("policy_installments")
-      .select("id, installment_number, due_date, amount, paid_amount, status")
+      .select("id, installment_number, due_date, paid_date, amount, paid_amount, status")
       .eq("movement_id", movementId)
       .order("installment_number", { ascending: true }),
     supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
@@ -321,6 +322,7 @@ export async function getMovementReceipt(movementId: string): Promise<MovementRe
       id: i.id,
       installmentNumber: i.installment_number,
       dueDate: i.due_date,
+      paidDate: i.paid_date,
       amount: i.amount,
       paidAmount: i.paid_amount,
       status: i.status,
