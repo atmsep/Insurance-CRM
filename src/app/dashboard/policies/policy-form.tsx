@@ -62,6 +62,32 @@ const PAYMENT_FREQUENCIES: { value: PaymentFrequency; label: string }[] = [
   { value: "single_premium", label: "Εφάπαξ" },
 ];
 
+// Λήξη defaults off Έναρξη + the term the chosen Συχνότητα implies
+// (μηνιαία → +1 month, τριμηνιαία → +3, εξαμηνιαία → +6, ετήσια/εφάπαξ →
+// +1 year) instead of always assuming a full year — same rule for a brand
+// new policy and a renewal, since both go through this one form. UTC
+// arithmetic so the result never shifts a day from the browser's zone.
+function computeEndDate(startDate: string, frequency: PaymentFrequency): string {
+  if (!startDate) return "";
+  const d = new Date(`${startDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "";
+  switch (frequency) {
+    case "monthly":
+      d.setUTCMonth(d.getUTCMonth() + 1);
+      break;
+    case "quarterly":
+      d.setUTCMonth(d.getUTCMonth() + 3);
+      break;
+    case "semiannual":
+      d.setUTCMonth(d.getUTCMonth() + 6);
+      break;
+    default:
+      d.setUTCFullYear(d.getUTCFullYear() + 1);
+      break;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
 export function PolicyForm({
   carriers,
   insuranceLines,
@@ -98,10 +124,12 @@ export function PolicyForm({
   const [frequency, setFrequency] = useState<PaymentFrequency>(
     renewFrom?.paymentFrequency ?? "annual",
   );
-  const { field } = useFormValues({
+  const [endDateTouched, setEndDateTouched] = useState(false);
+  const { field, values, setValue } = useFormValues({
     policy_number: renewFrom?.policyNumber ?? "",
     start_date: renewFrom?.startDate ?? "",
-    end_date: renewFrom?.endDate ?? "",
+    end_date:
+      computeEndDate(renewFrom?.startDate ?? "", frequency) || (renewFrom?.endDate ?? ""),
     plate_number: renewFrom?.vehicle?.plate_number ?? "",
     manufacture_year:
       renewFrom?.vehicle?.manufacture_year != null ? String(renewFrom.vehicle.manufacture_year) : "",
@@ -119,6 +147,12 @@ export function PolicyForm({
   useEffect(() => {
     if (state?.error) toast.error(state.error);
   }, [state]);
+
+  useEffect(() => {
+    if (endDateTouched) return;
+    const computed = computeEndDate(values.start_date, frequency);
+    if (computed) setValue("end_date", computed);
+  }, [values.start_date, frequency, endDateTouched, setValue]);
 
   const selectedLine = useMemo(
     () => insuranceLines.find((l) => l.id === lineId),
@@ -236,7 +270,20 @@ export function PolicyForm({
           <input type="hidden" name="payment_frequency" value={frequency} />
         </div>
         <Field label="Έναρξη" name="start_date" type="date" required field={field} />
-        <Field label="Λήξη" name="end_date" type="date" required field={field} />
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="end_date">Λήξη</Label>
+          <Input
+            id="end_date"
+            name="end_date"
+            type="date"
+            required
+            value={values.end_date ?? ""}
+            onChange={(e) => {
+              setEndDateTouched(true);
+              setValue("end_date", e.target.value);
+            }}
+          />
+        </div>
         <PremiumFields defaultGross={renewFrom?.premiumGross} defaultNet={renewFrom?.premiumNet} required />
       </div>
 
