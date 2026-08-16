@@ -53,23 +53,46 @@ type Installment = MovementReceiptData["installments"][number];
 // εισερχόμενη/εξερχόμενη προμήθεια" in Profia: check the box to reveal a
 // plain ποσοστό/ποσό form and overwrite (or, when nothing ever
 // auto-resolved, fill in for the first time) whatever
-// createMovementForPolicy calculated.
+// createMovementForPolicy calculated. Ποσοστό and ποσό are linked to the
+// same base (the movement's premium_net, matching how the auto-calculated
+// figure is derived): editing either one recomputes the other, same as
+// the "Βάσει σύμβασης" auto-fill this replaces.
 function CommissionEditForm({
   ratePercent,
   amount,
   isManualOverride,
+  baseAmount,
   action,
   onSaved,
 }: {
   ratePercent: number | null;
   amount: number | null;
   isManualOverride: boolean;
+  baseAmount: number | null;
   action: (formData: FormData) => Promise<{ error: string } | undefined>;
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState(isManualOverride);
+  const [rateInput, setRateInput] = useState(ratePercent != null ? String(ratePercent) : "");
+  const [amountInput, setAmountInput] = useState(amount != null ? String(amount) : "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function handleRateChange(value: string) {
+    setRateInput(value);
+    const rate = Number(value);
+    if (value !== "" && Number.isFinite(rate) && baseAmount != null) {
+      setAmountInput((Math.round(((baseAmount * rate) / 100) * 100) / 100).toFixed(2));
+    }
+  }
+
+  function handleAmountChange(value: string) {
+    setAmountInput(value);
+    const nextAmount = Number(value);
+    if (value !== "" && Number.isFinite(nextAmount) && baseAmount != null && baseAmount > 0) {
+      setRateInput((Math.round(((nextAmount / baseAmount) * 100) * 100) / 100).toFixed(2));
+    }
+  }
 
   async function handleSubmit(formData: FormData) {
     setPending(true);
@@ -97,7 +120,8 @@ function CommissionEditForm({
               name="commission_rate_percent"
               type="number"
               step="0.01"
-              defaultValue={ratePercent ?? ""}
+              value={rateInput}
+              onChange={(e) => handleRateChange(e.target.value)}
               className="h-7 w-20 text-xs"
             />
           </div>
@@ -107,7 +131,8 @@ function CommissionEditForm({
               name="commission_amount"
               type="number"
               step="0.01"
-              defaultValue={amount ?? ""}
+              value={amountInput}
+              onChange={(e) => handleAmountChange(e.target.value)}
               required
               className="h-7 w-24 text-xs"
             />
@@ -281,6 +306,7 @@ export function MovementReceiptDialog({
                         ratePercent={data.incoming?.rateePercent ?? null}
                         amount={data.incoming?.amount ?? null}
                         isManualOverride={data.incoming?.isManualOverride ?? false}
+                        baseAmount={data.movement.premiumNet}
                         action={updateIncomingCommission.bind(null, movementId)}
                         onSaved={async () => {
                           await refetch();
@@ -332,6 +358,7 @@ export function MovementReceiptDialog({
                         ratePercent={data.outgoing?.ratePercent ?? null}
                         amount={data.outgoing?.amount ?? null}
                         isManualOverride={data.outgoing?.isManualOverride ?? false}
+                        baseAmount={data.movement.premiumNet}
                         action={updateOutgoingCommission.bind(null, movementId)}
                         onSaved={async () => {
                           await refetch();
