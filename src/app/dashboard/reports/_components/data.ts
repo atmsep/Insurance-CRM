@@ -8,12 +8,6 @@ import { CACHE_TAGS } from "@/lib/cache-tags";
 // needs an explicit generic instead of relying on inference.
 export type PoliciesByStatusRow = { status: string; policy_count: number; premium_sum: number };
 export type PoliciesByLineRow = { line_name: string; policy_count: number; premium_sum: number };
-export type BillingSummaryRow = {
-  total_billed: number;
-  total_collected: number;
-  total_tips: number;
-  outstanding: number;
-};
 export type ClaimsByStatusRow = { status: string; claim_count: number; amount_sum: number };
 export type ReferralBreakdownRow = { source: string; client_count: number };
 
@@ -52,20 +46,6 @@ export const getPoliciesByLine = cache(
       return data ?? [];
     },
     ["report-policies-by-line"],
-    { revalidate: 60, tags: [CACHE_TAGS.reports] },
-  ),
-);
-
-export const getBillingSummary = cache(
-  unstable_cache(
-    async (): Promise<BillingSummaryRow> => {
-      const admin = createAdminClient();
-      const { data } = (await admin.rpc("report_billing_summary")) as unknown as {
-        data: BillingSummaryRow[] | null;
-      };
-      return data?.[0] ?? { total_billed: 0, total_collected: 0, total_tips: 0, outstanding: 0 };
-    },
-    ["report-billing-summary"],
     { revalidate: 60, tags: [CACHE_TAGS.reports] },
   ),
 );

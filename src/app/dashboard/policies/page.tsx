@@ -20,7 +20,6 @@ import {
 } from "@/components/bulk-selection";
 import { BulkStatusBar } from "@/components/bulk-status-bar";
 import { bulkUpdatePolicyStatus } from "./actions";
-import { getOutstandingByPolicy } from "./balance";
 import { parsePolicyFilters, applyPolicyFilters, parsePerPage } from "./filters";
 import { AdvancedPolicySearchSheet } from "./_components/advanced-policy-search-sheet";
 import { PageSizeSelect } from "./_components/page-size-select";
@@ -160,8 +159,6 @@ export default async function PoliciesPage({
     totalPages = Math.max(1, Math.ceil((count ?? 0) / perPage));
   }
 
-  const outstandingByPolicy = await getOutstandingByPolicy(supabase, policies);
-
   const exportParams = new URLSearchParams();
   if (filters.q) exportParams.set("q", filters.q);
   if (filters.client) exportParams.set("client", filters.client);
@@ -238,7 +235,6 @@ export default async function PoliciesPage({
               <TableHead>Λήξη</TableHead>
               <TableHead>Μικτά</TableHead>
               <TableHead>Καθαρά</TableHead>
-              <TableHead>Υπόλ.</TableHead>
               <TableHead>Κατάσταση</TableHead>
               <TableHead className="w-8" />
             </TableRow>
@@ -296,7 +292,6 @@ export default async function PoliciesPage({
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
-              <TableHead className="pb-2" />
               <TableHead className="pb-2">
                 <FilterSelect
                   form="policy-filters"
@@ -321,7 +316,6 @@ export default async function PoliciesPage({
                 const carrierName = (policy.carriers as unknown as { name: string } | null)?.name;
                 const agentName = (policy.agency_users as unknown as { full_name: string } | null)?.full_name;
                 const brokerOfficeName = (policy.broker_offices as unknown as { name: string } | null)?.name;
-                const outstanding = outstandingByPolicy.get(policy.id);
                 return (
                   <ClickableRow key={policy.id} href={`/dashboard/policies/${policy.id}`}>
                     <TableCell>
@@ -350,7 +344,6 @@ export default async function PoliciesPage({
                     <TableCell>
                       {policy.premium_net != null ? `${policy.premium_net.toFixed(2)} €` : "—"}
                     </TableCell>
-                    <TableCell>{outstanding != null ? `${outstanding.toFixed(2)} €` : "—"}</TableCell>
                     <TableCell>
                       <Badge variant={policyStatusVariant(policy.status)}>
                         {STATUS_LABELS[policy.status] ?? policy.status}
@@ -374,10 +367,6 @@ export default async function PoliciesPage({
                         <QuickViewField
                           label="Καθαρά"
                           value={policy.premium_net != null ? `${policy.premium_net.toFixed(2)} €` : undefined}
-                        />
-                        <QuickViewField
-                          label="Υπόλοιπο"
-                          value={outstanding != null ? `${outstanding.toFixed(2)} €` : undefined}
                         />
                         {policy.renewal_number > 1 && (
                           <QuickViewField label="Αρ. Ανανέωσης" value={policy.renewal_number} />

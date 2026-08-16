@@ -4,6 +4,5 @@
 export const CACHE_TAGS = {
   reports: "reports",
   celebrationTemplates: "celebration-templates",
-  paymentMethods: "payment-methods",
   agencyUsers: "agency-users",
 } as const;

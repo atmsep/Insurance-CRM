@@ -25,7 +25,6 @@ import {
 import {
   updateAgencyUserRole,
   toggleAgencyUserActive,
-  updateAgencyUserCreditLimit,
   inviteAgencyUser,
   createAgencyUserDirect,
   type ActionState,
@@ -37,7 +36,6 @@ type AgencyUser = {
   email: string;
   role: string;
   is_active: boolean;
-  credit_limit: number | null;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -73,11 +71,9 @@ function ActionMessage({ state }: { state: ActionState }) {
 export function TeamTab({
   users,
   currentUserId,
-  outstandingByAgent,
 }: {
   users: AgencyUser[];
   currentUserId: string;
-  outstandingByAgent: Record<string, number>;
 }) {
   const [pending, startTransition] = useTransition();
   const [mode, setMode] = useState<"direct" | "invite">("direct");
@@ -184,17 +180,11 @@ export function TeamTab({
               <TableHead>Email</TableHead>
               <TableHead>Ρόλος</TableHead>
               <TableHead>Κατάσταση</TableHead>
-              <TableHead>Ανεξόφλητο υπόλοιπο</TableHead>
-              <TableHead>Πλαφόν (€)</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             {users.map((user) => {
-              const outstanding = outstandingByAgent[user.id] ?? 0;
-              const overLimit = user.credit_limit != null && outstanding > user.credit_limit;
-              const updateCreditLimitAction = updateAgencyUserCreditLimit.bind(null, user.id);
-
               return (
                 <TableRow key={user.id}>
                   <TableCell>
@@ -229,31 +219,6 @@ export function TeamTab({
                     <Badge variant={user.is_active ? "default" : "outline"}>
                       {user.is_active ? "Ενεργός" : "Ανενεργός"}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className={overLimit ? "font-medium text-destructive" : ""}>
-                      {outstanding.toFixed(2)} €
-                    </span>
-                    {overLimit && (
-                      <Badge variant="destructive" className="ml-2">
-                        Υπέρβαση πλαφόν
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <form action={updateCreditLimitAction} className="flex items-center gap-2">
-                      <Input
-                        name="credit_limit"
-                        type="number"
-                        step="0.01"
-                        defaultValue={user.credit_limit ?? ""}
-                        placeholder="Χωρίς όριο"
-                        className="w-28"
-                      />
-                      <Button type="submit" size="sm" variant="outline">
-                        Αποθ.
-                      </Button>
-                    </form>
                   </TableCell>
                   <TableCell>
                     {user.id !== currentUserId && (

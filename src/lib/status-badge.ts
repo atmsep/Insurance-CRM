@@ -20,13 +20,6 @@ export function claimStatusVariant(status: string): StatusBadgeVariant {
   return "outline";
 }
 
-export function installmentStatusVariant(status: string): StatusBadgeVariant {
-  if (status === "paid") return "success";
-  if (status === "overdue" || status === "cancelled") return "destructive";
-  if (status === "pending" || status === "partially_paid") return "warning";
-  return "outline";
-}
-
 export function taskPriorityVariant(priority: string): StatusBadgeVariant {
   if (priority === "urgent") return "destructive";
   if (priority === "high") return "warning";

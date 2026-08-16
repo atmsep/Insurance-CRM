@@ -23,23 +23,8 @@ import { InteractionsTab } from "./_components/interactions-tab";
 import { CallsTab } from "./_components/calls-tab";
 import { TicketsTab } from "./_components/tickets-tab";
 import { ReferralsTab, type ReferredClient } from "./_components/referrals-tab";
-import { OutstandingTab } from "./_components/outstanding-tab";
-import { LedgerTab } from "./_components/ledger-tab";
 import { TasksTab } from "./_components/tasks-tab";
 import { ActivityFeed, type ActivityEntry } from "@/components/activity-feed";
-import { installmentApplied, installmentTip } from "../../policies/balance";
-
-type ClientInstallmentRow = {
-  id: string;
-  policy_id: string;
-  policy_number: string;
-  installment_number: number;
-  due_date: string;
-  amount: number;
-  status: string;
-  paid_amount: number | null;
-  installment_payments: { amount: number; paid_date: string; paid_at: string; is_reversed: boolean }[];
-};
 
 export default async function ClientDetailPage({
   params,
@@ -66,7 +51,6 @@ export default async function ClientDetailPage({
     { data: interactions },
     { data: calls },
     documents,
-    { data: installments },
     { data: tickets },
     { data: agents },
     { data: tasks },
@@ -96,19 +80,6 @@ export default async function ClientDetailPage({
       .order("created_at", { ascending: false })
       .limit(50),
     getDocumentsFor("client", id),
-    // Widened beyond what the totalBilled/totalPaid/outstanding math below
-    // needs (amount/paid_amount/status/policy_id) so the same call also
-    // feeds the Λογιστική Καρτέλα tab (installment_payments + policy_number)
-    // — one round-trip for both consumers, not two. This used to be a plain
-    // PostgREST embedded query (policies!inner + .eq("policies.client_id",…))
-    // but that shape hit a real statement timeout under an authenticated
-    // session — PostgREST's translation of the embedded filter defeats the
-    // planner's use of policies_client_idx (confirmed: the equivalent
-    // hand-written join runs in ~1ms). client_installments_ledger
-    // (migration 0070) is that same join as a security-definer RPC.
-    supabase.rpc("client_installments_ledger", { p_client_id: id }) as unknown as Promise<{
-      data: ClientInstallmentRow[] | null;
-    }>,
     supabase
       .from("client_tickets")
       .select("id, subject, description, status, priority, created_at, assigned_to, resolution_notes")
@@ -148,40 +119,6 @@ export default async function ClientDetailPage({
       .maybeSingle(),
   ]);
 
-  const installmentRows = installments ?? [];
-
-  // "Billed"/"outstanding" are measured against each policy's actual
-  // premium, not just the installment rows someone happened to create —
-  // otherwise a policy with no (or partial) installments looks fully
-  // collected even though most of the premium was never billed as a δόση.
-  //
-  // The installments query itself isn't scoped to is_current_term (an old
-  // renewed-away term can still have real payment history), so it's scoped
-  // here instead: only installments belonging to a currently-listed policy
-  // count toward these totals, keeping them consistent with totalBilled
-  // (which is already derived from the is_current_term-filtered `policies`).
-  const currentPolicyIds = new Set((policies ?? []).map((p) => p.id));
-  const currentInstallments = installmentRows.filter((i) => currentPolicyIds.has(i.policy_id));
-
-  const paidByPolicy = new Map<string, number>();
-  for (const i of currentInstallments) {
-    if (i.status !== "paid" && i.status !== "partially_paid") continue;
-    paidByPolicy.set(i.policy_id, (paidByPolicy.get(i.policy_id) ?? 0) + installmentApplied(i));
-  }
-
-  const billablePolicies = (policies ?? []).filter(
-    (p) => p.status !== "draft" && p.status !== "cancelled",
-  );
-  const totalBilled = billablePolicies.reduce((sum, p) => sum + (p.premium_gross ?? 0), 0);
-  const totalPaid = currentInstallments
-    .filter((i) => i.status === "paid" || i.status === "partially_paid")
-    .reduce((sum, i) => sum + installmentApplied(i), 0);
-  const totalTips = currentInstallments.reduce((sum, i) => sum + installmentTip(i), 0);
-  const outstanding = billablePolicies.reduce(
-    (sum, p) => sum + Math.max((p.premium_gross ?? 0) - (paidByPolicy.get(p.id) ?? 0), 0),
-    0,
-  );
-
   const name = resolveClientName(client);
   const referrerLabel =
     (client.referred_by as unknown as { display_name: string | null } | null)?.display_name ?? undefined;
@@ -213,8 +150,6 @@ export default async function ClientDetailPage({
         <TabsList>
           <TabsTrigger value="details">Στοιχεία</TabsTrigger>
           <TabsTrigger value="profile">Προφίλ</TabsTrigger>
-          <TabsTrigger value="outstanding">Ανείσπρακτα</TabsTrigger>
-          <TabsTrigger value="ledger">Λογιστική Καρτέλα</TabsTrigger>
           <TabsTrigger value="interactions">Επικοινωνία</TabsTrigger>
           <TabsTrigger value="calls">Κλήσεις</TabsTrigger>
           <TabsTrigger value="tickets">Αιτήματα</TabsTrigger>
@@ -230,10 +165,6 @@ export default async function ClientDetailPage({
               client={client}
               agents={agents ?? []}
               referrerLabel={referrerLabel}
-              totalBilled={totalBilled}
-              totalPaid={totalPaid}
-              totalTips={totalTips}
-              outstanding={outstanding}
               referralRewardTotal={referralRewardTotal}
               referralRewardPolicyCount={referralRewardPolicyCount}
               updateAction={updateAction}
@@ -244,14 +175,6 @@ export default async function ClientDetailPage({
 
         <TabsContent value="profile" className="pt-4">
           <ProfileTab client={client} updateAction={updateProfileAction} />
-        </TabsContent>
-
-        <TabsContent value="outstanding" className="pt-4">
-          <OutstandingTab clientId={id} />
-        </TabsContent>
-
-        <TabsContent value="ledger" className="pt-4">
-          <LedgerTab clientId={id} installments={installmentRows} />
         </TabsContent>
 
         <TabsContent value="interactions" className="pt-4">

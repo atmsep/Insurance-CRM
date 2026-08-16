@@ -8,7 +8,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  getBillingSummary,
   getClaimsByStatus,
   getPoliciesByLine,
   getPoliciesByStatus,
@@ -53,27 +52,13 @@ function StatCard({
   );
 }
 
-// One boundary for the whole stat row: it draws from 2 different RPCs
-// (policies-by-status, billing), each already deduped via the
-// cache()-wrapped getters against the table cards below that use the same
-// data — splitting the row itself into 5 tiny boundaries wouldn't reduce
-// any DB round-trips, only add layout churn.
 export async function ReportsStatsRow() {
-  const [policiesByStatusRows, billing] = await Promise.all([getPoliciesByStatus(), getBillingSummary()]);
-
+  const policiesByStatusRows = await getPoliciesByStatus();
   const activePremium = policiesByStatusRows.find((r) => r.status === "active")?.premium_sum ?? 0;
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <div className="grid grid-cols-1">
       <StatCard label="Ενεργό ασφάλιστρο" value={`${activePremium.toFixed(2)} €`} />
-      <StatCard label="Χρεωθέν σύνολο εισπράξεων" value={`${billing.total_billed.toFixed(2)} €`} />
-      <StatCard label="Εισπραγμένο" value={`${billing.total_collected.toFixed(2)} €`} />
-      <StatCard label="Φιλοδωρήματα" value={`${billing.total_tips.toFixed(2)} €`} />
-      <StatCard
-        label="Ανείσπρακτο υπόλοιπο"
-        value={`${billing.outstanding.toFixed(2)} €`}
-        tone={billing.outstanding > 0 ? "warning" : "neutral"}
-      />
     </div>
   );
 }

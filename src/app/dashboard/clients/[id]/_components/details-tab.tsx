@@ -68,10 +68,6 @@ export function DetailsTab({
   client,
   agents,
   referrerLabel,
-  totalBilled,
-  totalPaid,
-  totalTips,
-  outstanding,
   referralRewardTotal,
   referralRewardPolicyCount,
   updateAction,
@@ -79,10 +75,6 @@ export function DetailsTab({
   client: Client;
   agents: { id: string; full_name: string }[];
   referrerLabel: string | undefined;
-  totalBilled: number;
-  totalPaid: number;
-  totalTips: number;
-  outstanding: number;
   referralRewardTotal: number;
   referralRewardPolicyCount: number;
   updateAction: (formData: FormData) => Promise<{ error: string } | undefined>;
@@ -370,33 +362,6 @@ export function DetailsTab({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Οικονομική εικόνα</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2 text-sm">
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Χρεωθέν σύνολο</span>
-            <span className="text-right font-medium">{totalBilled.toFixed(2)} €</span>
-          </div>
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Εισπραγμένο</span>
-            <span className="text-right font-medium">{totalPaid.toFixed(2)} €</span>
-          </div>
-          {totalTips > 0 && (
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Φιλοδωρήματα</span>
-              <span className="text-right font-medium">{totalTips.toFixed(2)} €</span>
-            </div>
-          )}
-          <div className="flex justify-between gap-4">
-            <span className="text-muted-foreground">Υπόλοιπο</span>
-            <span className={`text-right font-medium ${outstanding > 0 ? "text-warning" : ""}`}>
-              {outstanding.toFixed(2)} €
-            </span>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

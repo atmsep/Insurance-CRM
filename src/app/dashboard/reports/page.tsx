@@ -20,7 +20,7 @@ export default async function ReportsPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Αναφορές</h1>
 
-      <Suspense fallback={<StatTileGridSkeleton count={5} />}>
+      <Suspense fallback={<StatTileGridSkeleton count={1} />}>
         <ReportsStatsRow />
       </Suspense>
 

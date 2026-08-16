@@ -38,7 +38,6 @@ type Agent = {
   phone: string | null;
   role: string;
   hire_date: string | null;
-  credit_limit: number | null;
 };
 
 export function AgentDetailsCard({
@@ -58,7 +57,6 @@ export function AgentDetailsCard({
     email: agent.email,
     phone: agent.phone ?? "",
     hire_date: agent.hire_date ?? "",
-    credit_limit: agent.credit_limit != null ? String(agent.credit_limit) : "",
   });
 
   return (
@@ -127,17 +125,6 @@ export function AgentDetailsCard({
                   </Select>
                 )}
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="credit_limit">Πλαφόν ανεξόφλητου (€)</Label>
-                <Input
-                  id="credit_limit"
-                  name="credit_limit"
-                  type="number"
-                  step="0.01"
-                  placeholder="Χωρίς όριο"
-                  {...field("credit_limit")}
-                />
-              </div>
             </div>
             <Button type="submit" disabled={isSaving} className="w-fit">
               {isSaving ? "Αποθήκευση..." : "Αποθήκευση"}
@@ -150,10 +137,6 @@ export function AgentDetailsCard({
             <ViewField label="Τηλέφωνο" value={agent.phone} />
             <ViewField label="Ημερομηνία πρόσληψης" value={agent.hire_date} />
             <ViewField label="Ρόλος" value={ROLE_LABELS[agent.role] ?? agent.role} />
-            <ViewField
-              label="Πλαφόν ανεξόφλητου"
-              value={agent.credit_limit != null ? `${agent.credit_limit.toFixed(2)} €` : undefined}
-            />
           </div>
         )}
       </CardContent>

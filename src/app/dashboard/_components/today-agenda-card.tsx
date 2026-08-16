@@ -13,7 +13,7 @@ import { getCelebrationTemplatesCached } from "@/lib/cached-queries/lookups";
 import { formatDate, todayISO } from "./date-utils";
 
 type AgendaItem =
-  | { key: string; label: string; href: string; kind: "task" | "collection" | "expiring" }
+  | { key: string; label: string; href: string; kind: "task" | "expiring" }
   | {
       key: string;
       label: string;
@@ -33,35 +33,28 @@ type TodayTaskRow = {
   clients: { email: string | null; display_name: string | null } | { email: string | null; display_name: string | null }[] | null;
 };
 
-// Kept as one component/Suspense boundary (not split per query): the three
+// Kept as one component/Suspense boundary (not split per query): the two
 // "today" queries feed a single merged agendaItems list, so splitting them
 // would show a half-built agenda flashing as each part resolved separately.
 export async function TodayAgendaCard() {
   const supabase = await createClient();
   const today = todayISO();
 
-  const [{ data: todayTasks }, { data: todayCollections }, { data: todayExpiring }, celebrationTemplates] =
-    await Promise.all([
-      supabase
-        .from("tasks")
-        .select("id, title, priority, task_type, clients(email, display_name)")
-        .eq("status", "pending")
-        .eq("due_date", today)
-        .order("priority", { ascending: false }),
-      supabase
-        .from("policy_installments")
-        .select("id, amount, policy_id, policies!inner(policy_number, status)")
-        .neq("status", "paid")
-        .not("policies.status", "in", "(draft,cancelled)")
-        .eq("due_date", today),
-      supabase
-        .from("policies")
-        .select("id, policy_number")
-        .in("status", ["active", "pending_renewal"])
-        .eq("is_current_term", true)
-        .eq("end_date", today),
-      getCelebrationTemplatesCached(),
-    ]);
+  const [{ data: todayTasks }, { data: todayExpiring }, celebrationTemplates] = await Promise.all([
+    supabase
+      .from("tasks")
+      .select("id, title, priority, task_type, clients(email, display_name)")
+      .eq("status", "pending")
+      .eq("due_date", today)
+      .order("priority", { ascending: false }),
+    supabase
+      .from("policies")
+      .select("id, policy_number")
+      .in("status", ["active", "pending_renewal"])
+      .eq("is_current_term", true)
+      .eq("end_date", today),
+    getCelebrationTemplatesCached(),
+  ]);
 
   const agendaItems: AgendaItem[] = [
     ...((todayTasks ?? []) as unknown as TodayTaskRow[]).map((t): AgendaItem => {
@@ -82,12 +75,6 @@ export async function TodayAgendaCard() {
       }
       return { key: `task-${t.id}`, label: t.title, href: "/dashboard/tasks", kind: "task" as const };
     }),
-    ...(todayCollections ?? []).map((i) => ({
-      key: `inst-${i.id}`,
-      label: `Είσπραξη ${(i.policies as unknown as { policy_number: string } | null)?.policy_number ?? "—"} — ${i.amount.toFixed(2)} €`,
-      href: `/dashboard/policies/${i.policy_id}`,
-      kind: "collection" as const,
-    })),
     ...(todayExpiring ?? []).map((p) => ({
       key: `exp-${p.id}`,
       label: `Λήξη συμβολαίου ${p.policy_number}`,
@@ -126,20 +113,8 @@ export async function TodayAgendaCard() {
                 className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-muted"
               >
                 <span>{item.label}</span>
-                <Badge
-                  variant={
-                    item.kind === "collection"
-                      ? "destructive"
-                      : item.kind === "expiring"
-                        ? "outline"
-                        : "default"
-                  }
-                >
-                  {item.kind === "task"
-                    ? "Υπενθύμιση"
-                    : item.kind === "collection"
-                      ? "Είσπραξη"
-                      : "Λήξη"}
+                <Badge variant={item.kind === "expiring" ? "outline" : "default"}>
+                  {item.kind === "task" ? "Υπενθύμιση" : "Λήξη"}
                 </Badge>
               </Link>
             ),

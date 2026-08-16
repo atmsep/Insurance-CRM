@@ -115,31 +115,6 @@ export async function toggleBrokerOfficeActive(brokerOfficeId: string, isActive:
   revalidatePath("/dashboard/settings");
 }
 
-export async function createPaymentMethod(formData: FormData) {
-  await requireAdmin();
-  const supabase = await createSupabaseClient();
-
-  const name = formData.get("name") as string;
-  if (!name) return;
-
-  await supabase.from("payment_methods").insert({ name });
-
-  revalidatePath("/dashboard/settings");
-  revalidatePath("/dashboard/installments");
-  updateTag(CACHE_TAGS.paymentMethods);
-}
-
-export async function togglePaymentMethodActive(paymentMethodId: string, isActive: boolean) {
-  await requireAdmin();
-  const supabase = await createSupabaseClient();
-  await supabase
-    .from("payment_methods")
-    .update({ is_active: isActive })
-    .eq("id", paymentMethodId);
-  revalidatePath("/dashboard/settings");
-  revalidatePath("/dashboard/installments");
-  updateTag(CACHE_TAGS.paymentMethods);
-}
 
 export async function createEmailTemplate(formData: FormData) {
   await requireAdmin();
@@ -229,17 +204,8 @@ export async function toggleAgencyUserActive(userId: string, isActive: boolean) 
   updateTag(CACHE_TAGS.agencyUsers);
 }
 
-export async function updateAgencyUserCreditLimit(userId: string, formData: FormData) {
-  await requireAdmin();
-  const supabase = await createSupabaseClient();
-  const raw = formData.get("credit_limit");
-  const value = typeof raw === "string" && raw.length > 0 ? Number(raw) : null;
-  await supabase.from("agency_users").update({ credit_limit: value }).eq("id", userId);
-  revalidatePath("/dashboard/settings");
-}
-
 // Full profile edit from the agent's own detail page — name/phone/hire
-// date/role/credit limit together, plus the login email if it changed
+// date/role together, plus the login email if it changed
 // (which also has to update auth.users, not just the agency_users row, or
 // the two would drift apart and the agent couldn't log in with the new
 // address). Same (clientId, formData) => {error}|undefined convention as
@@ -257,9 +223,6 @@ export async function updateAgencyUserProfile(
   const phone = (formData.get("phone") as string) || null;
   const hireDate = (formData.get("hire_date") as string) || null;
   const role = (formData.get("role") as string) || "agent";
-  const creditLimitRaw = formData.get("credit_limit");
-  const creditLimit =
-    typeof creditLimitRaw === "string" && creditLimitRaw.length > 0 ? Number(creditLimitRaw) : null;
 
   if (!fullName) return { error: "Δώσε ονοματεπώνυμο." };
   if (!isValidEmail(email)) return { error: "Δώσε ένα έγκυρο email." };
@@ -288,7 +251,6 @@ export async function updateAgencyUserProfile(
       phone,
       hire_date: hireDate,
       role,
-      credit_limit: creditLimit,
     })
     .eq("id", userId);
 

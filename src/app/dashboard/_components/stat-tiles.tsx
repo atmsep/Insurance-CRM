@@ -43,30 +43,6 @@ export async function ExpiringTile() {
   );
 }
 
-export async function OutstandingTile() {
-  const supabase = await createClient();
-  // The plain joined count (policy_installments -> policies!inner) hit a
-  // real statement timeout under an authenticated session once
-  // policy_installments grew to ~39,700 rows, and supabase-js silently
-  // returns count: null on error — which this tile then rendered as "0",
-  // hiding a genuine timeout as "nothing outstanding". installments_worklist_count
-  // (migration 0065) already does this exact count as a security-definer
-  // RPC with the equivalent agent/admin scoping and is used by the
-  // Ανείσπρακτα page itself — reused here instead of the raw query.
-  const { data: count } = (await supabase.rpc("installments_worklist_count")) as unknown as {
-    data: number | null;
-  };
-  const outstanding = count ?? 0;
-  return (
-    <StatTile
-      label="Ανείσπρακτα"
-      value={outstanding}
-      tone={outstanding > 0 ? "critical" : "neutral"}
-      href="/dashboard/installments"
-    />
-  );
-}
-
 export async function OpenClaimsTile() {
   const supabase = await createClient();
   const { count } = await supabase

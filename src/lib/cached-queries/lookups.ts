@@ -23,37 +23,3 @@ export const getCelebrationTemplatesCached = cache(
   ),
 );
 
-export type PaymentMethodOption = { id: string; name: string };
-
-export const getActivePaymentMethodsCached = cache(
-  unstable_cache(
-    async (): Promise<PaymentMethodOption[]> => {
-      const admin = createAdminClient();
-      const { data } = await admin
-        .from("payment_methods")
-        .select("id, name")
-        .eq("is_active", true)
-        .order("sort_order");
-      return data ?? [];
-    },
-    ["payment-methods-active"],
-    { revalidate: 3600, tags: [CACHE_TAGS.paymentMethods] },
-  ),
-);
-
-export type AgentOption = { id: string; full_name: string };
-
-// Not filtered by is_active — matches the installments page's original
-// query, which lists every agent (including inactive ones with an existing
-// book) in the admin grouping dropdown.
-export const getAgentsListCached = cache(
-  unstable_cache(
-    async (): Promise<AgentOption[]> => {
-      const admin = createAdminClient();
-      const { data } = await admin.from("agency_users").select("id, full_name").order("full_name");
-      return data ?? [];
-    },
-    ["agency-users-list"],
-    { revalidate: 300, tags: [CACHE_TAGS.agencyUsers] },
-  ),
-);

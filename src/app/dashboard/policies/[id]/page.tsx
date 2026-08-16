@@ -5,15 +5,12 @@ import { updatePolicyDetails } from "../actions";
 import { buildPolicyMergeFields } from "@/lib/email";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
-import { getCurrentAgencyUser } from "@/lib/dal";
 import { resolveClientName } from "@/lib/client-name";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { PolicyHeader } from "./_components/policy-header";
 import { VisitTracker } from "./_components/visit-tracker";
 import { DetailsTab } from "./_components/details-tab";
-import { InstallmentsTab } from "./_components/installments-tab";
 import { ClaimsTab } from "./_components/claims-tab";
-import { MovementsTab } from "./_components/movements-tab";
 import { ActivityFeed } from "@/components/activity-feed";
 import type { PolicyStatus } from "@/lib/database.types";
 
@@ -62,7 +59,6 @@ export default async function PolicyDetailPage({
     { data: property },
     { data: lifeHealth },
     documents,
-    agencyUser,
     { data: agents },
     { data: brokerOffices },
     { data: emailTemplates },
@@ -78,7 +74,6 @@ export default async function PolicyDetailPage({
       ? supabase.from("policy_life_health_details").select("*").eq("policy_id", id).maybeSingle()
       : Promise.resolve({ data: null }),
     getDocumentsFor("policy", id),
-    getCurrentAgencyUser(),
     supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
     supabase
       .from("broker_offices")
@@ -100,8 +95,6 @@ export default async function PolicyDetailPage({
       .order("created_at", { ascending: false })
       .limit(50),
   ]);
-
-  const isAdmin = agencyUser?.role === "owner" || agencyUser?.role === "admin";
 
   const daysRemaining = Math.ceil(
     (new Date(policy.end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24),
@@ -140,8 +133,6 @@ export default async function PolicyDetailPage({
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">Στοιχεία</TabsTrigger>
-          <TabsTrigger value="movements">Κινήσεις</TabsTrigger>
-          <TabsTrigger value="installments">Εισπράξεις</TabsTrigger>
           <TabsTrigger value="claims">Ζημιές</TabsTrigger>
           <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
           <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
@@ -157,14 +148,6 @@ export default async function PolicyDetailPage({
             brokerOffices={brokerOffices ?? []}
             updateDetailsAction={updateDetailsAction}
           />
-        </TabsContent>
-
-        <TabsContent value="movements" className="pt-4">
-          <MovementsTab policyGroupId={policy.policy_group_id} currentPolicyId={id} />
-        </TabsContent>
-
-        <TabsContent value="installments" className="pt-4">
-          <InstallmentsTab policyId={id} isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="claims" className="pt-4">

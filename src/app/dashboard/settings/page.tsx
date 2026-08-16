@@ -5,7 +5,6 @@ import { ProfileTab } from "./profile-tab";
 import { CarriersTab } from "./carriers-tab";
 import { TeamTab } from "./team-tab";
 import { BrokerOfficesTab } from "./broker-offices-tab";
-import { PaymentMethodsTab } from "./payment-methods-tab";
 import { AutomationsTab } from "./automations-tab";
 import { EmailTemplatesTab } from "./email-templates-tab";
 import { ErrorsTab } from "./errors-tab";
@@ -19,9 +18,7 @@ export default async function SettingsPage() {
   const [
     { data: carriers },
     { data: users },
-    { data: outstandingRows },
     { data: brokerOffices },
-    { data: paymentMethods },
     { data: appSettings },
     { data: emailTemplates },
     { data: recentErrors },
@@ -33,15 +30,7 @@ export default async function SettingsPage() {
       ? supabase.from("agency_users").select("*").order("full_name")
       : Promise.resolve({ data: [] }),
     isAdmin
-      ? (supabase.rpc("agent_outstanding_balances") as unknown as Promise<{
-          data: { agent_id: string; outstanding: number }[] | null;
-        }>)
-      : Promise.resolve({ data: [] }),
-    isAdmin
       ? supabase.from("broker_offices").select("*").order("is_direct", { ascending: false }).order("name")
-      : Promise.resolve({ data: [] }),
-    isAdmin
-      ? supabase.from("payment_methods").select("*").order("sort_order")
       : Promise.resolve({ data: [] }),
     isAdmin
       ? supabase.from("app_settings").select("key, enabled, value").order("key")
@@ -58,10 +47,6 @@ export default async function SettingsPage() {
       : Promise.resolve({ data: [] }),
   ]);
 
-  const outstandingByAgent = new Map(
-    (outstandingRows ?? []).map((row) => [row.agent_id, row.outstanding]),
-  );
-
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Ρυθμίσεις</h1>
@@ -72,7 +57,6 @@ export default async function SettingsPage() {
           {isAdmin && <TabsTrigger value="carriers">Ασφαλιστικές εταιρείες</TabsTrigger>}
           {isAdmin && <TabsTrigger value="team">Συνεργάτες</TabsTrigger>}
           {isAdmin && <TabsTrigger value="brokers">Συνεργαζόμενα Γραφεία</TabsTrigger>}
-          {isAdmin && <TabsTrigger value="payment-methods">Μέθοδοι Πληρωμής</TabsTrigger>}
           {isAdmin && <TabsTrigger value="parametric">Παραμετρικοί Πίνακες</TabsTrigger>}
           {isAdmin && <TabsTrigger value="automations">Αυτοματισμοί</TabsTrigger>}
           {isAdmin && <TabsTrigger value="email-templates">Πρότυπα Email</TabsTrigger>}
@@ -88,21 +72,12 @@ export default async function SettingsPage() {
         )}
         {isAdmin && (
           <TabsContent value="team" className="pt-4">
-            <TeamTab
-              users={users ?? []}
-              currentUserId={agencyUser.id}
-              outstandingByAgent={Object.fromEntries(outstandingByAgent)}
-            />
+            <TeamTab users={users ?? []} currentUserId={agencyUser.id} />
           </TabsContent>
         )}
         {isAdmin && (
           <TabsContent value="brokers" className="pt-4">
             <BrokerOfficesTab brokerOffices={brokerOffices ?? []} />
-          </TabsContent>
-        )}
-        {isAdmin && (
-          <TabsContent value="payment-methods" className="pt-4">
-            <PaymentMethodsTab paymentMethods={paymentMethods ?? []} />
           </TabsContent>
         )}
         {isAdmin && (

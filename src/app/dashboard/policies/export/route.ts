@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { POLICY_STATUS_LABELS as STATUS_LABELS } from "../policy-labels";
-import { getOutstandingByPolicy } from "../balance";
 import { parsePolicyFilters, applyPolicyFilters } from "../filters";
 
 export async function GET(request: Request) {
@@ -28,13 +27,11 @@ export async function GET(request: Request) {
   }
 
   const { data: policies } = await query;
-  const outstandingByPolicy = await getOutstandingByPolicy(supabase, policies ?? []);
 
   const rows = (policies ?? []).map((p) => {
     const client = p.clients as unknown as { display_name: string | null } | null;
     const line = p.insurance_lines as unknown as { name_el: string } | null;
     const carrier = p.carriers as unknown as { name: string } | null;
-    const outstanding = outstandingByPolicy.get(p.id);
     return {
       risk: p.risk_label ?? "",
       policy_number: p.policy_number,
@@ -47,7 +44,6 @@ export async function GET(request: Request) {
       end_date: p.end_date,
       premium_gross: p.premium_gross,
       premium_net: p.premium_net ?? "",
-      outstanding: outstanding ?? "",
       status: STATUS_LABELS[p.status] ?? p.status,
     };
   });
@@ -64,7 +60,6 @@ export async function GET(request: Request) {
     { key: "end_date", label: "Λήξη" },
     { key: "premium_gross", label: "Μικτό ασφάλιστρο" },
     { key: "premium_net", label: "Καθαρό ασφάλιστρο" },
-    { key: "outstanding", label: "Υπόλοιπο" },
     { key: "status", label: "Κατάσταση" },
   ]);
 

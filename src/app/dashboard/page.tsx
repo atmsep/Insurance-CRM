@@ -5,7 +5,6 @@ import {
   ExpiringTile,
   OpenClaimsTile,
   OpenTicketsTile,
-  OutstandingTile,
   PendingTasksTile,
   TodayCallsTile,
 } from "./_components/stat-tiles";
@@ -35,9 +34,6 @@ export default function DashboardPage() {
         </Suspense>
         <Suspense fallback={<StatTileSkeleton />}>
           <ExpiringTile />
-        </Suspense>
-        <Suspense fallback={<StatTileSkeleton />}>
-          <OutstandingTile />
         </Suspense>
         <Suspense fallback={<StatTileSkeleton />}>
           <OpenClaimsTile />

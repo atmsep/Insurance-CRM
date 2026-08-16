@@ -6,8 +6,6 @@ import {
   LayoutDashboard,
   FileText,
   Users,
-  Receipt,
-  Wallet,
   ShieldAlert,
   MessageSquare,
   BellRing,
@@ -28,13 +26,6 @@ const navItems: NavItem[] = [
     links: [
       { href: "/dashboard/policies", label: "Συμβόλαια", icon: FileText },
       { href: "/dashboard/clients", label: "Πελάτες", icon: Users },
-    ],
-  },
-  {
-    group: "Τυπώνω - Πληρώνω",
-    links: [
-      { href: "/dashboard/installments", label: "Εισπράξεις", icon: Receipt },
-      { href: "/dashboard/cash-register", label: "Ταμείο", icon: Wallet },
     ],
   },
   {

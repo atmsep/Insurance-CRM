@@ -11,22 +11,11 @@ export type InstallmentForMath = {
 
 // policy_installments.paid_amount is kept in sync with the active
 // (non-reversed) total of its installment_payments transactions by a DB
-// trigger (see migration 0045), so it's always accurate — these three
-// helpers turn that one number into the three figures the UI/reports
-// actually need: how much of it counts toward the premium (capped at
-// amount, so a tip never masks as more premium collected), how much is a
-// tip (the part above amount), and how much is still owed. Pure math, no
-// status branching needed — paid_amount already reflects reality.
+// trigger (see migration 0045), so it's always accurate — capped at amount
+// so a tip never masks as more premium collected. Still used by
+// getOutstandingByPolicy below.
 export function installmentApplied(inst: InstallmentForMath): number {
   return Math.min(inst.paid_amount ?? 0, inst.amount);
-}
-
-export function installmentTip(inst: InstallmentForMath): number {
-  return Math.max((inst.paid_amount ?? 0) - inst.amount, 0);
-}
-
-export function installmentRemaining(inst: InstallmentForMath): number {
-  return Math.max(inst.amount - (inst.paid_amount ?? 0), 0);
 }
 
 // "Issued and still relevant" — not a draft that never went out, not a
@@ -36,9 +25,8 @@ export function isBillablePolicyStatus(status: string): boolean {
   return status !== "draft" && status !== "cancelled";
 }
 
-// Same "outstanding = premium_gross minus paid installments" rule used on
-// the client detail page's Οικονομική εικόνα card, scoped here to a given
-// page of policies instead of one client's policies.
+// "outstanding = premium_gross minus paid installments", scoped to a given
+// page of policies — used by the policies list and CSV export.
 export async function getOutstandingByPolicy(
   supabase: SupabaseClient,
   policies: PolicyForBalance[],

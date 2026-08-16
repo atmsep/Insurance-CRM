@@ -1,14 +1,12 @@
 "use server";
 
-import { revalidatePath, updateTag } from "next/cache";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser, getCurrentAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
-import { CACHE_TAGS } from "@/lib/cache-tags";
 import type { PaymentFrequency } from "@/lib/database.types";
-import { installmentRemaining, getOutstandingByPolicy } from "./balance";
 import { POLICY_STATUS_LABELS } from "./policy-labels";
 
 export type PolicyFormState = { error: string; field?: string } | undefined;
@@ -47,49 +45,6 @@ export async function searchPolicies(query: string): Promise<{ id: string; label
   return [...merged.values()].slice(0, 20);
 }
 
-type SingleOrMany<T> = T | T[] | null;
-
-export type InstallmentPayment = {
-  id: string;
-  amount: number;
-  paid_at: string;
-  receipt_number: string | null;
-  is_reversed: boolean;
-  reversal_reason: string | null;
-  payment_methods: SingleOrMany<{ name: string }>;
-  agency_users: SingleOrMany<{ full_name: string }>;
-};
-
-export type InstallmentWithPayments = {
-  id: string;
-  installment_number: number;
-  due_date: string;
-  amount: number;
-  status: string;
-  paid_amount: number | null;
-  installment_payments: InstallmentPayment[];
-};
-
-export async function getPolicyInstallments(policyId: string) {
-  await requireAgencyUser();
-  const supabase = await createSupabaseClient();
-  const [{ data: installments }, { data: paymentMethods }] = await Promise.all([
-    supabase
-      .from("policy_installments")
-      .select(
-        "*, installment_payments(*, payment_methods(name), " +
-          "agency_users!installment_payments_paid_by_fkey(full_name))",
-      )
-      .eq("policy_id", policyId)
-      .order("installment_number", { ascending: true }),
-    supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
-  ]);
-  return {
-    installments: (installments ?? []) as unknown as InstallmentWithPayments[],
-    paymentMethods: paymentMethods ?? [],
-  };
-}
-
 export async function getPolicyClaims(policyId: string) {
   await requireAgencyUser();
   const supabase = await createSupabaseClient();
@@ -99,52 +54,6 @@ export async function getPolicyClaims(policyId: string) {
     .eq("policy_id", policyId)
     .order("date_of_loss", { ascending: false });
   return claims ?? [];
-}
-
-export type PolicyMovement = {
-  id: string;
-  document_label: string;
-  kind: "Συμβόλαιο" | "Ανανέωση" | "Ακύρωση";
-  created_at: string;
-  start_date: string;
-  end_date: string;
-  premium_net: number | null;
-  premium_gross: number;
-  agent_name: string | null;
-  outstanding: number;
-};
-
-// Powers the policy detail page's "Κινήσεις" tab — every renewal term of
-// the same policy_group_id chain as one row, mirroring Profia's document
-// list (which our schema doesn't model as a separate entity: policy_number
-// is shared across a whole chain per migration 0032, so each row's
-// "document number" is synthesized as policy_number/renewal_number here).
-export async function getPolicyMovements(policyGroupId: string): Promise<PolicyMovement[]> {
-  await requireAgencyUser();
-  const supabase = await createSupabaseClient();
-  const { data: terms } = await supabase
-    .from("policies")
-    .select(
-      "id, policy_number, renewal_number, created_at, start_date, end_date, premium_net, premium_gross, status, agency_users!policies_assigned_agent_id_fkey(full_name)",
-    )
-    .eq("policy_group_id", policyGroupId)
-    .order("renewal_number", { ascending: true });
-
-  const rows = terms ?? [];
-  const outstandingByPolicy = await getOutstandingByPolicy(supabase, rows);
-
-  return rows.map((t) => ({
-    id: t.id,
-    document_label: `${t.policy_number}/${t.renewal_number}`,
-    kind: t.status === "cancelled" ? "Ακύρωση" : t.renewal_number > 1 ? "Ανανέωση" : "Συμβόλαιο",
-    created_at: t.created_at,
-    start_date: t.start_date,
-    end_date: t.end_date,
-    premium_net: t.premium_net,
-    premium_gross: t.premium_gross,
-    agent_name: (t.agency_users as unknown as { full_name: string } | null)?.full_name ?? null,
-    outstanding: outstandingByPolicy.get(t.id) ?? 0,
-  }));
 }
 
 export async function getClientAssignedAgent(clientId: string): Promise<string | null> {
@@ -208,20 +117,6 @@ function vehicleDetailsPayload(formData: FormData) {
     title_retained: bool(formData, "title_retained"),
     financing_bank: str(formData, "financing_bank"),
   };
-}
-
-// Every policy — whatever its payment_frequency or duration — is billed as
-// exactly ONE installment for the full gross premium, due on start_date.
-// payment_frequency is informational only; it does not split the billing.
-function buildInstallmentRows(policyId: string, startDate: string, premiumGross: number) {
-  return [
-    {
-      policy_id: policyId,
-      installment_number: 1,
-      due_date: startDate,
-      amount: premiumGross,
-    },
-  ];
 }
 
 export async function createPolicy(
@@ -361,14 +256,6 @@ export async function createPolicy(
     return { error: "Σφάλμα κατά την αποθήκευση στοιχείων κλάδου: " + branchError };
   }
 
-  // Auto-generate the single receivable for the full gross premium, so the
-  // agent only ever has to click "Είσπραξη" when money actually comes in
-  // instead of first entering it by hand. Applies to renewals too — a
-  // renewed term needs its own fresh receivable just like new business.
-  await supabase
-    .from("policy_installments")
-    .insert(buildInstallmentRows(policy.id, startDate, premiumGross));
-
   await logActivity(supabase, {
     entityType: "policy",
     entityId: policy.id,
@@ -458,33 +345,6 @@ export async function resetPolicyStatusToAuto(
   revalidatePath(`/dashboard/policies/${policyId}`);
 }
 
-export async function createInstallment(policyId: string, formData: FormData) {
-  const agencyUser = await requireAgencyUser();
-  const supabase = await createSupabaseClient();
-
-  const { count } = await supabase
-    .from("policy_installments")
-    .select("id", { count: "exact", head: true })
-    .eq("policy_id", policyId);
-
-  await supabase.from("policy_installments").insert({
-    policy_id: policyId,
-    installment_number: (count ?? 0) + 1,
-    due_date: str(formData, "due_date") ?? "",
-    amount: num(formData, "amount") ?? 0,
-  });
-
-  await logActivity(supabase, {
-    entityType: "policy",
-    entityId: policyId,
-    action: "installment_created",
-    description: "Προστέθηκε νέα είσπραξη.",
-    actorId: agencyUser.id,
-  });
-
-  revalidatePath(`/dashboard/policies/${policyId}`);
-}
-
 export async function updatePolicyDetails(
   policyId: string,
   hasVehicle: boolean,
@@ -554,121 +414,6 @@ export async function updatePolicyDetails(
   });
 
   revalidatePath(`/dashboard/policies/${policyId}`);
-}
-
-// Records an actual collection as its own transaction row (installment_payments)
-// rather than overwriting a single rolled-up total, so a partial payment
-// followed by a top-up shows as two distinct movements everywhere instead
-// of merging into one. A DB trigger recomputes the parent installment's
-// paid_amount/status from the active (non-reversed) transactions afterward.
-// Self-attributed from the server session, never trusted from the client —
-// the RLS policy on installment_payments independently enforces the same.
-export async function collectInstallmentPayment(
-  policyId: string,
-  installmentId: string,
-  formData: FormData,
-) {
-  const agencyUser = await requireAgencyUser();
-  const supabase = await createSupabaseClient();
-
-  const { data: installment } = await supabase
-    .from("policy_installments")
-    .select("amount, paid_amount, policies!inner(client_id)")
-    .eq("id", installmentId)
-    .single();
-  if (!installment) return;
-
-  const remainingDue = installmentRemaining(installment);
-  const enteredRaw = formData.get("paid_amount");
-  const entered = enteredRaw !== null && enteredRaw !== "" ? Number(enteredRaw) : NaN;
-  const newPayment = Number.isFinite(entered) && entered > 0 ? entered : remainingDue;
-  if (newPayment <= 0) return;
-
-  const paymentMethodId = (formData.get("payment_method_id") as string) || null;
-  const receiptNumber = (formData.get("receipt_number") as string) || null;
-
-  const { error } = await supabase.from("installment_payments").insert({
-    installment_id: installmentId,
-    amount: Math.round(newPayment * 100) / 100,
-    payment_method_id: paymentMethodId,
-    receipt_number: receiptNumber,
-    paid_by: agencyUser.id,
-  });
-  if (error) return;
-
-  const tip = Math.max(Math.round((newPayment - remainingDue) * 100) / 100, 0);
-  const tipNote = tip > 0 ? ` (εκ των οποίων ${tip.toFixed(2)} € tip)` : "";
-  await logActivity(supabase, {
-    entityType: "policy",
-    entityId: policyId,
-    action: "payment_collected",
-    description: `Εισπράχθηκαν ${newPayment.toFixed(2)} €${tipNote}.`,
-    actorId: agencyUser.id,
-  });
-
-  const collectClientId = (installment.policies as unknown as { client_id: string } | null)?.client_id;
-
-  revalidatePath(`/dashboard/policies/${policyId}`);
-  revalidatePath("/dashboard/installments");
-  revalidatePath("/dashboard/cash-register");
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/reports");
-  if (collectClientId) revalidatePath(`/dashboard/clients/${collectClientId}`);
-  updateTag(CACHE_TAGS.reports);
-}
-
-// Owner/admin only (enforced both here and by RLS). Reverses one specific
-// transaction rather than the whole installment — never touches the
-// original row, just flags it, so a disputed collection stays visible as
-// evidence instead of being erased. The DB trigger then recomputes the
-// parent installment's paid_amount/status from what's left active.
-export async function reverseInstallmentPayment(
-  policyId: string,
-  paymentId: string,
-  formData: FormData,
-) {
-  const agencyUser = await requireAgencyUser();
-  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
-    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
-  }
-  const supabase = await createSupabaseClient();
-
-  const reason = (formData.get("cancellation_reason") as string) || null;
-  if (!reason) return { error: "Η αιτιολογία ακύρωσης είναι υποχρεωτική." };
-
-  await supabase
-    .from("installment_payments")
-    .update({
-      is_reversed: true,
-      reversed_by: agencyUser.id,
-      reversed_at: new Date().toISOString(),
-      reversal_reason: reason,
-    })
-    .eq("id", paymentId);
-
-  await logActivity(supabase, {
-    entityType: "policy",
-    entityId: policyId,
-    action: "payment_cancelled",
-    description: `Ακυρώθηκε είσπραξη: ${reason}`,
-    actorId: agencyUser.id,
-  });
-
-  const { data: reversedInstallmentPolicy } = await supabase
-    .from("policies")
-    .select("client_id")
-    .eq("id", policyId)
-    .single();
-
-  revalidatePath(`/dashboard/policies/${policyId}`);
-  revalidatePath("/dashboard/installments");
-  revalidatePath("/dashboard/cash-register");
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/reports");
-  if (reversedInstallmentPolicy?.client_id) {
-    revalidatePath(`/dashboard/clients/${reversedInstallmentPolicy.client_id}`);
-  }
-  updateTag(CACHE_TAGS.reports);
 }
 
 export async function sendPolicyEmail(

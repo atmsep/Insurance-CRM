@@ -22,7 +22,7 @@ export default async function AgentDetailPage({
   const { data: agent } = await supabase.from("agency_users").select("*").eq("id", id).single();
   if (!agent) notFound();
 
-  const [{ count: clientsCount }, { count: activePoliciesCount }, outstandingResult] = await Promise.all([
+  const [{ count: clientsCount }, { count: activePoliciesCount }] = await Promise.all([
     supabase
       .from("clients")
       .select("id", { count: "exact", head: true })
@@ -34,16 +34,7 @@ export default async function AgentDetailPage({
       .eq("assigned_agent_id", id)
       .eq("status", "active")
       .eq("is_current_term", true),
-    supabase.rpc("agent_outstanding_balance", { p_agent_id: id }) as unknown as Promise<{
-      data: number | null;
-    }>,
   ]);
-
-  // True per-agent sum via SQL (agent_outstanding_balance, migration 0063) —
-  // the previous unbounded .select() summed in JS was subject to
-  // PostgREST's 1,000-row cap, which risked silently undercounting exactly
-  // the agents with the largest books after the Profia import.
-  const outstanding = outstandingResult.data ?? 0;
 
   const updateAction = updateAgencyUserProfile.bind(null, id);
   const isSelf = agent.id === currentUser.id;
@@ -76,12 +67,6 @@ export default async function AgentDetailPage({
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Ενεργά συμβόλαια</span>
               <span className="text-right font-medium">{activePoliciesCount ?? 0}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Ανεξόφλητο υπόλοιπο</span>
-              <span className={`text-right font-medium ${outstanding > 0 ? "text-warning" : ""}`}>
-                {outstanding.toFixed(2)} €
-              </span>
             </div>
           </CardContent>
         </Card>
