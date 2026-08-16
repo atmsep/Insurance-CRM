@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ColumnFilter, type SortDirection } from "../clients/[id]/_components/column-filter";
 import { useFormValues } from "@/hooks/use-form-values";
 import {
   createEmailTemplate,
@@ -165,9 +166,70 @@ function EditTemplateForm({ template, onDone }: { template: EmailTemplate; onDon
   );
 }
 
+type Column = {
+  key: string;
+  label: string;
+  getValue: (t: EmailTemplate) => string;
+  getSortKey: (t: EmailTemplate) => string | number;
+};
+
+const COLUMNS: Column[] = [
+  { key: "name", label: "Όνομα", getValue: (t) => t.name, getSortKey: (t) => t.name },
+  {
+    key: "type",
+    label: "Τύπος",
+    getValue: (t) => (t.is_system ? "Σύστημα" : "Προσαρμοσμένο"),
+    getSortKey: (t) => (t.is_system ? 1 : 0),
+  },
+  {
+    key: "status",
+    label: "Κατάσταση",
+    getValue: (t) => (t.is_active ? "Ενεργό" : "Ανενεργό"),
+    getSortKey: (t) => (t.is_active ? 1 : 0),
+  },
+];
+
 export function EmailTemplatesTab({ templates }: { templates: EmailTemplate[] }) {
   const [pending, startTransition] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
+
+  const optionsByColumn = useMemo(() => {
+    const map = new Map<string, { value: string; sortKey: string | number }[]>();
+    for (const col of COLUMNS) {
+      const seen = new Map<string, string | number>();
+      for (const t of templates) {
+        const value = col.getValue(t);
+        if (!seen.has(value)) seen.set(value, col.getSortKey(t));
+      }
+      map.set(
+        col.key,
+        [...seen.entries()].map(([value, sortKey]) => ({ value, sortKey })),
+      );
+    }
+    return map;
+  }, [templates]);
+
+  // Sorted/filtered before the .map below, so each row's expandable
+  // inline-edit Fragment pair travels with it — never reordered apart.
+  const visibleTemplates = useMemo(() => {
+    const filtered = templates.filter((t) =>
+      COLUMNS.every((col) => {
+        const active = filters[col.key];
+        return !active || active.has(col.getValue(t));
+      }),
+    );
+    if (!sort) return filtered;
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const sign = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const ka = col.getSortKey(a);
+      const kb = col.getSortKey(b);
+      return ka < kb ? -sign : ka > kb ? sign : 0;
+    });
+  }, [templates, filters, sort]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -175,15 +237,24 @@ export function EmailTemplatesTab({ templates }: { templates: EmailTemplate[] })
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Όνομα</TableHead>
-              <TableHead>Τύπος</TableHead>
-              <TableHead>Κατάσταση</TableHead>
+              {COLUMNS.map((col) => (
+                <TableHead key={col.key}>
+                  <ColumnFilter
+                    label={col.label}
+                    options={optionsByColumn.get(col.key) ?? []}
+                    active={filters[col.key] ?? null}
+                    onChange={(next) => setFilters((f) => ({ ...f, [col.key]: next }))}
+                    sortDirection={sort?.key === col.key ? sort.direction : null}
+                    onSort={(direction) => setSort(direction ? { key: col.key, direction } : null)}
+                  />
+                </TableHead>
+              ))}
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {templates.length ? (
-              templates.map((template) => (
+            {visibleTemplates.length ? (
+              visibleTemplates.map((template) => (
                 <Fragment key={template.id}>
                   <TableRow>
                     <TableCell>{template.name}</TableCell>
@@ -231,7 +302,7 @@ export function EmailTemplatesTab({ templates }: { templates: EmailTemplate[] })
             ) : (
               <TableRow>
                 <TableCell colSpan={4} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν πρότυπα.
+                  {templates.length ? "Καμία εγγραφή δεν ταιριάζει με τα φίλτρα." : "Δεν υπάρχουν πρότυπα."}
                 </TableCell>
               </TableRow>
             )}

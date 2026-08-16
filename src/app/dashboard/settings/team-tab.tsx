@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ColumnFilter, type SortDirection } from "../clients/[id]/_components/column-filter";
 import {
   updateAgencyUserRole,
   toggleAgencyUserActive,
@@ -68,6 +69,25 @@ function ActionMessage({ state }: { state: ActionState }) {
   return <p className="mt-2 text-sm text-success">{state.success}</p>;
 }
 
+type Column = {
+  key: string;
+  label: string;
+  getValue: (u: AgencyUser) => string;
+  getSortKey: (u: AgencyUser) => string | number;
+};
+
+const COLUMNS: Column[] = [
+  { key: "full_name", label: "Όνομα", getValue: (u) => u.full_name, getSortKey: (u) => u.full_name },
+  { key: "email", label: "Email", getValue: (u) => u.email, getSortKey: (u) => u.email },
+  { key: "role", label: "Ρόλος", getValue: (u) => ROLE_LABELS[u.role] ?? u.role, getSortKey: (u) => ROLE_LABELS[u.role] ?? u.role },
+  {
+    key: "status",
+    label: "Κατάσταση",
+    getValue: (u) => (u.is_active ? "Ενεργός" : "Ανενεργός"),
+    getSortKey: (u) => (u.is_active ? 1 : 0),
+  },
+];
+
 export function TeamTab({
   users,
   currentUserId,
@@ -77,6 +97,8 @@ export function TeamTab({
 }) {
   const [pending, startTransition] = useTransition();
   const [mode, setMode] = useState<"direct" | "invite">("direct");
+  const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
   const [directState, directAction, directPending] = useActionState<ActionState, FormData>(
     createAgencyUserDirect,
     undefined,
@@ -85,6 +107,40 @@ export function TeamTab({
     inviteAgencyUser,
     undefined,
   );
+
+  const optionsByColumn = useMemo(() => {
+    const map = new Map<string, { value: string; sortKey: string | number }[]>();
+    for (const col of COLUMNS) {
+      const seen = new Map<string, string | number>();
+      for (const u of users) {
+        const value = col.getValue(u);
+        if (!seen.has(value)) seen.set(value, col.getSortKey(u));
+      }
+      map.set(
+        col.key,
+        [...seen.entries()].map(([value, sortKey]) => ({ value, sortKey })),
+      );
+    }
+    return map;
+  }, [users]);
+
+  const visibleUsers = useMemo(() => {
+    const filtered = users.filter((u) =>
+      COLUMNS.every((col) => {
+        const active = filters[col.key];
+        return !active || active.has(col.getValue(u));
+      }),
+    );
+    if (!sort) return filtered;
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const sign = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const ka = col.getSortKey(a);
+      const kb = col.getSortKey(b);
+      return ka < kb ? -sign : ka > kb ? sign : 0;
+    });
+  }, [users, filters, sort]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -176,15 +232,23 @@ export function TeamTab({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Όνομα</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Ρόλος</TableHead>
-              <TableHead>Κατάσταση</TableHead>
+              {COLUMNS.map((col) => (
+                <TableHead key={col.key}>
+                  <ColumnFilter
+                    label={col.label}
+                    options={optionsByColumn.get(col.key) ?? []}
+                    active={filters[col.key] ?? null}
+                    onChange={(next) => setFilters((f) => ({ ...f, [col.key]: next }))}
+                    sortDirection={sort?.key === col.key ? sort.direction : null}
+                    onSort={(direction) => setSort(direction ? { key: col.key, direction } : null)}
+                  />
+                </TableHead>
+              ))}
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {users.map((user) => {
+            {visibleUsers.map((user) => {
               return (
                 <TableRow key={user.id}>
                   <TableCell>

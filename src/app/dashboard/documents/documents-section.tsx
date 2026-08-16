@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ColumnFilter, type SortDirection } from "../clients/[id]/_components/column-filter";
 import { uploadDocument, deleteDocument, type EntityType, type UploadDocumentState } from "./actions";
 import type { DocumentWithUrl } from "./get-documents";
 
@@ -26,6 +27,35 @@ function formatSize(bytes: number | null) {
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }
+
+type Column = {
+  key: string;
+  label: string;
+  getValue: (d: DocumentWithUrl) => string;
+  getSortKey: (d: DocumentWithUrl) => string | number;
+};
+
+const COLUMNS: Column[] = [
+  { key: "file_name", label: "Αρχείο", getValue: (d) => d.file_name, getSortKey: (d) => d.file_name },
+  {
+    key: "document_type",
+    label: "Τύπος",
+    getValue: (d) => d.document_type ?? "—",
+    getSortKey: (d) => d.document_type ?? "",
+  },
+  {
+    key: "file_size_bytes",
+    label: "Μέγεθος",
+    getValue: (d) => formatSize(d.file_size_bytes),
+    getSortKey: (d) => d.file_size_bytes ?? 0,
+  },
+  {
+    key: "uploaded_at",
+    label: "Ημ/νία",
+    getValue: (d) => formatDate(d.uploaded_at),
+    getSortKey: (d) => d.uploaded_at,
+  },
+];
 
 export function DocumentsSection({
   entityType,
@@ -41,6 +71,42 @@ export function DocumentsSection({
     boundUpload,
     undefined,
   );
+  const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
+
+  const optionsByColumn = useMemo(() => {
+    const map = new Map<string, { value: string; sortKey: string | number }[]>();
+    for (const col of COLUMNS) {
+      const seen = new Map<string, string | number>();
+      for (const d of documents) {
+        const value = col.getValue(d);
+        if (!seen.has(value)) seen.set(value, col.getSortKey(d));
+      }
+      map.set(
+        col.key,
+        [...seen.entries()].map(([value, sortKey]) => ({ value, sortKey })),
+      );
+    }
+    return map;
+  }, [documents]);
+
+  const visibleDocuments = useMemo(() => {
+    const filtered = documents.filter((d) =>
+      COLUMNS.every((col) => {
+        const active = filters[col.key];
+        return !active || active.has(col.getValue(d));
+      }),
+    );
+    if (!sort) return filtered;
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const sign = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const ka = col.getSortKey(a);
+      const kb = col.getSortKey(b);
+      return ka < kb ? -sign : ka > kb ? sign : 0;
+    });
+  }, [documents, filters, sort]);
 
   return (
     <Card>
@@ -51,16 +117,24 @@ export function DocumentsSection({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Αρχείο</TableHead>
-              <TableHead>Τύπος</TableHead>
-              <TableHead>Μέγεθος</TableHead>
-              <TableHead>Ημ/νία</TableHead>
+              {COLUMNS.map((col) => (
+                <TableHead key={col.key}>
+                  <ColumnFilter
+                    label={col.label}
+                    options={optionsByColumn.get(col.key) ?? []}
+                    active={filters[col.key] ?? null}
+                    onChange={(next) => setFilters((f) => ({ ...f, [col.key]: next }))}
+                    sortDirection={sort?.key === col.key ? sort.direction : null}
+                    onSort={(direction) => setSort(direction ? { key: col.key, direction } : null)}
+                  />
+                </TableHead>
+              ))}
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {documents.length ? (
-              documents.map((doc) => (
+            {visibleDocuments.length ? (
+              visibleDocuments.map((doc) => (
                 <TableRow key={doc.id}>
                   <TableCell>
                     {doc.url ? (
@@ -99,7 +173,7 @@ export function DocumentsSection({
             ) : (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν έγγραφα.
+                  {documents.length ? "Καμία εγγραφή δεν ταιριάζει με τα φίλτρα." : "Δεν υπάρχουν έγγραφα."}
                 </TableCell>
               </TableRow>
             )}

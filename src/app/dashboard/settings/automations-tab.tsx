@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ColumnFilter, type SortDirection } from "../clients/[id]/_components/column-filter";
 import { toggleAppSetting, updateRenewalReminderDays, type ActionState } from "./actions";
 
 type AppSetting = { key: string; enabled: boolean; value: number | null };
@@ -88,12 +89,70 @@ function RenewalReminderDaysForm({ primaryDays, finalDays }: { primaryDays: numb
   );
 }
 
+type Column = {
+  key: string;
+  label: string;
+  getValue: (s: AppSetting) => string;
+  getSortKey: (s: AppSetting) => string | number;
+};
+
+const COLUMNS: Column[] = [
+  {
+    key: "title",
+    label: "Αυτοματισμός",
+    getValue: (s) => (LABELS[s.key] ?? { title: s.key, description: "" }).title,
+    getSortKey: (s) => (LABELS[s.key] ?? { title: s.key, description: "" }).title,
+  },
+  {
+    key: "status",
+    label: "Κατάσταση",
+    getValue: (s) => (s.enabled ? "Ενεργό" : "Ανενεργό"),
+    getSortKey: (s) => (s.enabled ? 1 : 0),
+  },
+];
+
 export function AutomationsTab({ settings }: { settings: AppSetting[] }) {
   const [pending, startTransition] = useTransition();
+  const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
 
   const toggleSettings = settings.filter((s) => !NUMERIC_KEYS.has(s.key));
   const primaryDays = settings.find((s) => s.key === "renewal_reminder_days_primary")?.value ?? 30;
   const finalDays = settings.find((s) => s.key === "renewal_reminder_days_final")?.value ?? 7;
+
+  const optionsByColumn = useMemo(() => {
+    const map = new Map<string, { value: string; sortKey: string | number }[]>();
+    for (const col of COLUMNS) {
+      const seen = new Map<string, string | number>();
+      for (const s of toggleSettings) {
+        const value = col.getValue(s);
+        if (!seen.has(value)) seen.set(value, col.getSortKey(s));
+      }
+      map.set(
+        col.key,
+        [...seen.entries()].map(([value, sortKey]) => ({ value, sortKey })),
+      );
+    }
+    return map;
+  }, [toggleSettings]);
+
+  const visibleToggleSettings = useMemo(() => {
+    const filtered = toggleSettings.filter((s) =>
+      COLUMNS.every((col) => {
+        const active = filters[col.key];
+        return !active || active.has(col.getValue(s));
+      }),
+    );
+    if (!sort) return filtered;
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const sign = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const ka = col.getSortKey(a);
+      const kb = col.getSortKey(b);
+      return ka < kb ? -sign : ka > kb ? sign : 0;
+    });
+  }, [toggleSettings, filters, sort]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -103,14 +162,24 @@ export function AutomationsTab({ settings }: { settings: AppSetting[] }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Αυτοματισμός</TableHead>
-              <TableHead>Κατάσταση</TableHead>
+              {COLUMNS.map((col) => (
+                <TableHead key={col.key}>
+                  <ColumnFilter
+                    label={col.label}
+                    options={optionsByColumn.get(col.key) ?? []}
+                    active={filters[col.key] ?? null}
+                    onChange={(next) => setFilters((f) => ({ ...f, [col.key]: next }))}
+                    sortDirection={sort?.key === col.key ? sort.direction : null}
+                    onSort={(direction) => setSort(direction ? { key: col.key, direction } : null)}
+                  />
+                </TableHead>
+              ))}
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {toggleSettings.length ? (
-              toggleSettings.map((setting) => {
+            {visibleToggleSettings.length ? (
+              visibleToggleSettings.map((setting) => {
                 const label = LABELS[setting.key] ?? { title: setting.key, description: "" };
                 return (
                   <TableRow key={setting.key}>
@@ -145,7 +214,7 @@ export function AutomationsTab({ settings }: { settings: AppSetting[] }) {
             ) : (
               <TableRow>
                 <TableCell colSpan={3} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν αυτοματισμοί.
+                  {toggleSettings.length ? "Καμία εγγραφή δεν ταιριάζει με τα φίλτρα." : "Δεν υπάρχουν αυτοματισμοί."}
                 </TableCell>
               </TableRow>
             )}

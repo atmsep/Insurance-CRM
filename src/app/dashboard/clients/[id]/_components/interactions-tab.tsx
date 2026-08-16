@@ -1,3 +1,6 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ColumnFilter, type SortDirection } from "./column-filter";
 import { InteractionTypeSelect } from "../../interaction-type-select";
 import { INTERACTION_TYPE_LABELS } from "../../interaction-labels";
 import { formatDateTime } from "@/lib/date";
@@ -24,6 +28,36 @@ type Interaction = {
   follow_up_needed: boolean;
 };
 
+type Column = {
+  key: string;
+  label: string;
+  getValue: (i: Interaction) => string;
+  getSortKey: (i: Interaction) => string | number;
+};
+
+const COLUMNS: Column[] = [
+  {
+    key: "interaction_date",
+    label: "Ημ/νία",
+    getValue: (i) => formatDateTime(i.interaction_date),
+    getSortKey: (i) => i.interaction_date,
+  },
+  {
+    key: "interaction_type",
+    label: "Τύπος",
+    getValue: (i) => INTERACTION_TYPE_LABELS[i.interaction_type] ?? i.interaction_type,
+    getSortKey: (i) => INTERACTION_TYPE_LABELS[i.interaction_type] ?? i.interaction_type,
+  },
+  { key: "subject", label: "Θέμα", getValue: (i) => i.subject ?? "—", getSortKey: (i) => i.subject ?? "" },
+  { key: "notes", label: "Σημειώσεις", getValue: (i) => i.notes ?? "—", getSortKey: (i) => i.notes ?? "" },
+  {
+    key: "follow_up_needed",
+    label: "Follow-up",
+    getValue: (i) => (i.follow_up_needed ? "Ναι" : "—"),
+    getSortKey: (i) => (i.follow_up_needed ? 1 : 0),
+  },
+];
+
 export function InteractionsTab({
   interactions,
   addInteractionAction,
@@ -31,6 +65,43 @@ export function InteractionsTab({
   interactions: Interaction[];
   addInteractionAction: (formData: FormData) => void | Promise<void>;
 }) {
+  const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
+
+  const optionsByColumn = useMemo(() => {
+    const map = new Map<string, { value: string; sortKey: string | number }[]>();
+    for (const col of COLUMNS) {
+      const seen = new Map<string, string | number>();
+      for (const i of interactions) {
+        const value = col.getValue(i);
+        if (!seen.has(value)) seen.set(value, col.getSortKey(i));
+      }
+      map.set(
+        col.key,
+        [...seen.entries()].map(([value, sortKey]) => ({ value, sortKey })),
+      );
+    }
+    return map;
+  }, [interactions]);
+
+  const visibleInteractions = useMemo(() => {
+    const filtered = interactions.filter((i) =>
+      COLUMNS.every((col) => {
+        const active = filters[col.key];
+        return !active || active.has(col.getValue(i));
+      }),
+    );
+    if (!sort) return filtered;
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const sign = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const ka = col.getSortKey(a);
+      const kb = col.getSortKey(b);
+      return ka < kb ? -sign : ka > kb ? sign : 0;
+    });
+  }, [interactions, filters, sort]);
+
   return (
     <Card>
       <CardHeader>
@@ -40,16 +111,23 @@ export function InteractionsTab({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Ημ/νία</TableHead>
-              <TableHead>Τύπος</TableHead>
-              <TableHead>Θέμα</TableHead>
-              <TableHead>Σημειώσεις</TableHead>
-              <TableHead>Follow-up</TableHead>
+              {COLUMNS.map((col) => (
+                <TableHead key={col.key}>
+                  <ColumnFilter
+                    label={col.label}
+                    options={optionsByColumn.get(col.key) ?? []}
+                    active={filters[col.key] ?? null}
+                    onChange={(next) => setFilters((f) => ({ ...f, [col.key]: next }))}
+                    sortDirection={sort?.key === col.key ? sort.direction : null}
+                    onSort={(direction) => setSort(direction ? { key: col.key, direction } : null)}
+                  />
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {interactions.length ? (
-              interactions.map((interaction) => (
+            {visibleInteractions.length ? (
+              visibleInteractions.map((interaction) => (
                 <TableRow key={interaction.id}>
                   <TableCell className="whitespace-nowrap">
                     {formatDateTime(interaction.interaction_date)}
@@ -67,7 +145,9 @@ export function InteractionsTab({
             ) : (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Δεν υπάρχει ιστορικό επικοινωνίας.
+                  {interactions.length
+                    ? "Καμία εγγραφή δεν ταιριάζει με τα φίλτρα."
+                    : "Δεν υπάρχει ιστορικό επικοινωνίας."}
                 </TableCell>
               </TableRow>
             )}

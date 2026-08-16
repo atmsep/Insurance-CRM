@@ -1,12 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ReportTable, type ReportColumn } from "./report-table";
 import {
   getClaimsByStatus,
   getPoliciesByLine,
@@ -65,28 +58,17 @@ export async function ReportsStatsRow() {
 
 export async function PoliciesByStatusTable() {
   const rows = await getPoliciesByStatus();
+  const columns: ReportColumn<(typeof rows)[number]>[] = [
+    { key: "status", label: "Κατάσταση", getValue: (r) => POLICY_STATUS_LABELS[r.status] ?? r.status, getSortKey: (r) => POLICY_STATUS_LABELS[r.status] ?? r.status },
+    { key: "policy_count", label: "Πλήθος", getValue: (r) => String(r.policy_count), getSortKey: (r) => r.policy_count },
+  ];
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Συμβόλαια ανά κατάσταση</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Κατάσταση</TableHead>
-              <TableHead>Πλήθος</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.status}>
-                <TableCell>{POLICY_STATUS_LABELS[r.status] ?? r.status}</TableCell>
-                <TableCell>{r.policy_count}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <ReportTable columns={columns} rows={rows} rowKey={(r) => r.status} emptyMessage="Δεν υπάρχουν συμβόλαια." />
       </CardContent>
     </Card>
   );
@@ -94,30 +76,23 @@ export async function PoliciesByStatusTable() {
 
 export async function PoliciesByLineTable() {
   const rows = await getPoliciesByLine();
+  const columns: ReportColumn<(typeof rows)[number]>[] = [
+    { key: "line_name", label: "Κλάδος", getValue: (r) => r.line_name, getSortKey: (r) => r.line_name },
+    { key: "policy_count", label: "Πλήθος", getValue: (r) => String(r.policy_count), getSortKey: (r) => r.policy_count },
+    {
+      key: "premium_sum",
+      label: "Σύνολο ασφαλίστρου",
+      getValue: (r) => `${r.premium_sum.toFixed(2)} €`,
+      getSortKey: (r) => r.premium_sum,
+    },
+  ];
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Ασφάλιστρο ανά κλάδο</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Κλάδος</TableHead>
-              <TableHead>Πλήθος</TableHead>
-              <TableHead>Σύνολο ασφαλίστρου</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.line_name}>
-                <TableCell>{r.line_name}</TableCell>
-                <TableCell>{r.policy_count}</TableCell>
-                <TableCell>{r.premium_sum.toFixed(2)} €</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <ReportTable columns={columns} rows={rows} rowKey={(r) => r.line_name} emptyMessage="Δεν υπάρχουν συμβόλαια." />
       </CardContent>
     </Card>
   );
@@ -125,38 +100,18 @@ export async function PoliciesByLineTable() {
 
 export async function ClaimsByStatusTable() {
   const rows = await getClaimsByStatus();
+  const columns: ReportColumn<(typeof rows)[number]>[] = [
+    { key: "status", label: "Κατάσταση", getValue: (r) => CLAIM_STATUS_LABELS[r.status] ?? r.status, getSortKey: (r) => CLAIM_STATUS_LABELS[r.status] ?? r.status },
+    { key: "claim_count", label: "Πλήθος", getValue: (r) => String(r.claim_count), getSortKey: (r) => r.claim_count },
+    { key: "amount_sum", label: "Ποσό", getValue: (r) => `${r.amount_sum.toFixed(2)} €`, getSortKey: (r) => r.amount_sum },
+  ];
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Ζημιές ανά κατάσταση</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Κατάσταση</TableHead>
-              <TableHead>Πλήθος</TableHead>
-              <TableHead>Ποσό</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length ? (
-              rows.map((r) => (
-                <TableRow key={r.status}>
-                  <TableCell>{CLAIM_STATUS_LABELS[r.status] ?? r.status}</TableCell>
-                  <TableCell>{r.claim_count}</TableCell>
-                  <TableCell>{r.amount_sum.toFixed(2)} €</TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={3} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν ζημιές.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+        <ReportTable columns={columns} rows={rows} rowKey={(r) => r.status} emptyMessage="Δεν υπάρχουν ζημιές." />
       </CardContent>
     </Card>
   );
@@ -164,36 +119,17 @@ export async function ClaimsByStatusTable() {
 
 export async function ReferralBreakdownTable() {
   const rows = [...(await getReferralBreakdown())].sort((a, b) => b.client_count - a.client_count);
+  const columns: ReportColumn<(typeof rows)[number]>[] = [
+    { key: "source", label: "Πηγή", getValue: (r) => r.source, getSortKey: (r) => r.source },
+    { key: "client_count", label: "Πλήθος", getValue: (r) => String(r.client_count), getSortKey: (r) => r.client_count },
+  ];
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Πελάτες ανά πηγή σύστασης</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Πηγή</TableHead>
-              <TableHead>Πλήθος</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length ? (
-              rows.map((r) => (
-                <TableRow key={r.source}>
-                  <TableCell>{r.source}</TableCell>
-                  <TableCell>{r.client_count}</TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={2} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν πελάτες ακόμα.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+        <ReportTable columns={columns} rows={rows} rowKey={(r) => r.source} emptyMessage="Δεν υπάρχουν πελάτες ακόμα." />
       </CardContent>
     </Card>
   );

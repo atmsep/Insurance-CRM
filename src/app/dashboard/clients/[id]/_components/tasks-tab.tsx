@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ColumnFilter, type SortDirection } from "./column-filter";
 import { taskPriorityVariant } from "@/lib/status-badge";
 import { formatDate } from "@/lib/date";
 
@@ -37,6 +41,30 @@ type Task = {
   priority: string;
 };
 
+type Column = {
+  key: string;
+  label: string;
+  getValue: (t: Task) => string;
+  getSortKey: (t: Task) => string | number;
+};
+
+const COLUMNS: Column[] = [
+  { key: "title", label: "Τίτλος", getValue: (t) => t.title, getSortKey: (t) => t.title },
+  { key: "due_date", label: "Προθεσμία", getValue: (t) => formatDate(t.due_date), getSortKey: (t) => t.due_date },
+  {
+    key: "priority",
+    label: "Προτεραιότητα",
+    getValue: (t) => PRIORITY_LABELS[t.priority] ?? t.priority,
+    getSortKey: (t) => PRIORITY_LABELS[t.priority] ?? t.priority,
+  },
+  {
+    key: "status",
+    label: "Κατάσταση",
+    getValue: (t) => TASK_STATUS_LABELS[t.status] ?? t.status,
+    getSortKey: (t) => TASK_STATUS_LABELS[t.status] ?? t.status,
+  },
+];
+
 // Listing + inline creation here; completing/reassigning a task still
 // stays on the dedicated /dashboard/tasks page (linked below).
 export function TasksTab({
@@ -48,6 +76,43 @@ export function TasksTab({
   clientId: string;
   addTaskAction: (formData: FormData) => void | Promise<void>;
 }) {
+  const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
+
+  const optionsByColumn = useMemo(() => {
+    const map = new Map<string, { value: string; sortKey: string | number }[]>();
+    for (const col of COLUMNS) {
+      const seen = new Map<string, string | number>();
+      for (const t of tasks) {
+        const value = col.getValue(t);
+        if (!seen.has(value)) seen.set(value, col.getSortKey(t));
+      }
+      map.set(
+        col.key,
+        [...seen.entries()].map(([value, sortKey]) => ({ value, sortKey })),
+      );
+    }
+    return map;
+  }, [tasks]);
+
+  const visibleTasks = useMemo(() => {
+    const filtered = tasks.filter((t) =>
+      COLUMNS.every((col) => {
+        const active = filters[col.key];
+        return !active || active.has(col.getValue(t));
+      }),
+    );
+    if (!sort) return filtered;
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const sign = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const ka = col.getSortKey(a);
+      const kb = col.getSortKey(b);
+      return ka < kb ? -sign : ka > kb ? sign : 0;
+    });
+  }, [tasks, filters, sort]);
+
   return (
     <Card>
       <CardHeader>
@@ -57,15 +122,23 @@ export function TasksTab({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Τίτλος</TableHead>
-              <TableHead>Προθεσμία</TableHead>
-              <TableHead>Προτεραιότητα</TableHead>
-              <TableHead>Κατάσταση</TableHead>
+              {COLUMNS.map((col) => (
+                <TableHead key={col.key}>
+                  <ColumnFilter
+                    label={col.label}
+                    options={optionsByColumn.get(col.key) ?? []}
+                    active={filters[col.key] ?? null}
+                    onChange={(next) => setFilters((f) => ({ ...f, [col.key]: next }))}
+                    sortDirection={sort?.key === col.key ? sort.direction : null}
+                    onSort={(direction) => setSort(direction ? { key: col.key, direction } : null)}
+                  />
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tasks.length ? (
-              tasks.map((task) => (
+            {visibleTasks.length ? (
+              visibleTasks.map((task) => (
                 <TableRow key={task.id}>
                   <TableCell>{task.title}</TableCell>
                   <TableCell>{formatDate(task.due_date)}</TableCell>
@@ -80,7 +153,7 @@ export function TasksTab({
             ) : (
               <TableRow>
                 <TableCell colSpan={4} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν υπενθυμίσεις.
+                  {tasks.length ? "Καμία εγγραφή δεν ταιριάζει με τα φίλτρα." : "Δεν υπάρχουν υπενθυμίσεις."}
                 </TableCell>
               </TableRow>
             )}

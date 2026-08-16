@@ -14,25 +14,69 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ColumnFilter, type SortDirection } from "../clients/[id]/_components/column-filter";
 import { createArea, updateArea, toggleAreaActive, deleteArea } from "./lookup-actions";
 
 export type Area = { id: string; postal_code: string | null; city: string; region: string | null; is_active: boolean };
 
+type Column = {
+  key: string;
+  label: string;
+  getValue: (a: Area) => string;
+  getSortKey: (a: Area) => string | number;
+};
+
+const COLUMNS: Column[] = [
+  { key: "postal_code", label: "ΤΚ", getValue: (a) => a.postal_code ?? "—", getSortKey: (a) => a.postal_code ?? "" },
+  { key: "city", label: "Πόλη", getValue: (a) => a.city, getSortKey: (a) => a.city },
+  { key: "region", label: "Περιφέρεια", getValue: (a) => a.region ?? "—", getSortKey: (a) => a.region ?? "" },
+  {
+    key: "status",
+    label: "Κατάσταση",
+    getValue: (a) => (a.is_active ? "Ενεργή" : "Ανενεργή"),
+    getSortKey: (a) => (a.is_active ? 1 : 0),
+  },
+];
+
 export function AreasTab({ areas, onChanged }: { areas: Area[]; onChanged?: () => void }) {
   const [pending, startTransition] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
+  const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
+
+  const optionsByColumn = useMemo(() => {
+    const map = new Map<string, { value: string; sortKey: string | number }[]>();
+    for (const col of COLUMNS) {
+      const seen = new Map<string, string | number>();
+      for (const a of areas) {
+        const value = col.getValue(a);
+        if (!seen.has(value)) seen.set(value, col.getSortKey(a));
+      }
+      map.set(
+        col.key,
+        [...seen.entries()].map(([value, sortKey]) => ({ value, sortKey })),
+      );
+    }
+    return map;
+  }, [areas]);
 
   const filteredAreas = useMemo(() => {
-    const q = filter.trim().toLocaleLowerCase("el");
-    if (!q) return areas;
-    return areas.filter(
-      (a) =>
-        a.city.toLocaleLowerCase("el").includes(q) ||
-        a.postal_code?.includes(q) ||
-        a.region?.toLocaleLowerCase("el").includes(q),
+    const filtered = areas.filter((a) =>
+      COLUMNS.every((col) => {
+        const active = filters[col.key];
+        return !active || active.has(col.getValue(a));
+      }),
     );
-  }, [filter, areas]);
+    if (!sort) return filtered;
+    const col = COLUMNS.find((c) => c.key === sort.key);
+    if (!col) return filtered;
+    const sign = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const ka = col.getSortKey(a);
+      const kb = col.getSortKey(b);
+      return ka < kb ? -sign : ka > kb ? sign : 0;
+    });
+  }, [areas, filters, sort]);
 
   function handleCreate(formData: FormData) {
     createArea(formData);
@@ -68,21 +112,22 @@ export function AreasTab({ areas, onChanged }: { areas: Area[]; onChanged?: () =
 
   return (
     <div className="flex flex-col gap-6">
-      <Input
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder={`Αναζήτηση ΤΚ/πόλης/περιφέρειας (${areas.length})...`}
-        className="w-72"
-      />
-
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>ΤΚ</TableHead>
-              <TableHead>Πόλη</TableHead>
-              <TableHead>Περιφέρεια</TableHead>
-              <TableHead>Κατάσταση</TableHead>
+              {COLUMNS.map((col) => (
+                <TableHead key={col.key}>
+                  <ColumnFilter
+                    label={col.label}
+                    options={optionsByColumn.get(col.key) ?? []}
+                    active={filters[col.key] ?? null}
+                    onChange={(next) => setFilters((f) => ({ ...f, [col.key]: next }))}
+                    sortDirection={sort?.key === col.key ? sort.direction : null}
+                    onSort={(direction) => setSort(direction ? { key: col.key, direction } : null)}
+                  />
+                </TableHead>
+              ))}
               <TableHead />
             </TableRow>
           </TableHeader>
