@@ -268,15 +268,17 @@ export async function getMovementReceipt(movementId: string): Promise<MovementRe
     supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
   ]);
 
+  // Ακύρωση has no δόση to attach a commission to (nothing to collect —
+  // it's a refund), so its clawback commission rows hang off
+  // policy_movement_id directly instead (see migration 0087). Every other
+  // kind always has at least one installment, so this only ever takes the
+  // movement_id branch for cancellations.
   const installmentIds = (installments ?? []).map((i) => i.id);
+  const commissionColumns =
+    "id, direction, reference_rate_percent, reference_amount, commission_rate_percent, commission_amount, is_manual_override";
   const { data: commissions } = installmentIds.length
-    ? await supabase
-        .from("commissions")
-        .select(
-          "id, direction, reference_rate_percent, reference_amount, commission_rate_percent, commission_amount, is_manual_override",
-        )
-        .in("policy_installment_id", installmentIds)
-    : { data: [] as never[] };
+    ? await supabase.from("commissions").select(commissionColumns).in("policy_installment_id", installmentIds)
+    : await supabase.from("commissions").select(commissionColumns).eq("policy_movement_id", movementId);
 
   const incomingRow = (commissions ?? []).find((c) => c.direction === "incoming") ?? null;
   const outgoingRow = (commissions ?? []).find((c) => c.direction === "outgoing") ?? null;
@@ -382,15 +384,24 @@ export async function updateIncomingCommission(
     .single();
   if (!movement) return { error: "Δεν βρέθηκε η κίνηση." };
 
+  // Ακύρωση has no δόση (nothing to collect — it's a refund), so it has
+  // no first installment either; its commission is found/anchored via
+  // policy_movement_id instead (see migration 0087).
   const installmentId = await getFirstInstallmentId(supabase, movementId);
-  if (!installmentId) return { error: "Η κίνηση δεν έχει δόση για να συνδεθεί η προμήθεια." };
 
-  const { data: existing } = await supabase
-    .from("commissions")
-    .select("id")
-    .eq("policy_installment_id", installmentId)
-    .eq("direction", "incoming")
-    .maybeSingle();
+  const { data: existing } = installmentId
+    ? await supabase
+        .from("commissions")
+        .select("id")
+        .eq("policy_installment_id", installmentId)
+        .eq("direction", "incoming")
+        .maybeSingle()
+    : await supabase
+        .from("commissions")
+        .select("id")
+        .eq("policy_movement_id", movementId)
+        .eq("direction", "incoming")
+        .maybeSingle();
 
   if (existing) {
     await supabase
@@ -405,7 +416,8 @@ export async function updateIncomingCommission(
       agent_id: policy.assigned_agent_id ?? agencyUser.id,
       carrier_id: policy.carrier_id,
       policy_installment_id: installmentId,
-      commission_type: movement.kind === "renewal" ? "renewal" : "new_business",
+      policy_movement_id: installmentId ? null : movementId,
+      commission_type: movement.kind === "renewal" ? "renewal" : movement.kind === "cancellation" ? "cancellation" : "new_business",
       direction: "incoming",
       base_amount: movement.premium_net,
       commission_rate_percent: ratePercent,
@@ -445,15 +457,24 @@ export async function updateOutgoingCommission(
   if (!movement) return { error: "Δεν βρέθηκε η κίνηση." };
   if (!movement.outgoing_agent_id) return { error: "Η κίνηση δεν έχει συνεργάτη για εξερχόμενη προμήθεια." };
 
+  // Ακύρωση has no δόση (nothing to collect — it's a refund), so it has
+  // no first installment either; its commission is found/anchored via
+  // policy_movement_id instead (see migration 0087).
   const installmentId = await getFirstInstallmentId(supabase, movementId);
-  if (!installmentId) return { error: "Η κίνηση δεν έχει δόση για να συνδεθεί η προμήθεια." };
 
-  const { data: existing } = await supabase
-    .from("commissions")
-    .select("id")
-    .eq("policy_installment_id", installmentId)
-    .eq("direction", "outgoing")
-    .maybeSingle();
+  const { data: existing } = installmentId
+    ? await supabase
+        .from("commissions")
+        .select("id")
+        .eq("policy_installment_id", installmentId)
+        .eq("direction", "outgoing")
+        .maybeSingle()
+    : await supabase
+        .from("commissions")
+        .select("id")
+        .eq("policy_movement_id", movementId)
+        .eq("direction", "outgoing")
+        .maybeSingle();
 
   if (existing) {
     await supabase
@@ -470,7 +491,8 @@ export async function updateOutgoingCommission(
       agent_id: movement.outgoing_agent_id,
       carrier_id: policy.carrier_id,
       policy_installment_id: installmentId,
-      commission_type: movement.kind === "renewal" ? "renewal" : "new_business",
+      policy_movement_id: installmentId ? null : movementId,
+      commission_type: movement.kind === "renewal" ? "renewal" : movement.kind === "cancellation" ? "cancellation" : "new_business",
       direction: "outgoing",
       payee_id: payeeId,
       base_amount: movement.premium_net,
@@ -930,6 +952,10 @@ export async function deleteMovement(movementId: string): Promise<{ error: strin
   if (installmentIds.length) {
     await supabase.from("commissions").delete().in("policy_installment_id", installmentIds);
   }
+  // Ακύρωση commissions have no installment to hang off (see migration
+  // 0087) — anchored via policy_movement_id instead, so they need their
+  // own delete regardless of whether the movement had any installments.
+  await supabase.from("commissions").delete().eq("policy_movement_id", movementId);
   await supabase.from("referral_rewards").delete().eq("policy_movement_id", movementId);
   await supabase.from("policy_installments").delete().eq("movement_id", movementId);
 
@@ -941,10 +967,19 @@ export async function deleteMovement(movementId: string): Promise<{ error: strin
 
 // Νέα Κίνηση — a manual, ledger-only movement (mainly "Πρόσθετη πράξη" or a
 // manually-recorded "Ακύρωση"), independent of policy coverage-detail
-// edits. Creates exactly one installment for the movement's premium, same
-// as every other movement, and carries the policy's own assigned agent as
-// outgoing_agent_id — same as createMovementForPolicy — so it shows up in
-// the Κινήσεις list's Συνεργάτης column like every other movement kind.
+// edits. Carries the policy's own assigned agent as outgoing_agent_id —
+// same as createMovementForPolicy — so it shows up in the Κινήσεις list's
+// Συνεργάτης column like every other movement kind.
+//
+// Ακύρωση is a refund to the client, not a receivable: its premium is
+// always stored negative (migration 0084 relaxed the >=0 check just for
+// this kind) and it gets NO policy_installments row — there's nothing to
+// collect via Είσπραξη, only money owed back. Instead it gets its own
+// negative incoming/outgoing commission clawback, at the same rate that
+// would normally apply, computed off the same negative base (migrations
+// 0085/0086 added the 'cancellation' commission_type and relaxed its own
+// amount check the same way). Every other kind (endorsement) keeps the
+// original one-installment, no-commission behavior unchanged.
 export async function createManualMovement(
   policyId: string,
   formData: FormData,
@@ -955,15 +990,21 @@ export async function createManualMovement(
   const kind = str(formData, "kind") as PolicyMovementKind | null;
   const startDate = str(formData, "start_date");
   const endDate = str(formData, "end_date");
-  const premiumGross = num(formData, "premium_gross");
+  const premiumGrossInput = num(formData, "premium_gross");
 
-  if (!kind || !startDate || !endDate || premiumGross === null) {
+  if (!kind || !startDate || !endDate || premiumGrossInput === null) {
     return { error: "Συμπλήρωσε είδος, ημερομηνίες και μικτό ασφάλιστρο." };
   }
 
+  const isCancellation = kind === "cancellation";
+  const premiumGross = isCancellation ? -Math.abs(premiumGrossInput) : premiumGrossInput;
+  const premiumNetInput = num(formData, "premium_net");
+  const premiumNet =
+    premiumNetInput === null ? null : isCancellation ? -Math.abs(premiumNetInput) : premiumNetInput;
+
   const { data: policy } = await supabase
     .from("policies")
-    .select("assigned_agent_id")
+    .select("assigned_agent_id, carrier_id, insurance_line_id, broker_office_id")
     .eq("id", policyId)
     .single();
 
@@ -975,7 +1016,7 @@ export async function createManualMovement(
       document_number: str(formData, "document_number"),
       start_date: startDate,
       end_date: endDate,
-      premium_net: num(formData, "premium_net"),
+      premium_net: premiumNet,
       premium_gross: premiumGross,
       description: str(formData, "description"),
       notes: str(formData, "notes"),
@@ -987,13 +1028,63 @@ export async function createManualMovement(
 
   if (error || !movement) return { error: "Σφάλμα κατά τη δημιουργία κίνησης." };
 
-  await supabase.from("policy_installments").insert({
-    policy_id: policyId,
-    movement_id: movement.id,
-    installment_number: 1,
-    due_date: startDate,
-    amount: premiumGross,
-  });
+  if (isCancellation && policy) {
+    const baseAmount = premiumNet ?? premiumGross;
+    const [referenceRatePercent, contractRatePercent] = await Promise.all([
+      getCarrierDefaultRate(supabase, policy.carrier_id, policy.insurance_line_id),
+      policy.broker_office_id
+        ? getContractRate(supabase, policy.broker_office_id, policy.carrier_id, policy.insurance_line_id)
+        : Promise.resolve(null),
+    ]);
+    const appliedRate = contractRatePercent ?? referenceRatePercent ?? 0;
+    if (referenceRatePercent != null || contractRatePercent != null) {
+      await supabase.from("commissions").insert({
+        policy_id: policyId,
+        agent_id: policy.assigned_agent_id ?? agencyUser.id,
+        carrier_id: policy.carrier_id,
+        policy_movement_id: movement.id,
+        commission_type: "cancellation",
+        direction: "incoming",
+        base_amount: baseAmount,
+        commission_rate_percent: appliedRate,
+        commission_amount: Math.round(((baseAmount * appliedRate) / 100) * 100) / 100,
+        reference_rate_percent: referenceRatePercent,
+        reference_amount:
+          referenceRatePercent != null ? Math.round(((baseAmount * referenceRatePercent) / 100) * 100) / 100 : null,
+        period: startDate,
+      });
+    }
+
+    if (policy.assigned_agent_id) {
+      const payeeId = await getPayeeIdForAgent(supabase, policy.assigned_agent_id);
+      if (payeeId) {
+        const outgoingRate = await getOutgoingRate(supabase, payeeId, policy.carrier_id, policy.insurance_line_id);
+        if (outgoingRate != null) {
+          await supabase.from("commissions").insert({
+            policy_id: policyId,
+            agent_id: policy.assigned_agent_id,
+            carrier_id: policy.carrier_id,
+            policy_movement_id: movement.id,
+            commission_type: "cancellation",
+            direction: "outgoing",
+            payee_id: payeeId,
+            base_amount: baseAmount,
+            commission_rate_percent: outgoingRate,
+            commission_amount: Math.round(((baseAmount * outgoingRate) / 100) * 100) / 100,
+            period: startDate,
+          });
+        }
+      }
+    }
+  } else {
+    await supabase.from("policy_installments").insert({
+      policy_id: policyId,
+      movement_id: movement.id,
+      installment_number: 1,
+      due_date: startDate,
+      amount: premiumGross,
+    });
+  }
 
   if (kind === "cancellation") {
     await supabase.from("policies").update({ status: "cancelled", status_auto_managed: false }).eq("id", policyId);

@@ -124,9 +124,12 @@ export function NewMovementDialog({
     const netParts = [term.premiumNet, ...sameTermEndorsements.map((e) => e.premiumNet)];
     const baseNet = netParts.every((n) => n != null) ? netParts.reduce((sum, n) => sum + (n as number), 0) : null;
 
-    setValue("premium_gross", (Math.round(baseGross * fraction * 100) / 100).toFixed(2));
+    // Negative — a cancellation is a refund to the client, not a
+    // receivable (the server also enforces this regardless of what gets
+    // typed manually, but showing it negative here matches what's saved).
+    setValue("premium_gross", (-Math.round(baseGross * fraction * 100) / 100).toFixed(2));
     if (baseNet != null) {
-      setValue("premium_net", (Math.round(baseNet * fraction * 100) / 100).toFixed(2));
+      setValue("premium_net", (-Math.round(baseNet * fraction * 100) / 100).toFixed(2));
     }
   }, [kind, values.start_date, termMovements, endorsementMovements, amountsTouched, setValue]);
 
@@ -230,9 +233,9 @@ export function NewMovementDialog({
 
           {kind === "cancellation" && activeTerm && (
             <p className="text-xs text-muted-foreground">
-              Κατά προσέγγιση ποσό ακύρωσης βάσει των ημερών που απομένουν μέχρι τη λήξη του συμβολαίου (
-              {formatDate(activeTerm.endDate)}), μαζί με τυχόν πρόσθετες πράξεις της ίδιας περιόδου. Μπορείς να το
-              αλλάξεις χειροκίνητα.
+              Κατά προσέγγιση ποσό επιστροφής στον πελάτη (αρνητικό) βάσει των ημερών που απομένουν μέχρι τη λήξη
+              του συμβολαίου ({formatDate(activeTerm.endDate)}), μαζί με τυχόν πρόσθετες πράξεις της ίδιας περιόδου.
+              Δημιουργεί αντίστοιχη αρνητική προμήθεια γραφείου και συνεργάτη. Μπορείς να το αλλάξεις χειροκίνητα.
             </p>
           )}
 
