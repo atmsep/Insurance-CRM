@@ -894,6 +894,51 @@ export async function transferMovement(
   revalidatePath(`/dashboard/policies/${targetPolicyId}`);
 }
 
+// Διαγραφή κίνησης — admin/owner only, and only while nothing's been
+// remitted and nothing's been collected against any of its δόσεις yet
+// (same principle as deleting a single δόση, scaled to the whole
+// movement) — protects the permanent installment_payments ledger and
+// already-settled remittances from being silently wiped. None of
+// commissions/referral_rewards/policy_installments cascade off
+// policy_movements, so children are removed first, in FK-safe order.
+export async function deleteMovement(movementId: string): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const { data: movement } = await supabase
+    .from("policy_movements")
+    .select("policy_id, premium_remitted_at, outgoing_commission_remitted_at")
+    .eq("id", movementId)
+    .single();
+  if (!movement) return { error: "Δεν βρέθηκε η κίνηση." };
+  if (movement.premium_remitted_at || movement.outgoing_commission_remitted_at) {
+    return { error: "Δεν μπορεί να διαγραφεί κίνηση που έχει ήδη αποδοθεί." };
+  }
+
+  const { data: installments } = await supabase
+    .from("policy_installments")
+    .select("id, paid_amount")
+    .eq("movement_id", movementId);
+  if ((installments ?? []).some((i) => (i.paid_amount ?? 0) > 0)) {
+    return { error: "Δεν μπορεί να διαγραφεί κίνηση με καταχωρημένη είσπραξη." };
+  }
+
+  const installmentIds = (installments ?? []).map((i) => i.id);
+  if (installmentIds.length) {
+    await supabase.from("commissions").delete().in("policy_installment_id", installmentIds);
+  }
+  await supabase.from("referral_rewards").delete().eq("policy_movement_id", movementId);
+  await supabase.from("policy_installments").delete().eq("movement_id", movementId);
+
+  const { error } = await supabase.from("policy_movements").delete().eq("id", movementId);
+  if (error) return { error: "Δεν ήταν δυνατή η διαγραφή της κίνησης." };
+
+  revalidatePath(`/dashboard/policies/${movement.policy_id}`);
+}
+
 // Νέα Κίνηση — a manual, ledger-only movement (mainly "Πρόσθετη πράξη" or a
 // manually-recorded "Ακύρωση"), independent of policy coverage-detail
 // edits. Creates exactly one installment for the movement's premium, same

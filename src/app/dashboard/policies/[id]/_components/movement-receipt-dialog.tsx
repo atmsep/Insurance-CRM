@@ -37,6 +37,7 @@ import {
   updateOutgoingCommission,
   updateInstallment,
   deleteInstallment,
+  deleteMovement,
   type MovementReceiptData,
   type MovementRow,
 } from "../../movements-actions";
@@ -241,6 +242,8 @@ export function MovementReceiptDialog({
   const [transferTarget, setTransferTarget] = useState("");
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
+  const [deletingMovement, setDeletingMovement] = useState(false);
+  const [deleteMovementError, setDeleteMovementError] = useState<string | null>(null);
 
   async function refetch() {
     if (!movementId) return;
@@ -586,6 +589,40 @@ export function MovementReceiptDialog({
                       Μεταφορά
                     </Button>
                     {transferError && <p className="text-xs text-destructive">{transferError}</p>}
+                  </div>
+                )}
+
+                {isAdmin && (
+                  <div className="flex flex-col items-start gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive"
+                      disabled={deletingMovement}
+                      onClick={async () => {
+                        if (!movementId) return;
+                        if (
+                          !window.confirm(
+                            `Διαγραφή ολόκληρης της κίνησης «${movementSummary?.documentNumber ?? ""}»; Η ενέργεια δεν αναιρείται.`,
+                          )
+                        )
+                          return;
+                        setDeletingMovement(true);
+                        setDeleteMovementError(null);
+                        const result = await deleteMovement(movementId);
+                        setDeletingMovement(false);
+                        if (result?.error) {
+                          setDeleteMovementError(result.error);
+                          return;
+                        }
+                        onChanged?.();
+                        onOpenChange(false);
+                      }}
+                    >
+                      Διαγραφή κίνησης
+                    </Button>
+                    {deleteMovementError && <p className="text-xs text-destructive">{deleteMovementError}</p>}
                   </div>
                 )}
               </>
