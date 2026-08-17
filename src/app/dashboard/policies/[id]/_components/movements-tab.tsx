@@ -49,23 +49,37 @@ export function MovementsTab({ policyId, isAdmin }: { policyId: string; isAdmin:
   const totalOutstanding = movements?.reduce((sum, m) => sum + m.outstanding, 0) ?? 0;
   const selectedMovement = movements?.find((m) => m.id === selectedMovementId) ?? null;
 
-  // The latest movement overall isn't necessarily the current TERM — an
-  // endorsement/cancellation on top of it would be more recent but carries
-  // only its own small premium/date range, not the term's. Walk back to the
-  // latest policy/renewal movement specifically for the term's real
-  // start/end/premiums, which is what a fresh "Νέα Κίνηση" should default
-  // off of (an endorsement/cancellation happens WITHIN this term).
-  const currentTerm = useMemo(() => {
-    if (!movements) return null;
-    const termMovement = [...movements].reverse().find((m) => m.kind === "policy" || m.kind === "renewal");
-    if (!termMovement) return null;
-    return {
-      startDate: termMovement.startDate,
-      endDate: termMovement.endDate,
-      premiumNet: termMovement.premiumNet,
-      premiumGross: termMovement.premiumGross,
-    };
-  }, [movements]);
+  // The MOST RECENT policy/renewal movement isn't necessarily the term
+  // that's actually active right now — a renewal can be created ahead of
+  // its own start date, so "latest by created_at" can point at a future
+  // term while an earlier one is still the one in effect today. Ν Κίνηση
+  // resolves the right term itself (by whichever span actually contains
+  // the date being entered), so it just needs every term and every
+  // endorsement, not one pre-picked "current" one.
+  const termMovements = useMemo(
+    () =>
+      (movements ?? [])
+        .filter((m) => m.kind === "policy" || m.kind === "renewal")
+        .map((m) => ({
+          startDate: m.startDate,
+          endDate: m.endDate,
+          premiumNet: m.premiumNet,
+          premiumGross: m.premiumGross,
+        })),
+    [movements],
+  );
+  const endorsementMovements = useMemo(
+    () =>
+      (movements ?? [])
+        .filter((m) => m.kind === "endorsement")
+        .map((m) => ({
+          startDate: m.startDate,
+          endDate: m.endDate,
+          premiumNet: m.premiumNet,
+          premiumGross: m.premiumGross,
+        })),
+    [movements],
+  );
 
   return (
     <>
@@ -179,7 +193,8 @@ export function MovementsTab({ policyId, isAdmin }: { policyId: string; isAdmin:
         open={creatingMovement}
         onOpenChange={setCreatingMovement}
         onCreated={refetch}
-        currentTerm={currentTerm}
+        termMovements={termMovements}
+        endorsementMovements={endorsementMovements}
       />
     </>
   );

@@ -25,7 +25,7 @@ import { createManualMovement } from "../../movements-actions";
 
 const MANUAL_KINDS = ["endorsement", "cancellation"] as const;
 
-export type CurrentTermInfo = {
+export type MovementSpan = {
   startDate: string;
   endDate: string;
   premiumNet: number | null;
@@ -42,10 +42,28 @@ const EMPTY_VALUES = {
   notes: "",
 };
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function daysBetween(fromIso: string, toIso: string): number {
   const from = new Date(`${fromIso}T00:00:00Z`);
   const to = new Date(`${toIso}T00:00:00Z`);
   return Math.round((to.getTime() - from.getTime()) / 86_400_000);
+}
+
+// The most recently created policy/renewal movement isn't necessarily the
+// term actually in effect on a given date — a renewal can be created ahead
+// of its own start date, so pick whichever term's span actually contains
+// dateIso. Falls back to the latest term that's already started, or the
+// earliest term if dateIso is before all of them.
+function findTermForDate(terms: MovementSpan[], dateIso: string): MovementSpan | null {
+  if (terms.length === 0) return null;
+  const sorted = [...terms].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const containing = sorted.find((t) => dateIso >= t.startDate && dateIso <= t.endDate);
+  if (containing) return containing;
+  const started = [...sorted].reverse().find((t) => t.startDate <= dateIso);
+  return started ?? sorted[0];
 }
 
 export function NewMovementDialog({
@@ -53,40 +71,64 @@ export function NewMovementDialog({
   open,
   onOpenChange,
   onCreated,
-  currentTerm,
+  termMovements,
+  endorsementMovements,
 }: {
   policyId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: () => void;
-  currentTerm: CurrentTermInfo | null;
+  termMovements: MovementSpan[];
+  endorsementMovements: MovementSpan[];
 }) {
   const [kind, setKind] = useState<string>("endorsement");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [endDateTouched, setEndDateTouched] = useState(false);
   const [amountsTouched, setAmountsTouched] = useState(false);
-  // Λήξη defaults to the CURRENT term's own end date (an
-  // endorsement/cancellation happens within this term, it doesn't extend
-  // it) — a plain mount-time default, editable by hand from there. The
-  // parent remounts this component fresh on every open (key prop), so this
-  // initializer re-evaluates against the latest currentTerm each time
-  // instead of needing a reset effect.
-  const { field, values, setValue } = useFormValues({ ...EMPTY_VALUES, end_date: currentTerm?.endDate ?? "" });
+  // Λήξη starts out defaulting to whichever term is active TODAY, then
+  // follows Έναρξη once typed (see the effect below) — editable by hand
+  // from either point. The parent remounts this component fresh on every
+  // open (key prop), so this initializer re-evaluates each time.
+  const { field, values, setValue } = useFormValues({
+    ...EMPTY_VALUES,
+    end_date: findTermForDate(termMovements, todayIso())?.endDate ?? "",
+  });
+
+  // Λήξη follows whichever term actually contains Έναρξη — an
+  // endorsement/cancellation happens WITHIN that term, it doesn't extend
+  // it — unless the user overrides it by hand.
+  useEffect(() => {
+    if (endDateTouched || !values.start_date) return;
+    const term = findTermForDate(termMovements, values.start_date);
+    if (term) setValue("end_date", term.endDate);
+  }, [values.start_date, termMovements, endDateTouched, setValue]);
 
   // Ακύρωση only: approximate the cancellation amount as a pro-rata share
-  // of the current term's premium — the fraction of the term still
-  // remaining from this movement's Έναρξη through to the term's own Λήξη.
+  // of the relevant term's premium PLUS any endorsement premiums already
+  // charged for that same term — the fraction of the term still remaining
+  // from this movement's Έναρξη through to the term's own Λήξη.
   useEffect(() => {
-    if (kind !== "cancellation" || amountsTouched || !currentTerm || !values.start_date) return;
-    const totalDays = daysBetween(currentTerm.startDate, currentTerm.endDate);
+    if (kind !== "cancellation" || amountsTouched || !values.start_date) return;
+    const term = findTermForDate(termMovements, values.start_date);
+    if (!term) return;
+    const totalDays = daysBetween(term.startDate, term.endDate);
     if (totalDays <= 0) return;
-    const remainingDays = Math.min(Math.max(daysBetween(values.start_date, currentTerm.endDate), 0), totalDays);
+    const remainingDays = Math.min(Math.max(daysBetween(values.start_date, term.endDate), 0), totalDays);
     const fraction = remainingDays / totalDays;
-    setValue("premium_gross", (Math.round(currentTerm.premiumGross * fraction * 100) / 100).toFixed(2));
-    if (currentTerm.premiumNet != null) {
-      setValue("premium_net", (Math.round(currentTerm.premiumNet * fraction * 100) / 100).toFixed(2));
+
+    const sameTermEndorsements = endorsementMovements.filter(
+      (e) => e.startDate >= term.startDate && e.startDate <= term.endDate,
+    );
+    const baseGross = term.premiumGross + sameTermEndorsements.reduce((sum, e) => sum + e.premiumGross, 0);
+    const netParts = [term.premiumNet, ...sameTermEndorsements.map((e) => e.premiumNet)];
+    const baseNet = netParts.every((n) => n != null) ? netParts.reduce((sum, n) => sum + (n as number), 0) : null;
+
+    setValue("premium_gross", (Math.round(baseGross * fraction * 100) / 100).toFixed(2));
+    if (baseNet != null) {
+      setValue("premium_net", (Math.round(baseNet * fraction * 100) / 100).toFixed(2));
     }
-  }, [kind, values.start_date, currentTerm, amountsTouched, setValue]);
+  }, [kind, values.start_date, termMovements, endorsementMovements, amountsTouched, setValue]);
 
   async function handleSubmit(formData: FormData) {
     setPending(true);
@@ -100,6 +142,8 @@ export function NewMovementDialog({
     onCreated?.();
     onOpenChange(false);
   }
+
+  const activeTerm = findTermForDate(termMovements, values.start_date || todayIso());
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -144,7 +188,10 @@ export function NewMovementDialog({
                 type="date"
                 required
                 value={values.end_date}
-                onChange={(e) => setValue("end_date", e.target.value)}
+                onChange={(e) => {
+                  setEndDateTouched(true);
+                  setValue("end_date", e.target.value);
+                }}
               />
             </div>
           </div>
@@ -181,10 +228,11 @@ export function NewMovementDialog({
             </div>
           </div>
 
-          {kind === "cancellation" && currentTerm && (
+          {kind === "cancellation" && activeTerm && (
             <p className="text-xs text-muted-foreground">
-              Κατά προσέγγιση ποσό ακύρωσης βάσει των ημερών που απομένουν μέχρι τη λήξη του τρέχοντος συμβολαίου (
-              {formatDate(currentTerm.endDate)}). Μπορείς να το αλλάξεις χειροκίνητα.
+              Κατά προσέγγιση ποσό ακύρωσης βάσει των ημερών που απομένουν μέχρι τη λήξη του συμβολαίου (
+              {formatDate(activeTerm.endDate)}), μαζί με τυχόν πρόσθετες πράξεις της ίδιας περιόδου. Μπορείς να το
+              αλλάξεις χειροκίνητα.
             </p>
           )}
 
