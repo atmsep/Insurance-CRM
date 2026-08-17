@@ -897,7 +897,9 @@ export async function transferMovement(
 // Νέα Κίνηση — a manual, ledger-only movement (mainly "Πρόσθετη πράξη" or a
 // manually-recorded "Ακύρωση"), independent of policy coverage-detail
 // edits. Creates exactly one installment for the movement's premium, same
-// as every other movement.
+// as every other movement, and carries the policy's own assigned agent as
+// outgoing_agent_id — same as createMovementForPolicy — so it shows up in
+// the Κινήσεις list's Συνεργάτης column like every other movement kind.
 export async function createManualMovement(
   policyId: string,
   formData: FormData,
@@ -914,6 +916,12 @@ export async function createManualMovement(
     return { error: "Συμπλήρωσε είδος, ημερομηνίες και μικτό ασφάλιστρο." };
   }
 
+  const { data: policy } = await supabase
+    .from("policies")
+    .select("assigned_agent_id")
+    .eq("id", policyId)
+    .single();
+
   const { data: movement, error } = await supabase
     .from("policy_movements")
     .insert({
@@ -926,6 +934,7 @@ export async function createManualMovement(
       premium_gross: premiumGross,
       description: str(formData, "description"),
       notes: str(formData, "notes"),
+      outgoing_agent_id: policy?.assigned_agent_id ?? null,
       created_by: agencyUser.id,
     })
     .select("id")
