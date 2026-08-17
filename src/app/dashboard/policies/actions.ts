@@ -82,11 +82,28 @@ function bool(formData: FormData, key: string) {
   return formData.get(key) === "on";
 }
 
+// Greek plates are stamped using only the Latin-alphabet letters that have
+// an identical-looking Greek counterpart (Α Β Ε Ζ Η Ι Κ Μ Ν Ο Ρ Τ Υ Χ) — a
+// plate typed on an English keyboard, or imported from Profia in English,
+// reads identically to a Greek one but is a different Unicode codepoint
+// underneath, which breaks exact-match search/sort. Swap every such letter
+// for its real Greek codepoint; anything else (digits, spaces, any letter
+// outside that set) passes through untouched.
+const PLATE_LATIN_TO_GREEK: Record<string, string> = {
+  A: "Α", B: "Β", E: "Ε", Z: "Ζ", H: "Η", I: "Ι", K: "Κ", M: "Μ",
+  N: "Ν", O: "Ο", P: "Ρ", T: "Τ", Y: "Υ", X: "Χ",
+};
+
+function toGreekPlate(value: string | null): string | null {
+  if (!value) return value;
+  return value.replace(/[A-Za-z]/g, (ch) => PLATE_LATIN_TO_GREEK[ch.toUpperCase()] ?? ch);
+}
+
 // Shared by createPolicy's insert and updatePolicyDetails' update so the
 // field list only lives in one place.
 function vehicleDetailsPayload(formData: FormData) {
   return {
-    plate_number: str(formData, "plate_number"),
+    plate_number: toGreekPlate(str(formData, "plate_number")),
     make: str(formData, "make"),
     model: str(formData, "model"),
     manufacturer: str(formData, "manufacturer"),
