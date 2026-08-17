@@ -23,6 +23,7 @@ export function FilterSelect({
   options,
   defaultValue,
   allLabel = "Όλα",
+  hideAll = false,
   className,
 }: {
   form: string;
@@ -30,9 +31,13 @@ export function FilterSelect({
   options: Option[];
   defaultValue?: string;
   allLabel?: string;
+  // For selects where "all" isn't a meaningful choice (e.g. a required
+  // grouping mode) — omits the all/clear item entirely instead of
+  // leaving it selectable but semantically empty.
+  hideAll?: boolean;
   className?: string;
 }) {
-  const [value, setValue] = useState(defaultValue || ALL_VALUE);
+  const [value, setValue] = useState(defaultValue || (hideAll ? (options[0]?.id ?? ALL_VALUE) : ALL_VALUE));
 
   return (
     <>
@@ -45,7 +50,7 @@ export function FilterSelect({
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL_VALUE}>{allLabel}</SelectItem>
+          {hideAll ? null : <SelectItem value={ALL_VALUE}>{allLabel}</SelectItem>}
           {options.map((o) => (
             <SelectItem key={o.id} value={o.id}>
               {o.label}

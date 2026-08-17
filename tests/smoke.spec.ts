@@ -44,6 +44,7 @@ const NAV_PAGES: { path: string; heading: string }[] = [
   { path: "/dashboard/tasks/calendar", heading: "Ημερολόγιο" },
   { path: "/dashboard/reports", heading: "Αναφορές" },
   { path: "/dashboard/reports/production", heading: "Παραγωγή Αναλυτικά" },
+  { path: "/dashboard/reports/production-summary", heading: "Παραγωγή Συγκεντρωτικά" },
   { path: "/dashboard/settings", heading: "Ρυθμίσεις" },
 ];
 

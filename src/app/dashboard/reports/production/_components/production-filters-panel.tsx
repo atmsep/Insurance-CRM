@@ -28,6 +28,8 @@ export function ProductionFiltersPanel({
   issueTo,
   startFrom,
   startTo,
+  groupByOptions,
+  groupBy,
 }: {
   form: string;
   agents: Option[];
@@ -42,6 +44,12 @@ export function ProductionFiltersPanel({
   issueTo?: string;
   startFrom?: string;
   startTo?: string;
+  // Only the Συγκεντρωτικά (summary) report passes these — when absent
+  // (Αναλυτικά today) the panel renders exactly as before, no behavior
+  // change. Rendered first, matching Profia's own field order (Προβολή
+  // is the very first criterion on that screen).
+  groupByOptions?: Option[];
+  groupBy?: string;
 }) {
   const kindOptions = Object.entries(POLICY_MOVEMENT_KIND_LABELS).map(([id, label]) => ({ id, label }));
   const statusOptions = Object.entries(POLICY_STATUS_LABELS).map(([id, label]) => ({ id, label }));
@@ -52,6 +60,19 @@ export function ProductionFiltersPanel({
         <CardTitle className="text-base">Κριτήρια αναζήτησης</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {groupByOptions ? (
+          <div className="flex flex-col gap-2">
+            <Label>Προβολή</Label>
+            <FilterSelect
+              form={form}
+              name="group_by"
+              defaultValue={groupBy ?? groupByOptions[0]?.id ?? ""}
+              options={groupByOptions}
+              hideAll
+              className="h-9 w-full text-sm"
+            />
+          </div>
+        ) : null}
         <div className="flex flex-col gap-2">
           <Label>Συνεργάτης</Label>
           <MultiSelect

@@ -22,19 +22,35 @@ export default async function ReportsPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Αναφορές</h1>
 
-      <Link href="/dashboard/reports/production" className="block">
-        <Card className="transition-colors hover:bg-muted/50">
-          <CardHeader>
-            <CardTitle className="text-base">Παραγωγή Αναλυτικά</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Αναλυτική λίστα κινήσεων (νέα συμβόλαια, ανανεώσεις, πρόσθετες πράξεις, ακυρώσεις) με φίλτρα ανά
-              συνεργάτη, εταιρεία, κλάδο και ημερομηνίες.
-            </p>
-          </CardContent>
-        </Card>
-      </Link>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Link href="/dashboard/reports/production" className="block">
+          <Card className="h-full transition-colors hover:bg-muted/50">
+            <CardHeader>
+              <CardTitle className="text-base">Παραγωγή Αναλυτικά</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Αναλυτική λίστα κινήσεων (νέα συμβόλαια, ανανεώσεις, πρόσθετες πράξεις, ακυρώσεις) με φίλτρα ανά
+                συνεργάτη, εταιρεία, κλάδο και ημερομηνίες.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/dashboard/reports/production-summary" className="block">
+          <Card className="h-full transition-colors hover:bg-muted/50">
+            <CardHeader>
+              <CardTitle className="text-base">Παραγωγή Συγκεντρωτικά</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Ομαδοποιημένη παραγωγή (ανά συνεργάτη, κλάδο ή εταιρεία) με σύνολα Μικτών, Καθαρών, εξερχόμενης
+                προμήθειας και διαφοράς.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
 
       <Suspense fallback={<StatTileGridSkeleton count={1} />}>
         <ReportsStatsRow />
