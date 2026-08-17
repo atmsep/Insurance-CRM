@@ -53,8 +53,8 @@ export function ClientForm({ agents }: { agents: { id: string; full_name: string
 
       {clientType === "individual" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Όνομα" name="first_name" required field={field} />
           <Field label="Επώνυμο" name="last_name" required field={field} />
+          <Field label="Όνομα" name="first_name" required field={field} />
           <Field label="Πατρώνυμο" name="father_name" field={field} />
           <Field label="Ημερομηνία γέννησης" name="date_of_birth" type="date" field={field} />
           <Field label="Επάγγελμα" name="occupation" field={field} />

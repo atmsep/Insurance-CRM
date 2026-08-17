@@ -143,12 +143,12 @@ export function DetailsTab({
               {client.client_type === "individual" && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="first_name">Όνομα</Label>
-                    <Input id="first_name" name="first_name" required {...field("first_name")} />
-                  </div>
-                  <div className="flex flex-col gap-2">
                     <Label htmlFor="last_name">Επώνυμο</Label>
                     <Input id="last_name" name="last_name" required {...field("last_name")} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="first_name">Όνομα</Label>
+                    <Input id="first_name" name="first_name" required {...field("first_name")} />
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="father_name">Πατρώνυμο</Label>
@@ -299,8 +299,8 @@ export function DetailsTab({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {client.client_type === "individual" && (
                 <>
-                  <ViewField label="Όνομα" value={client.client_individuals?.first_name} />
                   <ViewField label="Επώνυμο" value={client.client_individuals?.last_name} />
+                  <ViewField label="Όνομα" value={client.client_individuals?.first_name} />
                   <ViewField label="Πατρώνυμο" value={client.client_individuals?.father_name} />
                   <ViewField label="Ημερομηνία γέννησης" value={client.client_individuals?.date_of_birth} />
                   <ViewField label="Επάγγελμα" value={client.client_individuals?.occupation} />

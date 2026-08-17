@@ -103,7 +103,7 @@ export function ImportForm() {
   }
 
   function rowLabel(r: ImportClientRow) {
-    return r.company_name || `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || "—";
+    return r.company_name || `${r.last_name ?? ""} ${r.first_name ?? ""}`.trim() || "—";
   }
 
   return (

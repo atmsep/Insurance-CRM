@@ -11,7 +11,7 @@ export function resolveClientName(client: ClientNameFields | null | undefined): 
   if (!client) return "—";
   const isIndividual = client.client_type ? client.client_type === "individual" : true;
   if (isIndividual && client.client_individuals) {
-    return `${client.client_individuals.first_name} ${client.client_individuals.last_name}`;
+    return `${client.client_individuals.last_name} ${client.client_individuals.first_name}`;
   }
   return client.client_legal_entities?.company_name ?? "—";
 }
