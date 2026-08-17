@@ -134,10 +134,15 @@ export default async function ProductionReportPage({
 
   let query = admin.from("production_entries").select(PRODUCTION_SELECT, { count: "exact" });
 
+  // id as a secondary sort key on every branch: the primary columns here
+  // (dates, premiums, names) all have plenty of ties in a 20k+-row table,
+  // and OFFSET/LIMIT paging isn't guaranteed stable across page loads for
+  // tied rows without a deterministic tiebreaker — without it, browsing
+  // page to page could silently skip or repeat rows.
   const sortable = filters.sort ? SORTABLE_COLUMNS[filters.sort] : undefined;
   query = sortable
-    ? query.order(sortable.column, { ascending: filters.dir !== "desc" })
-    : query.order("issue_date", { ascending: false });
+    ? query.order(sortable.column, { ascending: filters.dir !== "desc" }).order("id", { ascending: true })
+    : query.order("issue_date", { ascending: false }).order("id", { ascending: true });
 
   query = applyProductionFilters(query, filters);
 

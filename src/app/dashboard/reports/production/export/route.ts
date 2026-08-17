@@ -33,6 +33,43 @@ type ExportRow = {
   phone_landline: string | null;
 };
 
+// The hosted project's PostgREST caps any single response at 1000 rows
+// (db-max-rows) regardless of .limit() — confirmed live: an unfiltered
+// export silently came back truncated to exactly 1000 rows, sorted
+// newest-issue-date-first, so EVERY expired policy (by definition older
+// than anything still active) was cut off entirely. Fetching in chunks of
+// 1000 via .range() and concatenating sidesteps the cap correctly. Needs
+// a deterministic tiebreaker (id) alongside issue_date — plain date
+// columns have huge numbers of ties (many policies issued the same day),
+// and OFFSET/LIMIT across repeated queries isn't guaranteed stable for
+// tied rows without one, which could otherwise skip or duplicate rows
+// across chunk boundaries.
+const CHUNK_SIZE = 1000;
+const MAX_EXPORT_ROWS = 30000;
+
+async function fetchAllProductionEntries(
+  admin: ReturnType<typeof createAdminClient>,
+  filters: ReturnType<typeof parseProductionFilters>,
+): Promise<ExportRow[]> {
+  const rows: ExportRow[] = [];
+  for (let offset = 0; offset < MAX_EXPORT_ROWS; offset += CHUNK_SIZE) {
+    let query = admin
+      .from("production_entries")
+      .select(EXPORT_SELECT)
+      .order("issue_date", { ascending: false })
+      .order("id", { ascending: true })
+      .range(offset, offset + CHUNK_SIZE - 1);
+    query = applyProductionFilters(query, filters);
+
+    const { data, error } = await query;
+    if (error) break;
+    const batch = (data ?? []) as unknown as ExportRow[];
+    rows.push(...batch);
+    if (batch.length < CHUNK_SIZE) break;
+  }
+  return rows;
+}
+
 export async function GET(request: Request) {
   const agencyUser = await requireAgencyUser();
   if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
@@ -43,16 +80,7 @@ export async function GET(request: Request) {
   const { searchParams: sp } = new URL(request.url);
   const filters = parseProductionFilters(Object.fromEntries(sp.entries()));
 
-  let query = admin
-    .from("production_entries")
-    .select(EXPORT_SELECT)
-    .order("issue_date", { ascending: false })
-    .limit(5000);
-
-  query = applyProductionFilters(query, filters);
-
-  const { data } = await query;
-  const rows = (data ?? []) as unknown as ExportRow[];
+  const rows = await fetchAllProductionEntries(admin, filters);
 
   const commissionByMovement = await getOutgoingCommissionsByMovement(
     admin,
