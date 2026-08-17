@@ -106,6 +106,32 @@ export default async function ProductionReportPage({
     admin.from("insurance_lines").select("id, name_el").order("sort_order"),
   ]);
 
+  // Σύνολα for the whole filtered list (migration 0090) — a dedicated
+  // aggregate RPC, not a sum of the current page's rows, since the table
+  // paginates at up to 100 rows while the filtered list can run into the
+  // thousands.
+  const { data: totalsData } = await admin
+    .rpc("production_entries_totals", {
+      p_document: filters.document ?? null,
+      p_policy_number: filters.policyNumber ?? null,
+      p_risk: filters.risk ?? null,
+      p_client_name: filters.clientName ?? null,
+      p_agent_ids: filters.agentIds ?? null,
+      p_carrier_id: filters.carrierId ?? null,
+      p_line_id: filters.lineId ?? null,
+      p_kinds: filters.kinds ?? null,
+      p_issue_from: filters.issueFrom ?? null,
+      p_issue_to: filters.issueTo ?? null,
+      p_start_from: filters.startFrom ?? null,
+      p_start_to: filters.startTo ?? null,
+    })
+    .single();
+  const totals = totalsData as unknown as {
+    premium_gross_sum: number;
+    premium_net_sum: number;
+    commission_sum: number;
+  } | null;
+
   let query = admin.from("production_entries").select(PRODUCTION_SELECT, { count: "exact" });
 
   const sortable = filters.sort ? SORTABLE_COLUMNS[filters.sort] : undefined;
@@ -179,6 +205,16 @@ export default async function ProductionReportPage({
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
+                  <TableRow className="bg-muted/30 hover:bg-muted/30">
+                    <TableHead colSpan={12} className="text-right text-xs font-medium text-muted-foreground">
+                      Σύνολα (όλης της λίστας):
+                    </TableHead>
+                    <TableHead className="font-semibold">
+                      {(totals?.premium_gross_sum ?? 0).toFixed(2)} €
+                    </TableHead>
+                    <TableHead className="font-semibold">{(totals?.premium_net_sum ?? 0).toFixed(2)} €</TableHead>
+                    <TableHead className="font-semibold">{(totals?.commission_sum ?? 0).toFixed(2)} €</TableHead>
+                  </TableRow>
                   <TableRow>
                     <TableHead>
                       <SortableHeader sortKey="agent" label="Συνεργάτης" />
@@ -311,9 +347,6 @@ export default async function ProductionReportPage({
             className="flex flex-wrap items-center justify-between gap-3"
           >
             <div className="flex items-center gap-3">
-              <Button type="submit" variant="secondary" size="sm">
-                Εφαρμογή φίλτρων
-              </Button>
               <PageSizeSelect perPage={perPage} />
             </div>
             <Pagination

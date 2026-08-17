@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -99,6 +100,9 @@ export function ProductionFiltersPanel({
             <Input aria-label="Έως" form={form} name="start_to" type="date" defaultValue={startTo ?? ""} />
           </div>
         </div>
+        <Button type="submit" form={form} variant="secondary" size="sm">
+          Εφαρμογή φίλτρων
+        </Button>
       </CardContent>
     </Card>
   );
