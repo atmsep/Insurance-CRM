@@ -44,19 +44,19 @@ type FilterableQuery<T> = {
   lte(column: string, value: unknown): T;
 };
 
-// Base table is policy_movements — filters targeting the embedded
-// `policies` row (and its own embedded `clients`) use PostgREST's
-// dot-path embedded-filter syntax, same technique already proven by
-// policies/filters.ts's own `client` filter (`.ilike("clients.display_name", ...)`).
+// Base "table" is the production_entries view (migration 0089) — fully
+// denormalized (no embedded/nested columns), so every filter targets a
+// flat column directly instead of PostgREST's dot-path embedded-filter
+// syntax the old policy_movements-backed query needed.
 export function applyProductionFilters<T extends FilterableQuery<T>>(query: T, filters: ProductionFilters): T {
   let q = query;
   if (filters.document) q = q.ilike("document_number", `%${filters.document}%`);
-  if (filters.policyNumber) q = q.ilike("policies.policy_number", `%${filters.policyNumber}%`);
-  if (filters.risk) q = q.ilike("policies.risk_label", `%${filters.risk}%`);
-  if (filters.clientName) q = q.ilike("policies.clients.display_name", `%${filters.clientName}%`);
+  if (filters.policyNumber) q = q.ilike("policy_number", `%${filters.policyNumber}%`);
+  if (filters.risk) q = q.ilike("risk_label", `%${filters.risk}%`);
+  if (filters.clientName) q = q.ilike("client_name", `%${filters.clientName}%`);
   if (filters.agentIds?.length) q = q.in("outgoing_agent_id", filters.agentIds);
-  if (filters.carrierId) q = q.eq("policies.carrier_id", filters.carrierId);
-  if (filters.lineId) q = q.eq("policies.insurance_line_id", filters.lineId);
+  if (filters.carrierId) q = q.eq("carrier_id", filters.carrierId);
+  if (filters.lineId) q = q.eq("insurance_line_id", filters.lineId);
   if (filters.kinds?.length) q = q.in("kind", filters.kinds);
   if (filters.issueFrom) q = q.gte("issue_date", filters.issueFrom);
   if (filters.issueTo) q = q.lte("issue_date", filters.issueTo);

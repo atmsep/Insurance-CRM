@@ -16,7 +16,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/date";
-import { resolveClientName } from "@/lib/client-name";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../../policies/movement-labels";
 import { parseProductionFilters, applyProductionFilters, parsePerPage } from "./filters";
 import { getOutgoingCommissionsByMovement } from "./commissions";
@@ -25,6 +24,8 @@ import { PageSizeSelect } from "../../policies/_components/page-size-select";
 
 type ProductionRow = {
   id: string;
+  policy_id: string;
+  is_real: boolean;
   kind: string;
   document_number: string | null;
   issue_date: string;
@@ -33,42 +34,32 @@ type ProductionRow = {
   premium_net: number | null;
   premium_gross: number;
   outgoing_agent_id: string | null;
-  agency_users: { full_name: string } | null;
-  policies: {
-    id: string;
-    policy_number: string;
-    risk_label: string | null;
-    carriers: { name: string } | null;
-    insurance_lines: { name_el: string } | null;
-    clients: {
-      display_name: string | null;
-      phone_mobile: string | null;
-      phone_landline: string | null;
-      client_individuals: { first_name: string; last_name: string } | null;
-      client_legal_entities: { company_name: string } | null;
-    } | null;
-  } | null;
+  agent_name: string | null;
+  policy_number: string;
+  risk_label: string | null;
+  carrier_name: string | null;
+  line_name: string | null;
+  client_name: string | null;
+  phone_mobile: string | null;
+  phone_landline: string | null;
 };
 
+// production_entries (migration 0089) is a fully denormalized view — real
+// policy_movements rows unioned with synthetic rows for legacy policies
+// terms that predate the movements table — so every column here is a plain,
+// 0-hop column. No embedding, so no PGRST201-ambiguity or embedded-order
+// risk to design around.
 const PRODUCTION_SELECT =
-  "id, kind, document_number, issue_date, start_date, end_date, premium_net, premium_gross, outgoing_agent_id, " +
-  "agency_users!policy_movements_outgoing_agent_id_fkey(full_name), " +
-  "policies!inner(id, policy_number, risk_label, carrier_id, insurance_line_id, " +
-  "carriers(name), insurance_lines(name_el), " +
-  "clients!inner(display_name, phone_mobile, phone_landline, client_individuals(first_name,last_name), client_legal_entities(company_name)))";
+  "id, policy_id, is_real, kind, document_number, issue_date, start_date, end_date, " +
+  "premium_net, premium_gross, outgoing_agent_id, agent_name, policy_number, risk_label, " +
+  "carrier_name, line_name, client_name, phone_mobile, phone_landline";
 
-// Only 0/1-hop columns — a column reached by hopping through two embedded
-// tables (policy_movements -> policies -> carriers/insurance_lines/clients)
-// isn't proven to be orderable via PostgREST's embedded-order syntax the
-// way policies/page.tsx's own one-hop SORTABLE_COLUMNS is (see that file's
-// comment) — Εταιρεία/Κλάδος/Πελάτης stay plain, unsorted headers rather
-// than risk a silent no-op or an error.
 const SORTABLE_COLUMNS: Record<string, { column: string }> = {
-  agent: { column: "agency_users(full_name)" },
-  policy_number: { column: "policies(policy_number)" },
+  agent: { column: "agent_name" },
+  policy_number: { column: "policy_number" },
   document: { column: "document_number" },
   kind: { column: "kind" },
-  risk: { column: "policies(risk_label)" },
+  risk: { column: "risk_label" },
   issue_date: { column: "issue_date" },
   start_date: { column: "start_date" },
   end_date: { column: "end_date" },
@@ -115,7 +106,7 @@ export default async function ProductionReportPage({
     admin.from("insurance_lines").select("id, name_el").order("sort_order"),
   ]);
 
-  let query = admin.from("policy_movements").select(PRODUCTION_SELECT, { count: "exact" });
+  let query = admin.from("production_entries").select(PRODUCTION_SELECT, { count: "exact" });
 
   const sortable = filters.sort ? SORTABLE_COLUMNS[filters.sort] : undefined;
   query = sortable
@@ -133,7 +124,7 @@ export default async function ProductionReportPage({
 
   const commissionByMovement = await getOutgoingCommissionsByMovement(
     admin,
-    rows.map((r) => r.id),
+    rows.map((r) => ({ id: r.id, isReal: r.is_real })),
   );
 
   const exportParams = new URLSearchParams();
@@ -278,27 +269,24 @@ export default async function ProductionReportPage({
                 <TableBody>
                   {rows.length ? (
                     rows.map((row) => {
-                      const policy = row.policies;
-                      const client = policy?.clients ?? null;
-                      const name = resolveClientName(client);
-                      const phone = [client?.phone_mobile, client?.phone_landline].filter(Boolean).join(" / ");
+                      const phone = [row.phone_mobile, row.phone_landline].filter(Boolean).join(" / ");
                       const commission = commissionByMovement.get(row.id);
                       return (
                         <ClickableRow
                           key={row.id}
-                          href={policy ? `/dashboard/policies/${policy.id}` : "#"}
+                          href={`/dashboard/policies/${row.policy_id}`}
                         >
-                          <TableCell>{row.agency_users?.full_name ?? "—"}</TableCell>
-                          <TableCell>{policy?.policy_number ?? "—"}</TableCell>
+                          <TableCell>{row.agent_name ?? "—"}</TableCell>
+                          <TableCell>{row.policy_number}</TableCell>
                           <TableCell>{row.document_number ?? "—"}</TableCell>
-                          <TableCell>{policy?.carriers?.name ?? "—"}</TableCell>
+                          <TableCell>{row.carrier_name ?? "—"}</TableCell>
                           <TableCell>{POLICY_MOVEMENT_KIND_LABELS[row.kind] ?? row.kind}</TableCell>
-                          <TableCell>{policy?.insurance_lines?.name_el ?? "—"}</TableCell>
-                          <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
+                          <TableCell>{row.line_name ?? "—"}</TableCell>
+                          <TableCell className="text-muted-foreground">{row.risk_label ?? "—"}</TableCell>
                           <TableCell>{formatDate(row.issue_date)}</TableCell>
                           <TableCell>{formatDate(row.start_date)}</TableCell>
                           <TableCell>{formatDate(row.end_date)}</TableCell>
-                          <TableCell>{name}</TableCell>
+                          <TableCell>{row.client_name ?? "—"}</TableCell>
                           <TableCell className="text-muted-foreground">{phone || "—"}</TableCell>
                           <TableCell>{row.premium_gross.toFixed(2)} €</TableCell>
                           <TableCell>{row.premium_net != null ? `${row.premium_net.toFixed(2)} €` : "—"}</TableCell>

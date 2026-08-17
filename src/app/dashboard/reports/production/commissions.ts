@@ -3,18 +3,26 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 type SupabaseAdminClient = ReturnType<typeof createAdminClient>;
 
 // Batch resolver for "Προμήθεια Συνεργάτη" (the agent's outgoing commission
-// per movement) — shared by page.tsx and export/route.ts so the logic
-// never drifts between the two, same principle as filters.ts.
+// per production_entries row) — shared by page.tsx and export/route.ts so
+// the logic never drifts between the two, same principle as filters.ts.
 //
-// Mirrors getMovementReceipt/getFirstInstallmentId in ../../policies/
-// movements-actions.ts, batched across many movements instead of one:
-// a commission attaches to the movement's FIRST installment (by
-// installment_number) for every kind except cancellation, which gets no
-// installments at all (it's a refund, not a receivable — see migration
-// 0084) and instead attaches directly via commissions.policy_movement_id
-// (migration 0087). Two separate .in() queries rather than one .or() —
-// simpler, and avoids the empty-list edge case an .or() would need to
-// special-case (an all-cancellation page has zero installment ids).
+// production_entries (migration 0089) unions real policy_movements rows
+// with synthetic rows for legacy `policies` terms that predate the
+// movements table — a row's `id` is a real policy_movements.id when
+// isReal, otherwise it's the term's own policies.id. The two need different
+// commission lookups:
+//   - real: mirrors getMovementReceipt/getFirstInstallmentId in ../../
+//     policies/movements-actions.ts — a commission attaches to the
+//     movement's FIRST installment (by installment_number) for every kind
+//     except cancellation, which gets no installments at all (it's a
+//     refund, not a receivable — see migration 0084) and instead attaches
+//     directly via commissions.policy_movement_id (migration 0087).
+//   - synthetic: legacy installments were scoped by policy_id with
+//     movement_id left null (they predate movement_id, migration 0079) —
+//     same first-installment-by-installment_number rule, just scoped by
+//     policy_id + movement_id is null instead of movement_id.
+// Two separate .in() queries per path rather than .or() — simpler, and
+// avoids the empty-list edge case an .or() would need to special-case.
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -23,18 +31,22 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 const CHUNK_SIZE = 300;
 
+export type ProductionEntryRef = { id: string; isReal: boolean };
+
 export async function getOutgoingCommissionsByMovement(
   supabase: SupabaseAdminClient,
-  movementIds: string[],
+  entries: ProductionEntryRef[],
 ): Promise<Map<string, number>> {
   const result = new Map<string, number>();
-  if (!movementIds.length) return result;
+  if (!entries.length) return result;
 
-  // 1. Batch-resolve each movement's first installment (movements with no
-  // installments at all — cancellations — simply never appear here).
-  const firstInstallmentByMovement = new Map<string, string>();
-  const installmentToMovement = new Map<string, string>();
-  for (const idChunk of chunk(movementIds, CHUNK_SIZE)) {
+  const realIds = entries.filter((e) => e.isReal).map((e) => e.id);
+  const syntheticIds = entries.filter((e) => !e.isReal).map((e) => e.id);
+
+  // 1a. Real movements: first installment per movement_id.
+  const firstInstallmentByEntry = new Map<string, string>();
+  const installmentToEntry = new Map<string, string>();
+  for (const idChunk of chunk(realIds, CHUNK_SIZE)) {
     const { data } = await supabase
       .from("policy_installments")
       .select("id, movement_id, installment_number")
@@ -42,17 +54,36 @@ export async function getOutgoingCommissionsByMovement(
       .order("installment_number", { ascending: true });
     for (const row of (data ?? []) as { id: string; movement_id: string | null }[]) {
       if (!row.movement_id) continue;
-      if (!firstInstallmentByMovement.has(row.movement_id)) {
-        firstInstallmentByMovement.set(row.movement_id, row.id);
+      if (!firstInstallmentByEntry.has(row.movement_id)) {
+        firstInstallmentByEntry.set(row.movement_id, row.id);
       }
-      installmentToMovement.set(row.id, row.movement_id);
+      installmentToEntry.set(row.id, row.movement_id);
     }
   }
-  const installmentIds = [...firstInstallmentByMovement.values()];
+
+  // 1b. Synthetic (legacy) terms: first installment per policy_id, among
+  // installments never linked to a movement.
+  for (const idChunk of chunk(syntheticIds, CHUNK_SIZE)) {
+    const { data } = await supabase
+      .from("policy_installments")
+      .select("id, policy_id, installment_number")
+      .in("policy_id", idChunk)
+      .is("movement_id", null)
+      .order("installment_number", { ascending: true });
+    for (const row of (data ?? []) as { id: string; policy_id: string }[]) {
+      if (!firstInstallmentByEntry.has(row.policy_id)) {
+        firstInstallmentByEntry.set(row.policy_id, row.id);
+      }
+      installmentToEntry.set(row.id, row.policy_id);
+    }
+  }
+  const installmentIds = [...firstInstallmentByEntry.values()];
 
   // 2. Two parallel, chunked lookups against commissions: the
-  // installment-attached path (every kind but cancellation) and the
-  // movement-attached path (cancellations only).
+  // installment-attached path (every kind but cancellation, both real and
+  // synthetic entries) and the movement-attached path (cancellations only,
+  // which only real entries can be — synthetic rows never carry
+  // commissions.policy_movement_id).
   const [installmentBatches, movementBatches] = await Promise.all([
     Promise.all(
       chunk(installmentIds, CHUNK_SIZE).map((c) =>
@@ -64,7 +95,7 @@ export async function getOutgoingCommissionsByMovement(
       ),
     ),
     Promise.all(
-      chunk(movementIds, CHUNK_SIZE).map((c) =>
+      chunk(realIds, CHUNK_SIZE).map((c) =>
         supabase
           .from("commissions")
           .select("policy_movement_id, commission_amount")
@@ -76,8 +107,8 @@ export async function getOutgoingCommissionsByMovement(
 
   for (const { data } of installmentBatches) {
     for (const row of (data ?? []) as { policy_installment_id: string | null; commission_amount: number }[]) {
-      const movementId = row.policy_installment_id && installmentToMovement.get(row.policy_installment_id);
-      if (movementId) result.set(movementId, row.commission_amount);
+      const entryId = row.policy_installment_id && installmentToEntry.get(row.policy_installment_id);
+      if (entryId) result.set(entryId, row.commission_amount);
     }
   }
   for (const { data } of movementBatches) {
