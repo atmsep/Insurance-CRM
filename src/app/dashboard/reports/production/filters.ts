@@ -7,6 +7,7 @@ export type ProductionFilters = {
   carrierId?: string;
   lineId?: string;
   kinds?: string[];
+  status?: string;
   issueFrom?: string;
   issueTo?: string;
   startFrom?: string;
@@ -27,6 +28,7 @@ export function parseProductionFilters(sp: SearchParamsInput): ProductionFilters
     carrierId: sp.carrier || undefined,
     lineId: sp.line || undefined,
     kinds: sp.kind ? sp.kind.split(",").filter(Boolean) : undefined,
+    status: sp.status || undefined,
     issueFrom: sp.issue_from || undefined,
     issueTo: sp.issue_to || undefined,
     startFrom: sp.start_from || undefined,
@@ -58,6 +60,7 @@ export function applyProductionFilters<T extends FilterableQuery<T>>(query: T, f
   if (filters.carrierId) q = q.eq("carrier_id", filters.carrierId);
   if (filters.lineId) q = q.eq("insurance_line_id", filters.lineId);
   if (filters.kinds?.length) q = q.in("kind", filters.kinds);
+  if (filters.status) q = q.eq("status", filters.status);
   if (filters.issueFrom) q = q.gte("issue_date", filters.issueFrom);
   if (filters.issueTo) q = q.lte("issue_date", filters.issueTo);
   if (filters.startFrom) q = q.gte("start_date", filters.startFrom);

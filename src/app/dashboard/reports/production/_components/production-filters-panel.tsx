@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../../../policies/movement-labels";
+import { POLICY_STATUS_LABELS } from "../../../policies/policy-labels";
 
 type Option = { id: string; label: string };
 
@@ -22,6 +23,7 @@ export function ProductionFiltersPanel({
   carrierId,
   lineId,
   kinds,
+  status,
   issueFrom,
   issueTo,
   startFrom,
@@ -35,12 +37,14 @@ export function ProductionFiltersPanel({
   carrierId?: string;
   lineId?: string;
   kinds?: string[];
+  status?: string;
   issueFrom?: string;
   issueTo?: string;
   startFrom?: string;
   startTo?: string;
 }) {
   const kindOptions = Object.entries(POLICY_MOVEMENT_KIND_LABELS).map(([id, label]) => ({ id, label }));
+  const statusOptions = Object.entries(POLICY_STATUS_LABELS).map(([id, label]) => ({ id, label }));
 
   return (
     <Card className="h-fit">
@@ -83,6 +87,17 @@ export function ProductionFiltersPanel({
         <div className="flex flex-col gap-2">
           <Label>Είδος</Label>
           <MultiSelect form={form} name="kind" defaultValue={kinds} allLabel="Όλα τα είδη" options={kindOptions} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label>Κατάσταση</Label>
+          <FilterSelect
+            form={form}
+            name="status"
+            defaultValue={status ?? ""}
+            allLabel="Όλες οι καταστάσεις"
+            options={statusOptions}
+            className="h-9 w-full text-sm"
+          />
         </div>
         <div className="flex flex-col gap-2">
           <Label>Ημ.Έκδοσης</Label>

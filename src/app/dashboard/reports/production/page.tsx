@@ -79,6 +79,7 @@ export default async function ProductionReportPage({
     carrier?: string;
     line?: string;
     kind?: string;
+    status?: string;
     issue_from?: string;
     issue_to?: string;
     start_from?: string;
@@ -124,6 +125,7 @@ export default async function ProductionReportPage({
       p_issue_to: filters.issueTo ?? null,
       p_start_from: filters.startFrom ?? null,
       p_start_to: filters.startTo ?? null,
+      p_status: filters.status ?? null,
     })
     .single();
   const totals = totalsData as unknown as {
@@ -167,6 +169,7 @@ export default async function ProductionReportPage({
   if (filters.carrierId) exportParams.set("carrier", filters.carrierId);
   if (filters.lineId) exportParams.set("line", filters.lineId);
   if (filters.kinds?.length) exportParams.set("kind", filters.kinds.join(","));
+  if (filters.status) exportParams.set("status", filters.status);
   if (filters.issueFrom) exportParams.set("issue_from", filters.issueFrom);
   if (filters.issueTo) exportParams.set("issue_to", filters.issueTo);
   if (filters.startFrom) exportParams.set("start_from", filters.startFrom);
@@ -195,6 +198,7 @@ export default async function ProductionReportPage({
           carrierId={filters.carrierId}
           lineId={filters.lineId}
           kinds={filters.kinds}
+          status={filters.status}
           issueFrom={filters.issueFrom}
           issueTo={filters.issueTo}
           startFrom={filters.startFrom}
@@ -367,6 +371,7 @@ export default async function ProductionReportPage({
                 carrier: filters.carrierId,
                 line: filters.lineId,
                 kind: filters.kinds?.join(","),
+                status: filters.status,
                 issue_from: filters.issueFrom,
                 issue_to: filters.issueTo,
                 start_from: filters.startFrom,
