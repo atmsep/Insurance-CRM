@@ -15,15 +15,7 @@ import { PaymentFrequencySelect, PAYMENT_FREQUENCY_LABELS } from "../../payment-
 import { useFormValues } from "@/hooks/use-form-values";
 import { formatDate } from "@/lib/date";
 import type { PaymentFrequency, VehicleUsage } from "@/lib/database.types";
-
-const VEHICLE_USAGE_LABELS: Record<string, string> = {
-  private: "Ιδιωτική χρήση",
-  commercial: "Επαγγελματική χρήση",
-  taxi: "Ταξί",
-  rental: "Ενοικίαση",
-  motorcycle: "Μοτοσυκλέτα",
-  other: "Άλλο",
-};
+import { VEHICLE_USAGE_LABELS, PROPERTY_TYPE_LABELS } from "../../policy-labels";
 
 type Vehicle = {
   plate_number: string | null;
@@ -57,13 +49,31 @@ type Vehicle = {
   required_license_type: string | null;
   color: string | null;
   tonnage: number | null;
+  bonus_malus_class: string | null;
+  prior_claims_count: number | null;
 } | null;
 
 type Property = {
+  property_type: string | null;
   address_street: string | null;
   address_city: string | null;
+  address_postal_code: string | null;
+  kaek_number: string | null;
+  construction_year: number | null;
   square_meters: number | null;
   commercial_value: number | null;
+  has_alarm: boolean;
+  occupancy_status: string | null;
+  zone_code: string | null;
+  building_value: number | null;
+  contents_value: number | null;
+  category: string | null;
+  covered_square_meters: number | null;
+  floor: string | null;
+  construction_type: string | null;
+  capacity_role: string | null;
+  security_measures: string | null;
+  earthquake_coverage: boolean;
 } | null;
 
 type LifeHealth = {
@@ -127,13 +137,13 @@ export function DetailsTab({
     engine_number: vehicle?.engine_number ?? "",
     kteo_expiry_date: vehicle?.kteo_expiry_date ?? "",
     insured_value: vehicle?.insured_value != null ? String(vehicle.insured_value) : "",
-    zone_code: vehicle?.zone_code ?? "",
+    zone_code: vehicle?.zone_code ?? property?.zone_code ?? "",
     insurance_package: vehicle?.insurance_package ?? "",
     driver_gender: vehicle?.driver_gender ?? "",
     horsepower: vehicle?.horsepower != null ? String(vehicle.horsepower) : "",
     body_type: vehicle?.body_type ?? "",
     gross_weight_kg: vehicle?.gross_weight_kg != null ? String(vehicle.gross_weight_kg) : "",
-    capacity_role: vehicle?.capacity_role ?? "",
+    capacity_role: vehicle?.capacity_role ?? property?.capacity_role ?? "",
     protection_measures: vehicle?.protection_measures ?? "",
     has_trailer: vehicle?.has_trailer ? "true" : "",
     discount_percent: vehicle?.discount_percent != null ? String(vehicle.discount_percent) : "",
@@ -148,14 +158,31 @@ export function DetailsTab({
     required_license_type: vehicle?.required_license_type ?? "",
     color: vehicle?.color ?? "",
     tonnage: vehicle?.tonnage != null ? String(vehicle.tonnage) : "",
+    bonus_malus_class: vehicle?.bonus_malus_class ?? "",
+    prior_claims_count: vehicle?.prior_claims_count != null ? String(vehicle.prior_claims_count) : "",
     address_street: property?.address_street ?? "",
     address_city: property?.address_city ?? "",
+    address_postal_code: property?.address_postal_code ?? "",
+    kaek_number: property?.kaek_number ?? "",
+    construction_year: property?.construction_year != null ? String(property.construction_year) : "",
     square_meters: property?.square_meters != null ? String(property.square_meters) : "",
     commercial_value: property?.commercial_value != null ? String(property.commercial_value) : "",
+    has_alarm: property?.has_alarm ? "true" : "",
+    occupancy_status: property?.occupancy_status ?? "",
+    building_value: property?.building_value != null ? String(property.building_value) : "",
+    contents_value: property?.contents_value != null ? String(property.contents_value) : "",
+    category: property?.category ?? "",
+    covered_square_meters:
+      property?.covered_square_meters != null ? String(property.covered_square_meters) : "",
+    floor: property?.floor ?? "",
+    construction_type: property?.construction_type ?? "",
+    security_measures: property?.security_measures ?? "",
+    earthquake_coverage: property?.earthquake_coverage ? "true" : "",
     coverage_type: lifeHealth?.coverage_type ?? "",
     sum_insured: lifeHealth?.sum_insured != null ? String(lifeHealth.sum_insured) : "",
   });
   const [usageType, setUsageType] = useState<string>(vehicle?.usage_type ?? "");
+  const [propertyType, setPropertyType] = useState<string>(property?.property_type ?? "");
 
   return (
     <Card>
@@ -303,6 +330,19 @@ export function DetailsTab({
                       <Checkbox id="has_trailer" name="has_trailer" {...checkboxField("has_trailer")} />
                       <Label htmlFor="has_trailer">Ρυμούλκα</Label>
                     </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="bonus_malus_class">Κλάση bonus-malus</Label>
+                      <Input id="bonus_malus_class" name="bonus_malus_class" {...field("bonus_malus_class")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="prior_claims_count">Πλήθος προηγούμενων ζημιών</Label>
+                      <Input
+                        id="prior_claims_count"
+                        name="prior_claims_count"
+                        type="number"
+                        {...field("prior_claims_count")}
+                      />
+                    </div>
                   </div>
                 </fieldset>
 
@@ -399,32 +439,125 @@ export function DetailsTab({
             )}
 
             {property && (
-              <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-                <legend className="px-1 text-sm font-medium">Στοιχεία ακινήτου</legend>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="address_street">Οδός</Label>
-                    <Input id="address_street" name="address_street" {...field("address_street")} />
+              <>
+                <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+                  <legend className="px-1 text-sm font-medium">Στοιχεία ακινήτου</legend>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="property_type_trigger">Τύπος ακινήτου</Label>
+                      <Select value={propertyType} onValueChange={(v) => setPropertyType(v ?? "")}>
+                        <SelectTrigger id="property_type_trigger" className="w-full">
+                          <SelectValue>{(v: string) => PROPERTY_TYPE_LABELS[v] ?? "— (προαιρετικό)"}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(PROPERTY_TYPE_LABELS).map(([v, label]) => (
+                            <SelectItem key={v} value={v}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <input type="hidden" name="property_type" value={propertyType} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="address_street">Οδός</Label>
+                      <Input id="address_street" name="address_street" {...field("address_street")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="address_city">Πόλη</Label>
+                      <Input id="address_city" name="address_city" {...field("address_city")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="address_postal_code">ΤΚ</Label>
+                      <Input id="address_postal_code" name="address_postal_code" {...field("address_postal_code")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="kaek_number">ΚΑΕΚ</Label>
+                      <Input id="kaek_number" name="kaek_number" {...field("kaek_number")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="construction_year">Έτος κατασκευής</Label>
+                      <Input id="construction_year" name="construction_year" type="number" {...field("construction_year")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="construction_type">Τύπος κατασκευής</Label>
+                      <Input id="construction_type" name="construction_type" {...field("construction_type")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="floor">Όροφος</Label>
+                      <Input id="floor" name="floor" {...field("floor")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="square_meters">Τετραγωνικά μέτρα</Label>
+                      <Input id="square_meters" name="square_meters" type="number" {...field("square_meters")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="covered_square_meters">Καλυμμένα τ.μ.</Label>
+                      <Input
+                        id="covered_square_meters"
+                        name="covered_square_meters"
+                        type="number"
+                        {...field("covered_square_meters")}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="capacity_role">Ιδιότητα ασφαλισμένου</Label>
+                      <Input id="capacity_role" name="capacity_role" {...field("capacity_role")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="occupancy_status">Κατάσταση κατοίκησης</Label>
+                      <Input id="occupancy_status" name="occupancy_status" {...field("occupancy_status")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="category">Κατηγορία</Label>
+                      <Input id="category" name="category" {...field("category")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="zone_code">Ζώνη</Label>
+                      <Input id="zone_code" name="zone_code" {...field("zone_code")} />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="address_city">Πόλη</Label>
-                    <Input id="address_city" name="address_city" {...field("address_city")} />
+                </fieldset>
+
+                <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+                  <legend className="px-1 text-sm font-medium">Αξίες &amp; κάλυψη</legend>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="commercial_value">Εμπορική αξία (€)</Label>
+                      <Input
+                        id="commercial_value"
+                        name="commercial_value"
+                        type="number"
+                        {...field("commercial_value")}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="building_value">Αξία κτιρίου (€)</Label>
+                      <Input id="building_value" name="building_value" type="number" {...field("building_value")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="contents_value">Αξία περιεχομένου (€)</Label>
+                      <Input id="contents_value" name="contents_value" type="number" {...field("contents_value")} />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="security_measures">Μέτρα ασφαλείας</Label>
+                      <Input id="security_measures" name="security_measures" {...field("security_measures")} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox id="has_alarm" name="has_alarm" {...checkboxField("has_alarm")} />
+                      <Label htmlFor="has_alarm">Συναγερμός</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="earthquake_coverage"
+                        name="earthquake_coverage"
+                        {...checkboxField("earthquake_coverage")}
+                      />
+                      <Label htmlFor="earthquake_coverage">Κάλυψη σεισμού</Label>
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="square_meters">Τετραγωνικά μέτρα</Label>
-                    <Input id="square_meters" name="square_meters" type="number" {...field("square_meters")} />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="commercial_value">Εμπορική αξία (€)</Label>
-                    <Input
-                      id="commercial_value"
-                      name="commercial_value"
-                      type="number"
-                      {...field("commercial_value")}
-                    />
-                  </div>
-                </div>
-              </fieldset>
+                </fieldset>
+              </>
             )}
 
             {lifeHealth && (
@@ -486,6 +619,8 @@ export function DetailsTab({
                     <ViewField label="Μικτό βάρος" value={vehicle.gross_weight_kg != null ? `${vehicle.gross_weight_kg} κιλά` : null} />
                     <ViewField label="Τόνοι" value={vehicle.tonnage} />
                     <ViewField label="Ρυμούλκα" value={vehicle.has_trailer ? "Ναι" : "Όχι"} />
+                    <ViewField label="Κλάση bonus-malus" value={vehicle.bonus_malus_class} />
+                    <ViewField label="Πλήθος προηγούμενων ζημιών" value={vehicle.prior_claims_count} />
                   </div>
                 </fieldset>
 
@@ -519,18 +654,51 @@ export function DetailsTab({
             )}
 
             {property && (
-              <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-                <legend className="px-1 text-sm font-medium">Στοιχεία ακινήτου</legend>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <ViewField label="Οδός" value={property.address_street} />
-                  <ViewField label="Πόλη" value={property.address_city} />
-                  <ViewField label="Τετραγωνικά μέτρα" value={property.square_meters} />
-                  <ViewField
-                    label="Εμπορική αξία"
-                    value={property.commercial_value != null ? `${property.commercial_value} €` : null}
-                  />
-                </div>
-              </fieldset>
+              <>
+                <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+                  <legend className="px-1 text-sm font-medium">Στοιχεία ακινήτου</legend>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <ViewField
+                      label="Τύπος ακινήτου"
+                      value={property.property_type ? PROPERTY_TYPE_LABELS[property.property_type] : null}
+                    />
+                    <ViewField label="Οδός" value={property.address_street} />
+                    <ViewField label="Πόλη" value={property.address_city} />
+                    <ViewField label="ΤΚ" value={property.address_postal_code} />
+                    <ViewField label="ΚΑΕΚ" value={property.kaek_number} />
+                    <ViewField label="Έτος κατασκευής" value={property.construction_year} />
+                    <ViewField label="Τύπος κατασκευής" value={property.construction_type} />
+                    <ViewField label="Όροφος" value={property.floor} />
+                    <ViewField label="Τετραγωνικά μέτρα" value={property.square_meters} />
+                    <ViewField label="Καλυμμένα τ.μ." value={property.covered_square_meters} />
+                    <ViewField label="Ιδιότητα ασφαλισμένου" value={property.capacity_role} />
+                    <ViewField label="Κατάσταση κατοίκησης" value={property.occupancy_status} />
+                    <ViewField label="Κατηγορία" value={property.category} />
+                    <ViewField label="Ζώνη" value={property.zone_code} />
+                  </div>
+                </fieldset>
+
+                <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+                  <legend className="px-1 text-sm font-medium">Αξίες &amp; κάλυψη</legend>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <ViewField
+                      label="Εμπορική αξία"
+                      value={property.commercial_value != null ? `${property.commercial_value} €` : null}
+                    />
+                    <ViewField
+                      label="Αξία κτιρίου"
+                      value={property.building_value != null ? `${property.building_value} €` : null}
+                    />
+                    <ViewField
+                      label="Αξία περιεχομένου"
+                      value={property.contents_value != null ? `${property.contents_value} €` : null}
+                    />
+                    <ViewField label="Μέτρα ασφαλείας" value={property.security_measures} />
+                    <ViewField label="Συναγερμός" value={property.has_alarm ? "Ναι" : "Όχι"} />
+                    <ViewField label="Κάλυψη σεισμού" value={property.earthquake_coverage ? "Ναι" : "Όχι"} />
+                  </div>
+                </fieldset>
+              </>
             )}
 
             {lifeHealth && (

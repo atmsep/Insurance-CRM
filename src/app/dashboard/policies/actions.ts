@@ -134,6 +134,35 @@ function vehicleDetailsPayload(formData: FormData) {
     is_financed: bool(formData, "is_financed"),
     title_retained: bool(formData, "title_retained"),
     financing_bank: str(formData, "financing_bank"),
+    bonus_malus_class: str(formData, "bonus_malus_class"),
+    prior_claims_count: num(formData, "prior_claims_count"),
+  };
+}
+
+// Shared by createPolicy's insert and updatePolicyDetails' update, same
+// reasoning as vehicleDetailsPayload above.
+function propertyDetailsPayload(formData: FormData) {
+  return {
+    property_type: str(formData, "property_type"),
+    address_street: str(formData, "address_street"),
+    address_city: str(formData, "address_city"),
+    address_postal_code: str(formData, "address_postal_code"),
+    kaek_number: str(formData, "kaek_number"),
+    construction_year: num(formData, "construction_year"),
+    square_meters: num(formData, "square_meters"),
+    commercial_value: num(formData, "commercial_value"),
+    has_alarm: bool(formData, "has_alarm"),
+    occupancy_status: str(formData, "occupancy_status"),
+    zone_code: str(formData, "zone_code"),
+    building_value: num(formData, "building_value"),
+    contents_value: num(formData, "contents_value"),
+    category: str(formData, "category"),
+    covered_square_meters: num(formData, "covered_square_meters"),
+    floor: str(formData, "floor"),
+    construction_type: str(formData, "construction_type"),
+    capacity_role: str(formData, "capacity_role"),
+    security_measures: str(formData, "security_measures"),
+    earthquake_coverage: bool(formData, "earthquake_coverage"),
   };
 }
 
@@ -307,12 +336,7 @@ export async function createPolicy(
       : await supabase.from("policy_vehicle_details").insert({ policy_id: policyId, ...payload });
     branchError = error?.message ?? null;
   } else if (line.requires_property_details) {
-    const payload = {
-      address_street: str(formData, "address_street"),
-      address_city: str(formData, "address_city"),
-      square_meters: num(formData, "square_meters"),
-      commercial_value: num(formData, "commercial_value"),
-    };
+    const payload = propertyDetailsPayload(formData);
     const { error } = renewFromPolicyId
       ? await supabase.from("policy_property_details").update(payload).eq("policy_id", policyId)
       : await supabase.from("policy_property_details").insert({ policy_id: policyId, ...payload });
@@ -476,12 +500,7 @@ export async function updatePolicyDetails(
   if (hasProperty) {
     const { error } = await supabase
       .from("policy_property_details")
-      .update({
-        address_street: str(formData, "address_street"),
-        address_city: str(formData, "address_city"),
-        square_meters: num(formData, "square_meters"),
-        commercial_value: num(formData, "commercial_value"),
-      })
+      .update(propertyDetailsPayload(formData))
       .eq("policy_id", policyId);
     if (error) return { error: "Σφάλμα κατά την αποθήκευση στοιχείων ακινήτου: " + error.message };
   }
