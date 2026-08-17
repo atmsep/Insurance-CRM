@@ -6,6 +6,7 @@ export type PolicyFilters = {
   status?: string;
   risk?: string;
   expiring?: string;
+  recentlyExpired?: string;
   agentId?: string;
   brokerOfficeId?: string;
   startFrom?: string;
@@ -33,6 +34,7 @@ export function parsePolicyFilters(sp: SearchParamsInput): PolicyFilters {
     status: sp.status || undefined,
     risk: sp.risk || undefined,
     expiring: sp.expiring || undefined,
+    recentlyExpired: sp.recently_expired || undefined,
     agentId: sp.agent || undefined,
     brokerOfficeId: sp.broker_office || undefined,
     startFrom: sp.start_from || undefined,
@@ -54,14 +56,16 @@ type FilterableQuery<T> = {
   eq(column: string, value: unknown): T;
   ilike(column: string, pattern: string): T;
   in(column: string, values: unknown[]): T;
+  not(column: string, operator: string, value: unknown): T;
   gte(column: string, value: unknown): T;
   lte(column: string, value: unknown): T;
+  lt(column: string, value: unknown): T;
 };
 
-// "expiring" is handled separately by the caller (it also drives sort
-// order, which this function deliberately doesn't touch) — everything
-// else here is a plain WHERE-style filter shared between the list page
-// and the CSV export.
+// "expiring"/"recently_expired" are handled separately by the caller (they
+// also drive sort order, which this function deliberately doesn't touch)
+// — everything else here is a plain WHERE-style filter shared between the
+// list page and the CSV export.
 export function applyPolicyFilters<T extends FilterableQuery<T>>(query: T, filters: PolicyFilters): T {
   let q = query;
   if (filters.expiring) {
@@ -69,6 +73,16 @@ export function applyPolicyFilters<T extends FilterableQuery<T>>(query: T, filte
     const until = new Date();
     until.setDate(until.getDate() + days);
     q = q.in("status", ["active", "pending_renewal"]).lte("end_date", until.toISOString().slice(0, 10));
+  }
+  if (filters.recentlyExpired) {
+    const days = Number(filters.recentlyExpired) || 30;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const today = new Date().toISOString().slice(0, 10);
+    q = q
+      .not("status", "in", "(cancelled,lapsed,draft)")
+      .gte("end_date", since.toISOString().slice(0, 10))
+      .lt("end_date", today);
   }
   if (filters.q) q = q.ilike("policy_number", `%${filters.q}%`);
   if (filters.client) q = q.ilike("clients.display_name", `%${filters.client}%`);

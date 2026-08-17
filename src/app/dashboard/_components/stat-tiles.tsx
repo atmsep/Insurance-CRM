@@ -43,6 +43,31 @@ export async function ExpiringTile() {
   );
 }
 
+export async function RecentlyExpiredTile() {
+  const supabase = await createClient();
+  const since30Days = addDays(-30);
+  const today = todayISO();
+  // Same filter as RecentlyExpiredPoliciesCard/the "recently_expired" list
+  // filter — is_current_term + a raw end_date window rather than trusting
+  // the daily auto-status recompute alone.
+  const { count } = await supabase
+    .from("policies")
+    .select("id", { count: "exact", head: true })
+    .not("status", "in", "(cancelled,lapsed,draft)")
+    .eq("is_current_term", true)
+    .gte("end_date", since30Days)
+    .lt("end_date", today);
+  const recentlyExpiredCount = count ?? 0;
+  return (
+    <StatTile
+      label="Ληγμένα χωρίς ανανέωση"
+      value={recentlyExpiredCount}
+      tone={recentlyExpiredCount > 0 ? "warning" : "neutral"}
+      href="/dashboard/policies?recently_expired=30"
+    />
+  );
+}
+
 export async function OpenClaimsTile() {
   const supabase = await createClient();
   const { count } = await supabase

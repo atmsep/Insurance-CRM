@@ -6,6 +6,7 @@ import {
   OpenClaimsTile,
   OpenTicketsTile,
   PendingTasksTile,
+  RecentlyExpiredTile,
   TodayCallsTile,
 } from "./_components/stat-tiles";
 import { ExpiringPoliciesCard } from "./_components/expiring-policies-card";
@@ -26,7 +27,7 @@ export default function DashboardPage() {
         <TodayAgendaCard />
       </Suspense>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-7">
         <Suspense fallback={<StatTileSkeleton />}>
           <ActivePoliciesTile />
         </Suspense>
@@ -35,6 +36,9 @@ export default function DashboardPage() {
         </Suspense>
         <Suspense fallback={<StatTileSkeleton />}>
           <ExpiringTile />
+        </Suspense>
+        <Suspense fallback={<StatTileSkeleton />}>
+          <RecentlyExpiredTile />
         </Suspense>
         <Suspense fallback={<StatTileSkeleton />}>
           <OpenClaimsTile />

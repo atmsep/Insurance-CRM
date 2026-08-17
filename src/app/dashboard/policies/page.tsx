@@ -95,6 +95,7 @@ export default async function PoliciesPage({
     status?: string;
     risk?: string;
     expiring?: string;
+    recently_expired?: string;
     agent?: string;
     broker_office?: string;
     start_from?: string;
@@ -147,6 +148,7 @@ export default async function PoliciesPage({
       filters.status ||
       filters.risk ||
       filters.expiring ||
+      filters.recentlyExpired ||
       filters.agentId ||
       filters.brokerOfficeId ||
       filters.startFrom ||
@@ -184,7 +186,7 @@ export default async function PoliciesPage({
     const sortable = filters.sort ? SORTABLE_COLUMNS[filters.sort] : undefined;
     if (sortable) {
       query = query.order(sortable.column, { ascending: filters.dir !== "desc" });
-    } else if (filters.expiring) {
+    } else if (filters.expiring || filters.recentlyExpired) {
       query = query.order("end_date", { ascending: true });
     } else {
       query = query.order("created_at", { ascending: false });
@@ -208,6 +210,7 @@ export default async function PoliciesPage({
   if (filters.status) exportParams.set("status", filters.status);
   if (filters.risk) exportParams.set("risk", filters.risk);
   if (filters.expiring) exportParams.set("expiring", filters.expiring);
+  if (filters.recentlyExpired) exportParams.set("recently_expired", filters.recentlyExpired);
   if (filters.agentId) exportParams.set("agent", filters.agentId);
   if (filters.brokerOfficeId) exportParams.set("broker_office", filters.brokerOfficeId);
   if (filters.startFrom) exportParams.set("start_from", filters.startFrom);
@@ -231,7 +234,12 @@ export default async function PoliciesPage({
                 label: `Ενεργά συμβόλαια που λήγουν εντός ${Number(filters.expiring) || 30} ημερών`,
                 clearHref: "/dashboard/policies",
               }
-            : undefined
+            : filters.recentlyExpired
+              ? {
+                  label: `Συμβόλαια που έληξαν χωρίς ανανέωση τις τελευταίες ${Number(filters.recentlyExpired) || 30} ημέρες`,
+                  clearHref: "/dashboard/policies",
+                }
+              : undefined
         }
         actions={
           <>
@@ -479,6 +487,9 @@ export default async function PoliciesPage({
 
       <form id="policy-filters" className="flex flex-wrap items-center justify-between gap-3">
         {filters.expiring && <input type="hidden" name="expiring" value={filters.expiring} />}
+        {filters.recentlyExpired && (
+          <input type="hidden" name="recently_expired" value={filters.recentlyExpired} />
+        )}
         <div className="flex items-center gap-3">
           <Button type="submit" variant="secondary" size="sm">
             Εφαρμογή φίλτρων
@@ -508,6 +519,7 @@ export default async function PoliciesPage({
               status: filters.status,
               risk: filters.risk,
               expiring: filters.expiring,
+              recently_expired: filters.recentlyExpired,
               agent: filters.agentId,
               broker_office: filters.brokerOfficeId,
               start_from: filters.startFrom,
