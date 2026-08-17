@@ -9,6 +9,7 @@ import {
   TodayCallsTile,
 } from "./_components/stat-tiles";
 import { ExpiringPoliciesCard } from "./_components/expiring-policies-card";
+import { RecentlyExpiredPoliciesCard } from "./_components/recently-expired-policies-card";
 import { UpcomingTasksCard } from "./_components/upcoming-tasks-card";
 import {
   AgendaCardSkeleton,
@@ -46,9 +47,12 @@ export default function DashboardPage() {
         </Suspense>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Suspense fallback={<ListCardSkeleton title="Συμβόλαια που λήγουν σύντομα" />}>
           <ExpiringPoliciesCard />
+        </Suspense>
+        <Suspense fallback={<ListCardSkeleton title="Ληγμένα χωρίς ανανέωση" />}>
+          <RecentlyExpiredPoliciesCard />
         </Suspense>
         <Suspense fallback={<ListCardSkeleton title="Εκκρεμείς υπενθυμίσεις" />}>
           <UpcomingTasksCard />
