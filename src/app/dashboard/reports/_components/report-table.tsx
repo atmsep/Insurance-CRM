@@ -11,26 +11,25 @@ import {
 } from "@/components/ui/table";
 import { ColumnFilter, type SortDirection } from "../../clients/[id]/_components/column-filter";
 
-export type ReportColumn<T> = {
-  key: string;
-  label: string;
-  getValue: (row: T) => string;
-  getSortKey: (row: T) => string | number;
-};
+export type ReportColumnDef = { key: string; label: string };
+export type ReportCell = { display: string; sortKey: string | number };
+export type ReportRow = { id: string; cells: Record<string, ReportCell> };
 
 // Shared by the small aggregate tables on the Reports page — each already
 // gets a handful of rows (one per status/line/source) from its own server
 // action, so filtering/sorting happens entirely in memory here, same as
-// every other small table in the app.
-export function ReportTable<T>({
+// every other small table in the app. Rows/columns arrive as plain,
+// already-formatted data (no getValue/getSortKey functions) — a Server
+// Component can't hand a Client Component a function prop (React can't
+// serialize it across the boundary), so cards.tsx pre-computes each
+// cell's display string + sort key before ever calling this component.
+export function ReportTable({
   columns,
   rows,
-  rowKey,
   emptyMessage,
 }: {
-  columns: ReportColumn<T>[];
-  rows: T[];
-  rowKey: (row: T) => string;
+  columns: ReportColumnDef[];
+  rows: ReportRow[];
   emptyMessage: string;
 }) {
   const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
@@ -41,8 +40,9 @@ export function ReportTable<T>({
     for (const col of columns) {
       const seen = new Map<string, string | number>();
       for (const row of rows) {
-        const value = col.getValue(row);
-        if (!seen.has(value)) seen.set(value, col.getSortKey(row));
+        const cell = row.cells[col.key];
+        if (!cell) continue;
+        if (!seen.has(cell.display)) seen.set(cell.display, cell.sortKey);
       }
       map.set(
         col.key,
@@ -56,16 +56,16 @@ export function ReportTable<T>({
     const filtered = rows.filter((row) =>
       columns.every((col) => {
         const active = filters[col.key];
-        return !active || active.has(col.getValue(row));
+        const cell = row.cells[col.key];
+        return !active || (cell && active.has(cell.display));
       }),
     );
     if (!sort) return filtered;
-    const col = columns.find((c) => c.key === sort.key);
-    if (!col) return filtered;
+    if (!columns.some((c) => c.key === sort.key)) return filtered;
     const sign = sort.direction === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
-      const ka = col.getSortKey(a);
-      const kb = col.getSortKey(b);
+      const ka = a.cells[sort.key]?.sortKey ?? "";
+      const kb = b.cells[sort.key]?.sortKey ?? "";
       return ka < kb ? -sign : ka > kb ? sign : 0;
     });
   }, [rows, columns, filters, sort]);
@@ -91,9 +91,9 @@ export function ReportTable<T>({
       <TableBody>
         {visibleRows.length ? (
           visibleRows.map((row) => (
-            <TableRow key={rowKey(row)}>
+            <TableRow key={row.id}>
               {columns.map((col) => (
-                <TableCell key={col.key}>{col.getValue(row)}</TableCell>
+                <TableCell key={col.key}>{row.cells[col.key]?.display ?? ""}</TableCell>
               ))}
             </TableRow>
           ))
