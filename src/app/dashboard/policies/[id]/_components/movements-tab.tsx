@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,6 +48,24 @@ export function MovementsTab({ policyId, isAdmin }: { policyId: string; isAdmin:
 
   const totalOutstanding = movements?.reduce((sum, m) => sum + m.outstanding, 0) ?? 0;
   const selectedMovement = movements?.find((m) => m.id === selectedMovementId) ?? null;
+
+  // The latest movement overall isn't necessarily the current TERM — an
+  // endorsement/cancellation on top of it would be more recent but carries
+  // only its own small premium/date range, not the term's. Walk back to the
+  // latest policy/renewal movement specifically for the term's real
+  // start/end/premiums, which is what a fresh "Νέα Κίνηση" should default
+  // off of (an endorsement/cancellation happens WITHIN this term).
+  const currentTerm = useMemo(() => {
+    if (!movements) return null;
+    const termMovement = [...movements].reverse().find((m) => m.kind === "policy" || m.kind === "renewal");
+    if (!termMovement) return null;
+    return {
+      startDate: termMovement.startDate,
+      endDate: termMovement.endDate,
+      premiumNet: termMovement.premiumNet,
+      premiumGross: termMovement.premiumGross,
+    };
+  }, [movements]);
 
   return (
     <>
@@ -156,10 +174,12 @@ export function MovementsTab({ policyId, isAdmin }: { policyId: string; isAdmin:
       />
 
       <NewMovementDialog
+        key={creatingMovement ? "open" : "closed"}
         policyId={policyId}
         open={creatingMovement}
         onOpenChange={setCreatingMovement}
         onCreated={refetch}
+        currentTerm={currentTerm}
       />
     </>
   );
