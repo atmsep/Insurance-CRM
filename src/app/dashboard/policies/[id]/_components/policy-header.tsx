@@ -66,11 +66,13 @@ export function PolicyHeader({
           />
         )}
         <PrintButton />
-        <Button
-          variant="outline"
-          nativeButton={false}
-          render={<Link href={`/dashboard/policies/new?renew_from=${policyId}`}>Ανανέωση</Link>}
-        />
+        {status !== "cancelled" && (
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href={`/dashboard/policies/new?renew_from=${policyId}`}>Ανανέωση</Link>}
+          />
+        )}
         <StatusSelect policyId={policyId} status={status} statusAutoManaged={statusAutoManaged} />
       </div>
     </div>

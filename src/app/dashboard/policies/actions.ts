@@ -179,6 +179,7 @@ export async function createPolicy(
       .eq("id", renewFromPolicyId)
       .single();
     if (!source) return { error: "Δεν βρέθηκε το συμβόλαιο προς ανανέωση." };
+    if (source.status === "cancelled") return { error: "Δεν μπορεί να ανανεωθεί ακυρωμένο συμβόλαιο." };
 
     renewalNumber = source.renewal_number + 1;
     policyId = source.id;
