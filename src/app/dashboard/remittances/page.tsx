@@ -5,7 +5,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -21,6 +20,7 @@ import { togglePremiumRemittance, toggleOutgoingCommissionRemittance } from "../
 import { getOutgoingCommissionsByMovement } from "../reports/production/commissions";
 import { ProductionFiltersPanel } from "../reports/production/_components/production-filters-panel";
 import { parseRemittanceFilters, applyRemittanceFilters } from "./filters";
+import { RemittancesTabs } from "./_components/remittances-tabs";
 
 type SingleOrMany<T> = T | T[] | null;
 function one<T>(v: SingleOrMany<T>): T | null {
@@ -87,6 +87,7 @@ export default async function RemittancesPage({
 
   const sp = await searchParams;
   const filters = parseRemittanceFilters(sp);
+  const activeTab = sp.tab === "commission" ? "commission" : "premium";
   const admin = createAdminClient();
 
   const [{ data: agents }, { data: carriers }, { data: insuranceLines }] = await Promise.all([
@@ -250,20 +251,13 @@ export default async function RemittancesPage({
           startTo={filters.startTo}
         />
 
-        <Tabs defaultValue="premium">
-          <TabsList>
-            <TabsTrigger value="premium">Ασφάλιστρα ({premiumPending.length})</TabsTrigger>
-            <TabsTrigger value="commission">Προμήθειες ({commissionPending.length})</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="premium" className="pt-4">
-            {renderTable(premiumPending, "Μικτά", (m) => m.premium_gross, remitPremium)}
-          </TabsContent>
-
-          <TabsContent value="commission" className="pt-4">
-            {renderTable(commissionPending, "Προμήθεια", (m) => m.commission, remitCommission)}
-          </TabsContent>
-        </Tabs>
+        <RemittancesTabs
+          defaultTab={activeTab}
+          premiumCount={premiumPending.length}
+          commissionCount={commissionPending.length}
+          premiumContent={renderTable(premiumPending, "Μικτά", (m) => m.premium_gross, remitPremium)}
+          commissionContent={renderTable(commissionPending, "Προμήθεια", (m) => m.commission, remitCommission)}
+        />
       </div>
     </div>
   );
