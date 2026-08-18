@@ -4,6 +4,7 @@ import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -13,10 +14,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListPageHeader } from "@/components/list-page-header";
 import { formatDate } from "@/lib/date";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
 import { togglePremiumRemittance, toggleOutgoingCommissionRemittance } from "../policies/movements-actions";
 import { getOutgoingCommissionsByMovement } from "../reports/production/commissions";
+import { ProductionFiltersPanel } from "../reports/production/_components/production-filters-panel";
+import { parseRemittanceFilters, applyRemittanceFilters } from "./filters";
 
 type SingleOrMany<T> = T | T[] | null;
 function one<T>(v: SingleOrMany<T>): T | null {
@@ -40,10 +44,13 @@ type RemittanceMovementRow = {
   }>;
 };
 
+// assigned_agent_id/carrier_id/insurance_line_id/status/start_date aren't
+// displayed anywhere on this page — they're here purely so
+// applyRemittanceFilters' dot-path filters have something to join against.
 const MOVEMENT_SELECT =
-  "id, kind, document_number, issue_date, premium_gross, policy_id, " +
-  "policies!inner(policy_number, risk_label, clients(display_name), " +
-  "agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))";
+  "id, kind, document_number, issue_date, start_date, premium_gross, policy_id, " +
+  "policies!inner(policy_number, risk_label, assigned_agent_id, carrier_id, insurance_line_id, status, " +
+  "clients(display_name), agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))";
 
 // Rows on this page are always the currently-unremitted ones (that's the
 // whole point of a worklist), so the toggle here only ever goes one
@@ -68,25 +75,35 @@ async function remitCommission(movementId: string) {
 // the same reason as the production report: policy_movements_select RLS
 // has the identical per-row EXISTS-subquery shape that already caused two
 // real statement timeouts elsewhere in this schema.
-export default async function RemittancesPage() {
+export default async function RemittancesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const agencyUser = await requireAgencyUser();
   if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
     redirect("/dashboard");
   }
 
+  const sp = await searchParams;
+  const filters = parseRemittanceFilters(sp);
   const admin = createAdminClient();
 
+  const [{ data: agents }, { data: carriers }, { data: insuranceLines }] = await Promise.all([
+    admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
+    admin.from("carriers").select("id, name").order("name"),
+    admin.from("insurance_lines").select("id, name_el").order("sort_order"),
+  ]);
+
   const [{ data: rawPremiumPending }, { data: rawCommissionCandidates }] = await Promise.all([
-    admin
-      .from("policy_movements")
-      .select(MOVEMENT_SELECT)
-      .is("premium_remitted_at", null)
-      .order("issue_date", { ascending: true }),
-    admin
-      .from("policy_movements")
-      .select(MOVEMENT_SELECT)
-      .is("outgoing_commission_remitted_at", null)
-      .order("issue_date", { ascending: true }),
+    applyRemittanceFilters(
+      admin.from("policy_movements").select(MOVEMENT_SELECT).is("premium_remitted_at", null),
+      filters,
+    ).order("issue_date", { ascending: true }),
+    applyRemittanceFilters(
+      admin.from("policy_movements").select(MOVEMENT_SELECT).is("outgoing_commission_remitted_at", null),
+      filters,
+    ).order("issue_date", { ascending: true }),
   ]);
 
   const premiumPending = (rawPremiumPending ?? []) as unknown as RemittanceMovementRow[];
@@ -111,7 +128,7 @@ export default async function RemittancesPage() {
     action: (movementId: string) => Promise<void>,
   ) {
     return (
-      <div className="rounded-md border">
+      <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -125,6 +142,42 @@ export default async function RemittancesPage() {
               <TableHead>{amountLabel}</TableHead>
               <TableHead>Συνεργάτης</TableHead>
               <TableHead />
+            </TableRow>
+            <TableRow>
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2">
+                <Input
+                  form="remittances-filters"
+                  name="policy_number"
+                  placeholder="Συμβόλαιο..."
+                  defaultValue={filters.policyNumber ?? ""}
+                  className="h-7 text-xs"
+                />
+              </TableHead>
+              <TableHead className="pb-2">
+                <Input
+                  form="remittances-filters"
+                  name="risk"
+                  placeholder="Χαρακτηριστικό..."
+                  defaultValue={filters.risk ?? ""}
+                  className="h-7 text-xs"
+                />
+              </TableHead>
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2">
+                <Input
+                  form="remittances-filters"
+                  name="client"
+                  placeholder="Πελάτης..."
+                  defaultValue={filters.clientName ?? ""}
+                  className="h-7 text-xs"
+                />
+              </TableHead>
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -177,22 +230,41 @@ export default async function RemittancesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Αποδόσεις</h1>
+      <ListPageHeader title="Αποδόσεις" />
+      <form id="remittances-filters" />
 
-      <Tabs defaultValue="premium">
-        <TabsList>
-          <TabsTrigger value="premium">Ασφάλιστρα ({premiumPending.length})</TabsTrigger>
-          <TabsTrigger value="commission">Προμήθειες ({commissionPending.length})</TabsTrigger>
-        </TabsList>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
+        <ProductionFiltersPanel
+          form="remittances-filters"
+          agents={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
+          carriers={(carriers ?? []).map((c) => ({ id: c.id, label: c.name }))}
+          insuranceLines={(insuranceLines ?? []).map((l) => ({ id: l.id, label: l.name_el }))}
+          agentIds={filters.agentIds}
+          carrierId={filters.carrierId}
+          lineId={filters.lineId}
+          kinds={filters.kinds}
+          status={filters.status}
+          issueFrom={filters.issueFrom}
+          issueTo={filters.issueTo}
+          startFrom={filters.startFrom}
+          startTo={filters.startTo}
+        />
 
-        <TabsContent value="premium" className="pt-4">
-          {renderTable(premiumPending, "Μικτά", (m) => m.premium_gross, remitPremium)}
-        </TabsContent>
+        <Tabs defaultValue="premium">
+          <TabsList>
+            <TabsTrigger value="premium">Ασφάλιστρα ({premiumPending.length})</TabsTrigger>
+            <TabsTrigger value="commission">Προμήθειες ({commissionPending.length})</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="commission" className="pt-4">
-          {renderTable(commissionPending, "Προμήθεια", (m) => m.commission, remitCommission)}
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="premium" className="pt-4">
+            {renderTable(premiumPending, "Μικτά", (m) => m.premium_gross, remitPremium)}
+          </TabsContent>
+
+          <TabsContent value="commission" className="pt-4">
+            {renderTable(commissionPending, "Προμήθεια", (m) => m.commission, remitCommission)}
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }
