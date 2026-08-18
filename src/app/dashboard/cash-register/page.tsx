@@ -183,6 +183,12 @@ export default async function CashRegisterPage({
     .map((m) => ({ ...m, outstanding: outstandingByMovement.get(m.id) ?? 0 }))
     .filter((m) => m.outstanding > 0);
 
+  // A cancellation never gets a policy_installments row at all (it's a
+  // refund owed to the client, not a receivable — see createManualMovement)
+  // so it can never show up via uncollectedMovements above. It has to be
+  // read straight off today's movements instead.
+  const cancellationMovements = movements.filter((m) => m.kind === "cancellation");
+
   // A tip is whatever a transaction collects beyond what was still owed on
   // its installment at that point — computed from the full chronological
   // history of active payments on each touched installment (not just
@@ -400,9 +406,48 @@ export default async function CashRegisterPage({
             </div>
           )}
 
+          {cancellationMovements.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-muted-foreground">Ακυρώσεις συμβολαίων ημέρας (προς επιστροφή)</h2>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Συμβόλαιο</TableHead>
+                      <TableHead>Πελάτης</TableHead>
+                      <TableHead>Ποσό επιστροφής</TableHead>
+                      {isAdmin && <TableHead>Συνεργάτης</TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cancellationMovements.map((m) => {
+                      const policy = one(m.policies);
+                      const client = one(policy?.clients ?? null);
+                      const agent = one(policy?.agency_users ?? null);
+                      return (
+                        <TableRow key={m.id}>
+                          <TableCell>
+                            <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
+                              {policy?.policy_number ?? "—"}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{client?.display_name ?? "—"}</TableCell>
+                          <TableCell>
+                            <Badge variant="destructive">{Math.abs(m.premium_gross).toFixed(2)} €</Badge>
+                          </TableCell>
+                          {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
           {reversals.length > 0 && (
             <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-muted-foreground">Ακυρώσεις ημέρας</h2>
+              <h2 className="text-sm font-medium text-muted-foreground">Ακυρώσεις εισπράξεων ημέρας</h2>
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
