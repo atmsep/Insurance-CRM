@@ -12,6 +12,7 @@ import {
   Phone,
   BarChart3,
   Settings,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ const navItems: NavItem[] = [
       { href: "/dashboard/calls", label: "Κλήσεις", icon: Phone },
     ],
   },
+  { href: "/dashboard/cash-register", label: "Ταμείο", icon: Wallet },
   { href: "/dashboard/reports", label: "Αναφορές", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Ρυθμίσεις", icon: Settings },
 ];
