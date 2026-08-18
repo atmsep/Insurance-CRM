@@ -32,7 +32,13 @@ function one<T>(v: SingleOrMany<T>): T | null {
 type PolicyEmbed = SingleOrMany<{
   policy_id: string;
   amount: number;
-  policies: SingleOrMany<{ policy_number: string; clients: SingleOrMany<{ display_name: string | null }> }>;
+  policies: SingleOrMany<{
+    policy_number: string;
+    risk_label: string | null;
+    clients: SingleOrMany<{ display_name: string | null }>;
+    carriers: SingleOrMany<{ name: string }>;
+    insurance_lines: SingleOrMany<{ name_el: string }>;
+  }>;
 }>;
 
 type CollectionRow = {
@@ -64,7 +70,15 @@ function clientLabel(installment: PolicyEmbed) {
   const pi = one(installment);
   const policy = one(pi?.policies ?? null);
   const client = one(policy?.clients ?? null);
-  return { number: policy?.policy_number ?? "—", client: client?.display_name ?? "—" };
+  const carrier = one(policy?.carriers ?? null);
+  const line = one(policy?.insurance_lines ?? null);
+  return {
+    number: policy?.policy_number ?? "—",
+    client: client?.display_name ?? "—",
+    riskLabel: policy?.risk_label ?? "—",
+    carrier: carrier?.name ?? "—",
+    line: line?.name_el ?? "—",
+  };
 }
 
 type MovementRow = {
@@ -74,8 +88,11 @@ type MovementRow = {
   policy_id: string;
   policies: SingleOrMany<{
     policy_number: string;
+    risk_label: string | null;
     clients: SingleOrMany<{ display_name: string | null }>;
     agency_users: SingleOrMany<{ full_name: string }>;
+    carriers: SingleOrMany<{ name: string }>;
+    insurance_lines: SingleOrMany<{ name_el: string }>;
   }>;
 };
 
@@ -110,7 +127,8 @@ export default async function CashRegisterPage({
     .select(
       "id, installment_id, amount, paid_at, receipt_number, paid_by, cheque_bank, cheque_number, cheque_due_date, " +
         "payment_methods(name), agency_users!installment_payments_paid_by_fkey(full_name), " +
-        "policy_installments!inner(policy_id, amount, policies(policy_number, clients(display_name)))",
+        "policy_installments!inner(policy_id, amount, policies(policy_number, risk_label, clients(display_name), " +
+        "carriers(name), insurance_lines(name_el)))",
     )
     .eq("paid_date", selectedDate)
     .eq("is_reversed", false)
@@ -121,7 +139,8 @@ export default async function CashRegisterPage({
     .from("installment_payments")
     .select(
       "id, installment_id, amount, reversal_reason, reversed_at, paid_by, " +
-        "policy_installments!inner(policy_id, policies(policy_number, clients(display_name)))",
+        "policy_installments!inner(policy_id, policies(policy_number, risk_label, clients(display_name), " +
+        "carriers(name), insurance_lines(name_el)))",
     )
     .eq("is_reversed", true)
     .gte("reversed_at", dayStart)
@@ -139,8 +158,8 @@ export default async function CashRegisterPage({
     .from("policy_movements")
     .select(
       "id, kind, premium_gross, policy_id, " +
-        "policies!inner(policy_number, assigned_agent_id, clients(display_name), " +
-        "agency_users!policies_assigned_agent_id_fkey(full_name))",
+        "policies!inner(policy_number, risk_label, assigned_agent_id, clients(display_name), " +
+        "agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))",
     )
     .eq("issue_date", selectedDate)
     .order("created_at", { ascending: true });
@@ -332,6 +351,9 @@ export default async function CashRegisterPage({
                 <TableRow>
                   <TableHead>Ώρα</TableHead>
                   <TableHead>Συμβόλαιο</TableHead>
+                  <TableHead>Χαρακτηριστικό</TableHead>
+                  <TableHead>Κλάδος</TableHead>
+                  <TableHead>Εταιρεία</TableHead>
                   <TableHead>Πελάτης</TableHead>
                   <TableHead>Ποσό</TableHead>
                   <TableHead>Μέθοδος</TableHead>
@@ -342,7 +364,7 @@ export default async function CashRegisterPage({
               <TableBody>
                 {collections.length ? (
                   collections.map((c) => {
-                    const { number, client } = clientLabel(c.policy_installments);
+                    const { number, client, riskLabel, carrier, line } = clientLabel(c.policy_installments);
                     const collector = one(c.agency_users);
                     const method = one(c.payment_methods);
                     const tip = tipByPaymentId.get(c.id) ?? 0;
@@ -358,6 +380,9 @@ export default async function CashRegisterPage({
                             {number}
                           </Link>
                         </TableCell>
+                        <TableCell className="text-muted-foreground">{riskLabel}</TableCell>
+                        <TableCell>{line}</TableCell>
+                        <TableCell>{carrier}</TableCell>
                         <TableCell>{client}</TableCell>
                         <TableCell>
                           <div>{c.amount.toFixed(2)} €</div>
@@ -380,7 +405,7 @@ export default async function CashRegisterPage({
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 7 : 6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={isAdmin ? 10 : 9} className="text-center text-muted-foreground">
                       Δεν υπάρχουν εισπράξεις για αυτή την ημέρα.
                     </TableCell>
                   </TableRow>
@@ -398,6 +423,9 @@ export default async function CashRegisterPage({
                     <TableRow>
                       <TableHead>Είδος</TableHead>
                       <TableHead>Συμβόλαιο</TableHead>
+                      <TableHead>Χαρακτηριστικό</TableHead>
+                      <TableHead>Κλάδος</TableHead>
+                      <TableHead>Εταιρεία</TableHead>
                       <TableHead>Πελάτης</TableHead>
                       <TableHead>Ποσό κίνησης</TableHead>
                       <TableHead>Ανείσπρακτο</TableHead>
@@ -410,6 +438,8 @@ export default async function CashRegisterPage({
                       const policy = one(m.policies);
                       const client = one(policy?.clients ?? null);
                       const agent = one(policy?.agency_users ?? null);
+                      const carrier = one(policy?.carriers ?? null);
+                      const line = one(policy?.insurance_lines ?? null);
                       return (
                         <TableRow key={m.id}>
                           <TableCell>{POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}</TableCell>
@@ -418,6 +448,9 @@ export default async function CashRegisterPage({
                               {policy?.policy_number ?? "—"}
                             </Link>
                           </TableCell>
+                          <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
+                          <TableCell>{line?.name_el ?? "—"}</TableCell>
+                          <TableCell>{carrier?.name ?? "—"}</TableCell>
                           <TableCell>{client?.display_name ?? "—"}</TableCell>
                           <TableCell>{m.premium_gross.toFixed(2)} €</TableCell>
                           <TableCell>
@@ -450,6 +483,9 @@ export default async function CashRegisterPage({
                   <TableHeader>
                     <TableRow>
                       <TableHead>Συμβόλαιο</TableHead>
+                      <TableHead>Χαρακτηριστικό</TableHead>
+                      <TableHead>Κλάδος</TableHead>
+                      <TableHead>Εταιρεία</TableHead>
                       <TableHead>Πελάτης</TableHead>
                       <TableHead>Ποσό επιστροφής</TableHead>
                       {isAdmin && <TableHead>Συνεργάτης</TableHead>}
@@ -460,6 +496,8 @@ export default async function CashRegisterPage({
                       const policy = one(m.policies);
                       const client = one(policy?.clients ?? null);
                       const agent = one(policy?.agency_users ?? null);
+                      const carrier = one(policy?.carriers ?? null);
+                      const line = one(policy?.insurance_lines ?? null);
                       return (
                         <TableRow key={m.id}>
                           <TableCell>
@@ -467,6 +505,9 @@ export default async function CashRegisterPage({
                               {policy?.policy_number ?? "—"}
                             </Link>
                           </TableCell>
+                          <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
+                          <TableCell>{line?.name_el ?? "—"}</TableCell>
+                          <TableCell>{carrier?.name ?? "—"}</TableCell>
                           <TableCell>{client?.display_name ?? "—"}</TableCell>
                           <TableCell>
                             <Badge variant="destructive">{Math.abs(m.premium_gross).toFixed(2)} €</Badge>
@@ -490,6 +531,9 @@ export default async function CashRegisterPage({
                     <TableRow>
                       <TableHead>Ώρα</TableHead>
                       <TableHead>Συμβόλαιο</TableHead>
+                      <TableHead>Χαρακτηριστικό</TableHead>
+                      <TableHead>Κλάδος</TableHead>
+                      <TableHead>Εταιρεία</TableHead>
                       <TableHead>Πελάτης</TableHead>
                       <TableHead>Ποσό</TableHead>
                       <TableHead>Αιτιολογία</TableHead>
@@ -497,7 +541,7 @@ export default async function CashRegisterPage({
                   </TableHeader>
                   <TableBody>
                     {reversals.map((c) => {
-                      const { number, client } = clientLabel(c.policy_installments);
+                      const { number, client, riskLabel, carrier, line } = clientLabel(c.policy_installments);
                       return (
                         <TableRow key={c.id}>
                           <TableCell>{c.reversed_at ? formatTime(c.reversed_at) : "—"}</TableCell>
@@ -509,6 +553,9 @@ export default async function CashRegisterPage({
                               {number}
                             </Link>
                           </TableCell>
+                          <TableCell className="text-muted-foreground">{riskLabel}</TableCell>
+                          <TableCell>{line}</TableCell>
+                          <TableCell>{carrier}</TableCell>
                           <TableCell>{client}</TableCell>
                           <TableCell>
                             <Badge variant="outline">{c.amount.toFixed(2)} €</Badge>
