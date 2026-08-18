@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString("el-GR", {
@@ -64,6 +65,18 @@ function clientLabel(installment: PolicyEmbed) {
   return { number: policy?.policy_number ?? "—", client: client?.display_name ?? "—" };
 }
 
+type MovementRow = {
+  id: string;
+  kind: string;
+  premium_gross: number;
+  policy_id: string;
+  policies: SingleOrMany<{
+    policy_number: string;
+    clients: SingleOrMany<{ display_name: string | null }>;
+    agency_users: SingleOrMany<{ full_name: string }>;
+  }>;
+};
+
 // This page existed before (commit 068c310 removed it, data untouched, as
 // part of the Profia-rebuild cleanup) — this is a restoration, not a new
 // design. See the plan for why it reads via the admin client instead of the
@@ -114,15 +127,61 @@ export default async function CashRegisterPage({
     .order("reversed_at", { ascending: true });
   if (scopeAgentId) reversalsQuery = reversalsQuery.eq("paid_by", scopeAgentId);
 
-  const [{ data: rawCollections, error }, { data: rawReversals }, { data: agents }] = await Promise.all([
-    collectionsQuery,
-    reversalsQuery,
-    isAdmin
-      ? admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name")
-      : Promise.resolve({ data: [] }),
-  ]);
+  // Movements (κινήσεις) issued today are a separate thing from
+  // collections above: a movement can exist with nothing collected on it
+  // yet ("ανείσπρακτη"). Scoped through the underlying policy's assigned
+  // agent, same as policy_movements_select RLS would (this query bypasses
+  // it via the admin client, same rationale as everywhere else on this
+  // page).
+  let movementsQuery = admin
+    .from("policy_movements")
+    .select(
+      "id, kind, premium_gross, policy_id, " +
+        "policies!inner(policy_number, assigned_agent_id, clients(display_name), " +
+        "agency_users!policies_assigned_agent_id_fkey(full_name))",
+    )
+    .eq("issue_date", selectedDate)
+    .order("created_at", { ascending: true });
+  if (scopeAgentId) movementsQuery = movementsQuery.eq("policies.assigned_agent_id", scopeAgentId);
+
+  const [{ data: rawCollections, error }, { data: rawReversals }, { data: agents }, { data: rawMovements }] =
+    await Promise.all([
+      collectionsQuery,
+      reversalsQuery,
+      isAdmin
+        ? admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name")
+        : Promise.resolve({ data: [] }),
+      movementsQuery,
+    ]);
   const collections = (rawCollections ?? []) as unknown as CollectionRow[];
   const reversals = (rawReversals ?? []) as unknown as ReversalRow[];
+  const movements = (rawMovements ?? []) as unknown as MovementRow[];
+
+  // A movement's receivable lives on its installments (amount/paid_amount/
+  // status, kept in sync by installment_payments_recompute) — "ανείσπρακτο"
+  // is whatever's still owed across the ones that aren't fully paid or
+  // cancelled.
+  const movementIds = movements.map((m) => m.id);
+  const { data: rawMovementInstallments } =
+    movementIds.length > 0
+      ? await admin
+          .from("policy_installments")
+          .select("movement_id, amount, paid_amount, status")
+          .in("movement_id", movementIds)
+      : { data: [] };
+
+  const outstandingByMovement = new Map<string, number>();
+  for (const inst of rawMovementInstallments ?? []) {
+    if (inst.status === "paid" || inst.status === "cancelled") continue;
+    const outstanding = inst.amount - (inst.paid_amount ?? 0);
+    outstandingByMovement.set(
+      inst.movement_id as string,
+      (outstandingByMovement.get(inst.movement_id as string) ?? 0) + outstanding,
+    );
+  }
+  const uncollectedMovements = movements
+    .map((m) => ({ ...m, outstanding: outstandingByMovement.get(m.id) ?? 0 }))
+    .filter((m) => m.outstanding > 0);
 
   // A tip is whatever a transaction collects beyond what was still owed on
   // its installment at that point — computed from the full chronological
@@ -297,6 +356,49 @@ export default async function CashRegisterPage({
               </TableBody>
             </Table>
           </div>
+
+          {uncollectedMovements.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium text-muted-foreground">Ανείσπρακτες κινήσεις ημέρας</h2>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Είδος</TableHead>
+                      <TableHead>Συμβόλαιο</TableHead>
+                      <TableHead>Πελάτης</TableHead>
+                      <TableHead>Ποσό κίνησης</TableHead>
+                      <TableHead>Ανείσπρακτο</TableHead>
+                      {isAdmin && <TableHead>Συνεργάτης</TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {uncollectedMovements.map((m) => {
+                      const policy = one(m.policies);
+                      const client = one(policy?.clients ?? null);
+                      const agent = one(policy?.agency_users ?? null);
+                      return (
+                        <TableRow key={m.id}>
+                          <TableCell>{POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}</TableCell>
+                          <TableCell>
+                            <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
+                              {policy?.policy_number ?? "—"}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{client?.display_name ?? "—"}</TableCell>
+                          <TableCell>{m.premium_gross.toFixed(2)} €</TableCell>
+                          <TableCell>
+                            <Badge variant="warning">{m.outstanding.toFixed(2)} €</Badge>
+                          </TableCell>
+                          {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
 
           {reversals.length > 0 && (
             <div className="flex flex-col gap-3">
