@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser, getCurrentAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
+import { sendSms, sendViber, toYubotoPhoneNumber } from "@/lib/yuboto";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
 import type { PaymentFrequency } from "@/lib/database.types";
 import { POLICY_STATUS_LABELS } from "./policy-labels";
@@ -12,6 +13,7 @@ import { createMovementForPolicy } from "./movements-actions";
 
 export type PolicyFormState = { error: string; field?: string } | undefined;
 export type SendEmailState = { error: string } | { success: string } | undefined;
+export type SendMessageState = { error: string } | { success: string } | undefined;
 
 export async function searchPolicies(query: string): Promise<{ id: string; label: string }[]> {
   await requireAgencyUser();
@@ -549,6 +551,48 @@ export async function sendPolicyEmail(
 
   revalidatePath(`/dashboard/policies/${policyId}`);
   return { success: "Το email στάλθηκε." };
+}
+
+export async function sendPolicySms(
+  policyId: string,
+  _prevState: SendMessageState,
+  formData: FormData,
+): Promise<SendMessageState> {
+  await requireAgencyUser();
+
+  const to = formData.get("to") as string;
+  const text = formData.get("text") as string;
+  if (!to || !text) return { error: "Συμπλήρωσε το κείμενο του μηνύματος." };
+
+  const sender = process.env.YUBOTO_SMS_SENDER;
+  if (!sender) return { error: "Δεν έχει ρυθμιστεί αποστολέας SMS (YUBOTO_SMS_SENDER)." };
+
+  const result = await sendSms([toYubotoPhoneNumber(to)], { sender, text });
+  if (!result.ok) return { error: "Σφάλμα αποστολής: " + result.error };
+
+  revalidatePath(`/dashboard/policies/${policyId}`);
+  return { success: "Το SMS στάλθηκε." };
+}
+
+export async function sendPolicyViber(
+  policyId: string,
+  _prevState: SendMessageState,
+  formData: FormData,
+): Promise<SendMessageState> {
+  await requireAgencyUser();
+
+  const to = formData.get("to") as string;
+  const text = formData.get("text") as string;
+  if (!to || !text) return { error: "Συμπλήρωσε το κείμενο του μηνύματος." };
+
+  const sender = process.env.YUBOTO_VIBER_SENDER;
+  if (!sender) return { error: "Δεν έχει ρυθμιστεί αποστολέας Viber (YUBOTO_VIBER_SENDER)." };
+
+  const result = await sendViber([toYubotoPhoneNumber(to)], { sender, text });
+  if (!result.ok) return { error: "Σφάλμα αποστολής: " + result.error };
+
+  revalidatePath(`/dashboard/policies/${policyId}`);
+  return { success: "Το μήνυμα Viber στάλθηκε." };
 }
 
 // Powers the policies list page's default "last 50 visited" view. Fired

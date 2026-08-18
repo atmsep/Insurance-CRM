@@ -29,7 +29,7 @@ export default async function PolicyDetailPage({
   const { data: policy } = await supabase
     .from("policies")
     .select(
-      "*, insurance_lines(*), carriers(name), clients(id, email, client_individuals(first_name,last_name), client_legal_entities(company_name))",
+      "*, insurance_lines(*), carriers(name), clients(id, email, phone_mobile, phone_landline, client_individuals(first_name,last_name), client_legal_entities(company_name))",
     )
     .eq("id", id)
     .single();
@@ -46,6 +46,8 @@ export default async function PolicyDetailPage({
   const client = policy.clients as unknown as {
     id: string;
     email: string | null;
+    phone_mobile: string | null;
+    phone_landline: string | null;
     client_individuals: { first_name: string; last_name: string } | null;
     client_legal_entities: { company_name: string } | null;
   } | null;
@@ -130,6 +132,7 @@ export default async function PolicyDetailPage({
         riskLabel={policy.risk_label}
         renewalNumber={policy.renewal_number}
         clientEmail={client?.email ?? null}
+        clientPhone={client?.phone_mobile ?? client?.phone_landline ?? null}
         emailTemplates={emailTemplates ?? []}
         emailMergeFields={emailMergeFields}
       />

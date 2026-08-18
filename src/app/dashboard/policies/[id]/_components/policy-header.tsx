@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { PrintButton } from "@/components/print-button";
 import { StatusSelect } from "../../status-select";
 import { SendEmailButton } from "../../send-email-button";
+import { SendSmsButton } from "../../send-sms-button";
+import { SendViberButton } from "../../send-viber-button";
 import type { PolicyStatus } from "@/lib/database.types";
 
 type EmailTemplate = { id: string; name: string; subject: string; body: string };
@@ -20,6 +22,7 @@ export function PolicyHeader({
   riskLabel,
   renewalNumber,
   clientEmail,
+  clientPhone,
   emailTemplates,
   emailMergeFields,
 }: {
@@ -34,6 +37,7 @@ export function PolicyHeader({
   riskLabel: string | null;
   renewalNumber: number;
   clientEmail: string | null;
+  clientPhone: string | null;
   emailTemplates: EmailTemplate[];
   emailMergeFields: Record<string, string>;
 }) {
@@ -58,12 +62,16 @@ export function PolicyHeader({
       </div>
       <div className="flex items-center gap-2">
         {status === "active" && (
-          <SendEmailButton
-            policyId={policyId}
-            clientEmail={clientEmail}
-            templates={emailTemplates}
-            mergeFields={emailMergeFields}
-          />
+          <>
+            <SendEmailButton
+              policyId={policyId}
+              clientEmail={clientEmail}
+              templates={emailTemplates}
+              mergeFields={emailMergeFields}
+            />
+            <SendSmsButton policyId={policyId} clientPhone={clientPhone} />
+            <SendViberButton policyId={policyId} clientPhone={clientPhone} />
+          </>
         )}
         <PrintButton />
         {status !== "cancelled" && (

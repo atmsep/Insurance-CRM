@@ -23,6 +23,18 @@ function authHeader(apiKey: string): string {
   return `Basic ${Buffer.from(apiKey).toString("base64")}`;
 }
 
+// Client phone numbers in this app are stored as plain 10-digit Greek local
+// numbers (e.g. "6912345678", no country code) — Yuboto's ContactObj wants
+// international format with no "+" (e.g. "306912345678"). Passes through
+// anything already in that shape (or anything else unrecognized) unchanged.
+export function toYubotoPhoneNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("0030")) return digits.slice(2);
+  if (digits.startsWith("30") && digits.length === 12) return digits;
+  if (digits.length === 10) return `30${digits}`;
+  return digits;
+}
+
 export type YubotoMessageResult = {
   id: string;
   channel: string;
