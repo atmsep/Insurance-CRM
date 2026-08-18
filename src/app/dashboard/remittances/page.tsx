@@ -50,7 +50,7 @@ type RemittanceMovementRow = {
 const MOVEMENT_SELECT =
   "id, kind, document_number, issue_date, start_date, premium_gross, policy_id, " +
   "policies!inner(policy_number, risk_label, assigned_agent_id, carrier_id, insurance_line_id, status, " +
-  "clients(display_name), agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))";
+  "clients!inner(display_name), agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))";
 
 // Rows on this page are always the currently-unremitted ones (that's the
 // whole point of a worklist), so the toggle here only ever goes one
