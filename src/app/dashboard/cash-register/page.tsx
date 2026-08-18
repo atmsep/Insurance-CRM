@@ -170,6 +170,12 @@ export default async function CashRegisterPage({
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Ταμείο</h1>
+        <Button
+          variant="outline"
+          size="sm"
+          nativeButton={false}
+          render={<Link href="/dashboard/cash-register/calendar">Ημερολόγιο</Link>}
+        />
       </div>
 
       <form className="flex flex-wrap items-end gap-3">

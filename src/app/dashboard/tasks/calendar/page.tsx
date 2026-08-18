@@ -8,26 +8,7 @@ import {
   getCelebrationTemplates,
   isCelebrationType,
 } from "@/lib/celebrations";
-
-const WEEKDAY_LABELS = ["Δε", "Τρ", "Τε", "Πε", "Πα", "Σα", "Κυ"];
-const MONTH_LABELS = [
-  "Ιανουάριος",
-  "Φεβρουάριος",
-  "Μάρτιος",
-  "Απρίλιος",
-  "Μάιος",
-  "Ιούνιος",
-  "Ιούλιος",
-  "Αύγουστος",
-  "Σεπτέμβριος",
-  "Οκτώβριος",
-  "Νοέμβριος",
-  "Δεκέμβριος",
-];
-
-function pad(n: number) {
-  return n.toString().padStart(2, "0");
-}
+import { WEEKDAY_LABELS, MONTH_LABELS, pad } from "@/lib/calendar-labels";
 
 export default async function TasksCalendarPage({
   searchParams,
