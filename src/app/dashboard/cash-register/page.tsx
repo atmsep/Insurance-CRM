@@ -13,6 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
+import { installmentRemaining } from "../policies/balance";
+import { CollectFromCashRegister } from "./_components/collect-from-cash-register";
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString("el-GR", {
@@ -144,15 +146,21 @@ export default async function CashRegisterPage({
     .order("created_at", { ascending: true });
   if (scopeAgentId) movementsQuery = movementsQuery.eq("policies.assigned_agent_id", scopeAgentId);
 
-  const [{ data: rawCollections, error }, { data: rawReversals }, { data: agents }, { data: rawMovements }] =
-    await Promise.all([
-      collectionsQuery,
-      reversalsQuery,
-      isAdmin
-        ? admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name")
-        : Promise.resolve({ data: [] }),
-      movementsQuery,
-    ]);
+  const [
+    { data: rawCollections, error },
+    { data: rawReversals },
+    { data: agents },
+    { data: rawMovements },
+    { data: paymentMethods },
+  ] = await Promise.all([
+    collectionsQuery,
+    reversalsQuery,
+    isAdmin
+      ? admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name")
+      : Promise.resolve({ data: [] }),
+    movementsQuery,
+    admin.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
+  ]);
   const collections = (rawCollections ?? []) as unknown as CollectionRow[];
   const reversals = (rawReversals ?? []) as unknown as ReversalRow[];
   const movements = (rawMovements ?? []) as unknown as MovementRow[];
@@ -160,27 +168,45 @@ export default async function CashRegisterPage({
   // A movement's receivable lives on its installments (amount/paid_amount/
   // status, kept in sync by installment_payments_recompute) — "ανείσπρακτο"
   // is whatever's still owed across the ones that aren't fully paid or
-  // cancelled.
+  // cancelled. Kept per-installment (not just summed) so each one can get
+  // its own "Είσπραξη" button below — a movement split into several δόσεις
+  // is collected one δόση at a time, same as everywhere else in the app.
   const movementIds = movements.map((m) => m.id);
   const { data: rawMovementInstallments } =
     movementIds.length > 0
       ? await admin
           .from("policy_installments")
-          .select("movement_id, amount, paid_amount, status")
+          .select("id, movement_id, installment_number, due_date, paid_date, amount, paid_amount, status")
           .in("movement_id", movementIds)
+          .order("installment_number", { ascending: true })
       : { data: [] };
 
-  const outstandingByMovement = new Map<string, number>();
+  const outstandingInstallmentsByMovement = new Map<
+    string,
+    { id: string; installmentNumber: number; dueDate: string; paidDate: string | null; amount: number; paidAmount: number | null; status: string }[]
+  >();
   for (const inst of rawMovementInstallments ?? []) {
     if (inst.status === "paid" || inst.status === "cancelled") continue;
-    const outstanding = inst.amount - (inst.paid_amount ?? 0);
-    outstandingByMovement.set(
-      inst.movement_id as string,
-      (outstandingByMovement.get(inst.movement_id as string) ?? 0) + outstanding,
-    );
+    if (installmentRemaining(inst) <= 0) continue;
+    const movementId = inst.movement_id as string;
+    const list = outstandingInstallmentsByMovement.get(movementId) ?? [];
+    list.push({
+      id: inst.id,
+      installmentNumber: inst.installment_number,
+      dueDate: inst.due_date,
+      paidDate: inst.paid_date,
+      amount: inst.amount,
+      paidAmount: inst.paid_amount,
+      status: inst.status,
+    });
+    outstandingInstallmentsByMovement.set(movementId, list);
   }
   const uncollectedMovements = movements
-    .map((m) => ({ ...m, outstanding: outstandingByMovement.get(m.id) ?? 0 }))
+    .map((m) => {
+      const installments = outstandingInstallmentsByMovement.get(m.id) ?? [];
+      const outstanding = installments.reduce((sum, i) => sum + installmentRemaining(i), 0);
+      return { ...m, outstanding, installments };
+    })
     .filter((m) => m.outstanding > 0);
 
   // A cancellation never gets a policy_installments row at all (it's a
@@ -376,6 +402,7 @@ export default async function CashRegisterPage({
                       <TableHead>Ποσό κίνησης</TableHead>
                       <TableHead>Ανείσπρακτο</TableHead>
                       {isAdmin && <TableHead>Συνεργάτης</TableHead>}
+                      <TableHead />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -397,6 +424,15 @@ export default async function CashRegisterPage({
                             <Badge variant="warning">{m.outstanding.toFixed(2)} €</Badge>
                           </TableCell>
                           {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
+                          <TableCell>
+                            <CollectFromCashRegister
+                              policyId={m.policy_id}
+                              documentLabel={policy?.policy_number ?? "—"}
+                              kindLabel={POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}
+                              installments={m.installments}
+                              paymentMethods={paymentMethods ?? []}
+                            />
+                          </TableCell>
                         </TableRow>
                       );
                     })}
