@@ -88,6 +88,30 @@ export async function toggleCarrierActive(carrierId: string, isActive: boolean) 
   revalidatePath("/dashboard/settings");
 }
 
+export async function updateCarrier(carrierId: string, formData: FormData) {
+  await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = formData.get("name") as string;
+  if (!name) return;
+
+  await supabase
+    .from("carriers")
+    .update({
+      name,
+      legal_name: (formData.get("legal_name") as string) || null,
+      contact_phone: (formData.get("contact_phone") as string) || null,
+      contact_email: (formData.get("contact_email") as string) || null,
+      assistance_phone: (formData.get("assistance_phone") as string) || null,
+      claims_phone: (formData.get("claims_phone") as string) || null,
+      claims_email: (formData.get("claims_email") as string) || null,
+    })
+    .eq("id", carrierId);
+
+  revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard/policies", "layout");
+}
+
 export async function createBrokerOffice(formData: FormData) {
   await requireAdmin();
   const supabase = await createSupabaseClient();

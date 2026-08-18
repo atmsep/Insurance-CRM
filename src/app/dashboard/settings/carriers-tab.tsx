@@ -6,6 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -14,7 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ColumnFilter, type SortDirection } from "../clients/[id]/_components/column-filter";
-import { createCarrier, toggleCarrierActive } from "./actions";
+import { createCarrier, toggleCarrierActive, updateCarrier } from "./actions";
 
 type Carrier = {
   id: string;
@@ -22,6 +29,9 @@ type Carrier = {
   legal_name: string | null;
   contact_phone: string | null;
   contact_email: string | null;
+  assistance_phone: string | null;
+  claims_phone: string | null;
+  claims_email: string | null;
   is_active: boolean;
 };
 
@@ -39,10 +49,69 @@ const COLUMNS: Column[] = [
   { key: "status", label: "Κατάσταση", getValue: (c) => (c.is_active ? "Ενεργή" : "Ανενεργή"), getSortKey: (c) => (c.is_active ? 1 : 0) },
 ];
 
+function EditCarrierDialog({ carrier, onClose }: { carrier: Carrier; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Επεξεργασία εταιρείας</DialogTitle>
+        </DialogHeader>
+        <form
+          action={async (formData) => {
+            await updateCarrier(carrier.id, formData);
+            onClose();
+          }}
+          className="flex flex-col gap-3"
+        >
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="edit_name">Επωνυμία</Label>
+            <Input id="edit_name" name="name" defaultValue={carrier.name} required />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="edit_legal_name">Πλήρης επωνυμία</Label>
+            <Input id="edit_legal_name" name="legal_name" defaultValue={carrier.legal_name ?? ""} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit_contact_phone">Τηλέφωνο</Label>
+              <Input id="edit_contact_phone" name="contact_phone" defaultValue={carrier.contact_phone ?? ""} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit_contact_email">Email</Label>
+              <Input id="edit_contact_email" name="contact_email" type="email" defaultValue={carrier.contact_email ?? ""} />
+            </div>
+          </div>
+          <div className="mt-2 flex flex-col gap-3 rounded-md border p-3">
+            <p className="text-sm font-medium">Στοιχεία για άμεση χρήση (εμφανίζονται στο συμβόλαιο)</p>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit_assistance_phone">Τηλέφωνο φροντίδας ατυχήματος</Label>
+              <Input id="edit_assistance_phone" name="assistance_phone" defaultValue={carrier.assistance_phone ?? ""} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit_claims_phone">Τηλέφωνο κλάδου ζημιών</Label>
+                <Input id="edit_claims_phone" name="claims_phone" defaultValue={carrier.claims_phone ?? ""} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit_claims_email">Email ζημιών</Label>
+                <Input id="edit_claims_email" name="claims_email" type="email" defaultValue={carrier.claims_email ?? ""} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="submit">Αποθήκευση</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function CarriersTab({ carriers }: { carriers: Carrier[] }) {
   const [pending, startTransition] = useTransition();
   const [filters, setFilters] = useState<Record<string, Set<string> | null>>({});
   const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
+  const [editingCarrier, setEditingCarrier] = useState<Carrier | null>(null);
 
   const optionsByColumn = useMemo(() => {
     const map = new Map<string, { value: string; sortKey: string | number }[]>();
@@ -112,18 +181,23 @@ export function CarriersTab({ carriers }: { carriers: Carrier[] }) {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() =>
-                        startTransition(() =>
-                          toggleCarrierActive(carrier.id, !carrier.is_active),
-                        )
-                      }
-                    >
-                      {carrier.is_active ? "Απενεργοποίηση" : "Ενεργοποίηση"}
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => setEditingCarrier(carrier)}>
+                        Επεξεργασία
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() =>
+                          startTransition(() =>
+                            toggleCarrierActive(carrier.id, !carrier.is_active),
+                          )
+                        }
+                      >
+                        {carrier.is_active ? "Απενεργοποίηση" : "Ενεργοποίηση"}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -137,6 +211,10 @@ export function CarriersTab({ carriers }: { carriers: Carrier[] }) {
           </TableBody>
         </Table>
       </div>
+
+      {editingCarrier && (
+        <EditCarrierDialog carrier={editingCarrier} onClose={() => setEditingCarrier(null)} />
+      )}
 
       <form action={createCarrier} className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-2">

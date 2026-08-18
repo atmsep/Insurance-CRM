@@ -9,6 +9,7 @@ import { getDocumentsFor } from "../../documents/get-documents";
 import { resolveClientName } from "@/lib/client-name";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { PolicyHeader } from "./_components/policy-header";
+import { CarrierContactCard } from "./_components/carrier-contact-card";
 import { VisitTracker } from "./_components/visit-tracker";
 import { DetailsTab } from "./_components/details-tab";
 import { ClaimsTab } from "./_components/claims-tab";
@@ -29,7 +30,7 @@ export default async function PolicyDetailPage({
   const { data: policy } = await supabase
     .from("policies")
     .select(
-      "*, insurance_lines(*), carriers(name), clients(id, email, phone_mobile, phone_landline, client_individuals(first_name,last_name), client_legal_entities(company_name))",
+      "*, insurance_lines(*), carriers(name, assistance_phone, claims_phone, claims_email), clients(id, email, phone_mobile, phone_landline, client_individuals(first_name,last_name), client_legal_entities(company_name))",
     )
     .eq("id", id)
     .single();
@@ -50,6 +51,13 @@ export default async function PolicyDetailPage({
     phone_landline: string | null;
     client_individuals: { first_name: string; last_name: string } | null;
     client_legal_entities: { company_name: string } | null;
+  } | null;
+
+  const carrier = policy.carriers as unknown as {
+    name: string;
+    assistance_phone: string | null;
+    claims_phone: string | null;
+    claims_email: string | null;
   } | null;
 
   const clientName = resolveClientName(client);
@@ -109,7 +117,7 @@ export default async function PolicyDetailPage({
     clientName,
     policyNumber: policy.policy_number,
     lineName: line?.name_el ?? "—",
-    carrierName: (policy.carriers as unknown as { name: string } | null)?.name ?? "—",
+    carrierName: carrier?.name ?? "—",
     endDate: policy.end_date,
     daysRemaining,
   });
@@ -137,43 +145,54 @@ export default async function PolicyDetailPage({
         emailMergeFields={emailMergeFields}
       />
 
-      <Tabs defaultValue="details">
-        <TabsList>
-          <TabsTrigger value="details">Στοιχεία</TabsTrigger>
-          <TabsTrigger value="movements">Κινήσεις</TabsTrigger>
-          <TabsTrigger value="claims">Ζημιές</TabsTrigger>
-          <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
-          <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
-        </TabsList>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_260px]">
+        <Tabs defaultValue="details">
+          <TabsList>
+            <TabsTrigger value="details">Στοιχεία</TabsTrigger>
+            <TabsTrigger value="movements">Κινήσεις</TabsTrigger>
+            <TabsTrigger value="claims">Ζημιές</TabsTrigger>
+            <TabsTrigger value="documents">Έγγραφα</TabsTrigger>
+            <TabsTrigger value="activity">Δραστηριότητα</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="details" className="flex flex-col gap-4 pt-4">
-          <DetailsTab
-            policy={policy}
-            vehicle={vehicle}
-            property={property}
-            lifeHealth={lifeHealth}
-            agents={agents ?? []}
-            brokerOffices={brokerOffices ?? []}
-            updateDetailsAction={updateDetailsAction}
+          <TabsContent value="details" className="flex flex-col gap-4 pt-4">
+            <DetailsTab
+              policy={policy}
+              vehicle={vehicle}
+              property={property}
+              lifeHealth={lifeHealth}
+              agents={agents ?? []}
+              brokerOffices={brokerOffices ?? []}
+              updateDetailsAction={updateDetailsAction}
+            />
+          </TabsContent>
+
+          <TabsContent value="movements" className="pt-4">
+            <MovementsTab policyId={id} isAdmin={isAdmin} />
+          </TabsContent>
+
+          <TabsContent value="claims" className="pt-4">
+            <ClaimsTab policyId={id} />
+          </TabsContent>
+
+          <TabsContent value="documents" className="pt-4">
+            <DocumentsSection entityType="policy" entityId={id} documents={documents} />
+          </TabsContent>
+
+          <TabsContent value="activity" className="pt-4">
+            <ActivityFeed entries={(activity ?? []) as never} />
+          </TabsContent>
+        </Tabs>
+
+        {carrier && (
+          <CarrierContactCard
+            carrierName={carrier.name}
+            assistancePhone={carrier.assistance_phone}
+            claimsPhone={carrier.claims_phone}
+            claimsEmail={carrier.claims_email}
           />
-        </TabsContent>
-
-        <TabsContent value="movements" className="pt-4">
-          <MovementsTab policyId={id} isAdmin={isAdmin} />
-        </TabsContent>
-
-        <TabsContent value="claims" className="pt-4">
-          <ClaimsTab policyId={id} />
-        </TabsContent>
-
-        <TabsContent value="documents" className="pt-4">
-          <DocumentsSection entityType="policy" entityId={id} documents={documents} />
-        </TabsContent>
-
-        <TabsContent value="activity" className="pt-4">
-          <ActivityFeed entries={(activity ?? []) as never} />
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   );
 }
