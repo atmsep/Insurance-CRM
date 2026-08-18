@@ -13,6 +13,7 @@ import {
   BarChart3,
   Settings,
   Wallet,
+  HandCoins,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
     ],
   },
   { href: "/dashboard/reports", label: "Αναφορές", icon: BarChart3 },
+  { href: "/dashboard/remittances", label: "Αποδόσεις", icon: HandCoins },
   { href: "/dashboard/settings", label: "Ρυθμίσεις", icon: Settings },
 ];
 
