@@ -25,7 +25,7 @@ export function CollectFromCashRegister({
 }: {
   policyId: string;
   documentLabel: string;
-  kindLabel: string;
+  kindLabel: string | null;
   installments: Installment[];
   paymentMethods: { id: string; name: string }[];
 }) {

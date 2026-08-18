@@ -12,8 +12,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
-import { installmentRemaining } from "../policies/balance";
+import { installmentRemaining, isBillablePolicyStatus } from "../policies/balance";
+import { formatDate } from "@/lib/date";
 import { CollectFromCashRegister } from "./_components/collect-from-cash-register";
 
 function formatTime(value: string) {
@@ -96,6 +98,25 @@ type MovementRow = {
   }>;
 };
 
+type OutstandingInstallmentRow = {
+  id: string;
+  policy_id: string;
+  installment_number: number;
+  due_date: string;
+  amount: number;
+  paid_amount: number | null;
+  status: string;
+  policies: SingleOrMany<{
+    policy_number: string;
+    risk_label: string | null;
+    status: string;
+    clients: SingleOrMany<{ display_name: string | null }>;
+    agency_users: SingleOrMany<{ full_name: string }>;
+    carriers: SingleOrMany<{ name: string }>;
+    insurance_lines: SingleOrMany<{ name_el: string }>;
+  }>;
+};
+
 // This page existed before (commit 068c310 removed it, data untouched, as
 // part of the Profia-rebuild cleanup) — this is a restoration, not a new
 // design. See the plan for why it reads via the admin client instead of the
@@ -165,12 +186,28 @@ export default async function CashRegisterPage({
     .order("created_at", { ascending: true });
   if (scopeAgentId) movementsQuery = movementsQuery.eq("policies.assigned_agent_id", scopeAgentId);
 
+  // "Ανείσπρακτα" tab: every currently-owed δόση, not just ones tied to a
+  // movement issued on the selected date — this is a standing balance view,
+  // independent of the Ημερομηνία filter above. ~665 rows agency-wide at
+  // last check, comfortably under PostgREST's 1000-row cap, so no chunking.
+  let allOutstandingQuery = admin
+    .from("policy_installments")
+    .select(
+      "id, policy_id, installment_number, due_date, amount, paid_amount, status, " +
+        "policies!inner(policy_number, risk_label, status, assigned_agent_id, clients(display_name), " +
+        "agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))",
+    )
+    .in("status", ["pending", "overdue", "partially_paid"])
+    .order("due_date", { ascending: true });
+  if (scopeAgentId) allOutstandingQuery = allOutstandingQuery.eq("policies.assigned_agent_id", scopeAgentId);
+
   const [
     { data: rawCollections, error },
     { data: rawReversals },
     { data: agents },
     { data: rawMovements },
     { data: paymentMethods },
+    { data: rawAllOutstanding },
   ] = await Promise.all([
     collectionsQuery,
     reversalsQuery,
@@ -179,10 +216,19 @@ export default async function CashRegisterPage({
       : Promise.resolve({ data: [] }),
     movementsQuery,
     admin.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
+    allOutstandingQuery,
   ]);
   const collections = (rawCollections ?? []) as unknown as CollectionRow[];
   const reversals = (rawReversals ?? []) as unknown as ReversalRow[];
   const movements = (rawMovements ?? []) as unknown as MovementRow[];
+
+  // A cancelled/draft policy's leftover pending δόση isn't a real
+  // receivable anymore — same rule getOutstandingByPolicy already applies.
+  const allOutstanding = ((rawAllOutstanding ?? []) as unknown as OutstandingInstallmentRow[]).filter((inst) => {
+    const policy = one(inst.policies);
+    return policy ? isBillablePolicyStatus(policy.status) && installmentRemaining(inst) > 0 : false;
+  });
+  const allOutstandingTotal = allOutstanding.reduce((sum, inst) => sum + installmentRemaining(inst), 0);
 
   // A movement's receivable lives on its installments (amount/paid_amount/
   // status, kept in sync by installment_payments_recompute) — "ανείσπρακτο"
@@ -320,211 +366,38 @@ export default async function CashRegisterPage({
         </Button>
       </form>
 
-      {error ? (
-        <div className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
-          Σφάλμα κατά τη φόρτωση του ταμείου. Δοκίμασε ξανά.
-        </div>
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-4">
-            {[...byMethod.entries()].map(([method, amount]) => (
-              <div key={method} className="rounded-md border px-4 py-2">
-                <p className="text-xs text-muted-foreground">{method}</p>
-                <p className="text-lg font-semibold">{amount.toFixed(2)} €</p>
-              </div>
-            ))}
-            <div className="rounded-md border bg-muted px-4 py-2">
-              <p className="text-xs text-muted-foreground">Σύνολο ημέρας</p>
-              <p className="text-lg font-semibold">{grandTotal.toFixed(2)} €</p>
-            </div>
-            {tipsTotal > 0 && (
-              <div className="rounded-md border px-4 py-2">
-                <p className="text-xs text-muted-foreground">Φιλοδωρήματα ημέρας</p>
-                <p className="text-lg font-semibold">{tipsTotal.toFixed(2)} €</p>
-              </div>
-            )}
-          </div>
+      <Tabs defaultValue="day">
+        <TabsList>
+          <TabsTrigger value="day">Ημέρα</TabsTrigger>
+          <TabsTrigger value="uncollected">Ανείσπρακτα</TabsTrigger>
+        </TabsList>
 
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ώρα</TableHead>
-                  <TableHead>Συμβόλαιο</TableHead>
-                  <TableHead>Χαρακτηριστικό</TableHead>
-                  <TableHead>Κλάδος</TableHead>
-                  <TableHead>Εταιρεία</TableHead>
-                  <TableHead>Πελάτης</TableHead>
-                  <TableHead>Ποσό</TableHead>
-                  <TableHead>Μέθοδος</TableHead>
-                  <TableHead>Απόδειξη</TableHead>
-                  {isAdmin && <TableHead>Συνεργάτης</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {collections.length ? (
-                  collections.map((c) => {
-                    const { number, client, riskLabel, carrier, line } = clientLabel(c.policy_installments);
-                    const collector = one(c.agency_users);
-                    const method = one(c.payment_methods);
-                    const tip = tipByPaymentId.get(c.id) ?? 0;
-                    const isCheque = Boolean(c.cheque_bank || c.cheque_number || c.cheque_due_date);
-                    return (
-                      <TableRow key={c.id}>
-                        <TableCell>{c.paid_at ? formatTime(c.paid_at) : "—"}</TableCell>
-                        <TableCell>
-                          <Link
-                            href={`/dashboard/policies/${one(c.policy_installments)?.policy_id}`}
-                            className="hover:underline"
-                          >
-                            {number}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{riskLabel}</TableCell>
-                        <TableCell>{line}</TableCell>
-                        <TableCell>{carrier}</TableCell>
-                        <TableCell>{client}</TableCell>
-                        <TableCell>
-                          <div>{c.amount.toFixed(2)} €</div>
-                          {tip > 0 && (
-                            <div className="text-xs text-muted-foreground">+ {tip.toFixed(2)} € tip</div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div>{method?.name ?? "—"}</div>
-                          {isCheque && (
-                            <div className="text-xs text-muted-foreground">
-                              {[c.cheque_bank, c.cheque_number, c.cheque_due_date].filter(Boolean).join(" · ")}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>{c.receipt_number ?? "—"}</TableCell>
-                        {isAdmin && <TableCell>{collector?.full_name ?? "—"}</TableCell>}
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={isAdmin ? 10 : 9} className="text-center text-muted-foreground">
-                      Δεν υπάρχουν εισπράξεις για αυτή την ημέρα.
-                    </TableCell>
-                  </TableRow>
+        <TabsContent value="day" className="flex flex-col gap-6 pt-4">
+          {error ? (
+            <div className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
+              Σφάλμα κατά τη φόρτωση του ταμείου. Δοκίμασε ξανά.
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-4">
+                {[...byMethod.entries()].map(([method, amount]) => (
+                  <div key={method} className="rounded-md border px-4 py-2">
+                    <p className="text-xs text-muted-foreground">{method}</p>
+                    <p className="text-lg font-semibold">{amount.toFixed(2)} €</p>
+                  </div>
+                ))}
+                <div className="rounded-md border bg-muted px-4 py-2">
+                  <p className="text-xs text-muted-foreground">Σύνολο ημέρας</p>
+                  <p className="text-lg font-semibold">{grandTotal.toFixed(2)} €</p>
+                </div>
+                {tipsTotal > 0 && (
+                  <div className="rounded-md border px-4 py-2">
+                    <p className="text-xs text-muted-foreground">Φιλοδωρήματα ημέρας</p>
+                    <p className="text-lg font-semibold">{tipsTotal.toFixed(2)} €</p>
+                  </div>
                 )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {uncollectedMovements.length > 0 && (
-            <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-muted-foreground">Ανείσπρακτες κινήσεις ημέρας</h2>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Είδος</TableHead>
-                      <TableHead>Συμβόλαιο</TableHead>
-                      <TableHead>Χαρακτηριστικό</TableHead>
-                      <TableHead>Κλάδος</TableHead>
-                      <TableHead>Εταιρεία</TableHead>
-                      <TableHead>Πελάτης</TableHead>
-                      <TableHead>Ποσό κίνησης</TableHead>
-                      <TableHead>Ανείσπρακτο</TableHead>
-                      {isAdmin && <TableHead>Συνεργάτης</TableHead>}
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {uncollectedMovements.map((m) => {
-                      const policy = one(m.policies);
-                      const client = one(policy?.clients ?? null);
-                      const agent = one(policy?.agency_users ?? null);
-                      const carrier = one(policy?.carriers ?? null);
-                      const line = one(policy?.insurance_lines ?? null);
-                      return (
-                        <TableRow key={m.id}>
-                          <TableCell>{POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}</TableCell>
-                          <TableCell>
-                            <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
-                              {policy?.policy_number ?? "—"}
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
-                          <TableCell>{line?.name_el ?? "—"}</TableCell>
-                          <TableCell>{carrier?.name ?? "—"}</TableCell>
-                          <TableCell>{client?.display_name ?? "—"}</TableCell>
-                          <TableCell>{m.premium_gross.toFixed(2)} €</TableCell>
-                          <TableCell>
-                            <Badge variant="warning">{m.outstanding.toFixed(2)} €</Badge>
-                          </TableCell>
-                          {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
-                          <TableCell>
-                            <CollectFromCashRegister
-                              policyId={m.policy_id}
-                              documentLabel={policy?.policy_number ?? "—"}
-                              kindLabel={POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}
-                              installments={m.installments}
-                              paymentMethods={paymentMethods ?? []}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
               </div>
-            </div>
-          )}
 
-          {cancellationMovements.length > 0 && (
-            <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-muted-foreground">Ακυρώσεις συμβολαίων ημέρας (προς επιστροφή)</h2>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Συμβόλαιο</TableHead>
-                      <TableHead>Χαρακτηριστικό</TableHead>
-                      <TableHead>Κλάδος</TableHead>
-                      <TableHead>Εταιρεία</TableHead>
-                      <TableHead>Πελάτης</TableHead>
-                      <TableHead>Ποσό επιστροφής</TableHead>
-                      {isAdmin && <TableHead>Συνεργάτης</TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {cancellationMovements.map((m) => {
-                      const policy = one(m.policies);
-                      const client = one(policy?.clients ?? null);
-                      const agent = one(policy?.agency_users ?? null);
-                      const carrier = one(policy?.carriers ?? null);
-                      const line = one(policy?.insurance_lines ?? null);
-                      return (
-                        <TableRow key={m.id}>
-                          <TableCell>
-                            <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
-                              {policy?.policy_number ?? "—"}
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
-                          <TableCell>{line?.name_el ?? "—"}</TableCell>
-                          <TableCell>{carrier?.name ?? "—"}</TableCell>
-                          <TableCell>{client?.display_name ?? "—"}</TableCell>
-                          <TableCell>
-                            <Badge variant="destructive">{Math.abs(m.premium_gross).toFixed(2)} €</Badge>
-                          </TableCell>
-                          {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-
-          {reversals.length > 0 && (
-            <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-muted-foreground">Ακυρώσεις εισπράξεων ημέρας</h2>
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -536,41 +409,305 @@ export default async function CashRegisterPage({
                       <TableHead>Εταιρεία</TableHead>
                       <TableHead>Πελάτης</TableHead>
                       <TableHead>Ποσό</TableHead>
-                      <TableHead>Αιτιολογία</TableHead>
+                      <TableHead>Μέθοδος</TableHead>
+                      <TableHead>Απόδειξη</TableHead>
+                      {isAdmin && <TableHead>Συνεργάτης</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {reversals.map((c) => {
-                      const { number, client, riskLabel, carrier, line } = clientLabel(c.policy_installments);
-                      return (
-                        <TableRow key={c.id}>
-                          <TableCell>{c.reversed_at ? formatTime(c.reversed_at) : "—"}</TableCell>
-                          <TableCell>
-                            <Link
-                              href={`/dashboard/policies/${one(c.policy_installments)?.policy_id}`}
-                              className="hover:underline"
-                            >
-                              {number}
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{riskLabel}</TableCell>
-                          <TableCell>{line}</TableCell>
-                          <TableCell>{carrier}</TableCell>
-                          <TableCell>{client}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{c.amount.toFixed(2)} €</Badge>
-                          </TableCell>
-                          <TableCell>{c.reversal_reason ?? "—"}</TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {collections.length ? (
+                      collections.map((c) => {
+                        const { number, client, riskLabel, carrier, line } = clientLabel(c.policy_installments);
+                        const collector = one(c.agency_users);
+                        const method = one(c.payment_methods);
+                        const tip = tipByPaymentId.get(c.id) ?? 0;
+                        const isCheque = Boolean(c.cheque_bank || c.cheque_number || c.cheque_due_date);
+                        return (
+                          <TableRow key={c.id}>
+                            <TableCell>{c.paid_at ? formatTime(c.paid_at) : "—"}</TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/dashboard/policies/${one(c.policy_installments)?.policy_id}`}
+                                className="hover:underline"
+                              >
+                                {number}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">{riskLabel}</TableCell>
+                            <TableCell>{line}</TableCell>
+                            <TableCell>{carrier}</TableCell>
+                            <TableCell>{client}</TableCell>
+                            <TableCell>
+                              <div>{c.amount.toFixed(2)} €</div>
+                              {tip > 0 && (
+                                <div className="text-xs text-muted-foreground">+ {tip.toFixed(2)} € tip</div>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div>{method?.name ?? "—"}</div>
+                              {isCheque && (
+                                <div className="text-xs text-muted-foreground">
+                                  {[c.cheque_bank, c.cheque_number, c.cheque_due_date].filter(Boolean).join(" · ")}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>{c.receipt_number ?? "—"}</TableCell>
+                            {isAdmin && <TableCell>{collector?.full_name ?? "—"}</TableCell>}
+                          </TableRow>
+                        );
+                      })
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={isAdmin ? 10 : 9} className="text-center text-muted-foreground">
+                          Δεν υπάρχουν εισπράξεις για αυτή την ημέρα.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
-            </div>
+
+              {uncollectedMovements.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <h2 className="text-sm font-medium text-muted-foreground">Ανείσπρακτες κινήσεις ημέρας</h2>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Είδος</TableHead>
+                          <TableHead>Συμβόλαιο</TableHead>
+                          <TableHead>Χαρακτηριστικό</TableHead>
+                          <TableHead>Κλάδος</TableHead>
+                          <TableHead>Εταιρεία</TableHead>
+                          <TableHead>Πελάτης</TableHead>
+                          <TableHead>Ποσό κίνησης</TableHead>
+                          <TableHead>Ανείσπρακτο</TableHead>
+                          {isAdmin && <TableHead>Συνεργάτης</TableHead>}
+                          <TableHead />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {uncollectedMovements.map((m) => {
+                          const policy = one(m.policies);
+                          const client = one(policy?.clients ?? null);
+                          const agent = one(policy?.agency_users ?? null);
+                          const carrier = one(policy?.carriers ?? null);
+                          const line = one(policy?.insurance_lines ?? null);
+                          return (
+                            <TableRow key={m.id}>
+                              <TableCell>{POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}</TableCell>
+                              <TableCell>
+                                <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
+                                  {policy?.policy_number ?? "—"}
+                                </Link>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
+                              <TableCell>{line?.name_el ?? "—"}</TableCell>
+                              <TableCell>{carrier?.name ?? "—"}</TableCell>
+                              <TableCell>{client?.display_name ?? "—"}</TableCell>
+                              <TableCell>{m.premium_gross.toFixed(2)} €</TableCell>
+                              <TableCell>
+                                <Badge variant="warning">{m.outstanding.toFixed(2)} €</Badge>
+                              </TableCell>
+                              {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
+                              <TableCell>
+                                <CollectFromCashRegister
+                                  policyId={m.policy_id}
+                                  documentLabel={policy?.policy_number ?? "—"}
+                                  kindLabel={POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}
+                                  installments={m.installments}
+                                  paymentMethods={paymentMethods ?? []}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              {cancellationMovements.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <h2 className="text-sm font-medium text-muted-foreground">Ακυρώσεις συμβολαίων ημέρας (προς επιστροφή)</h2>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Συμβόλαιο</TableHead>
+                          <TableHead>Χαρακτηριστικό</TableHead>
+                          <TableHead>Κλάδος</TableHead>
+                          <TableHead>Εταιρεία</TableHead>
+                          <TableHead>Πελάτης</TableHead>
+                          <TableHead>Ποσό επιστροφής</TableHead>
+                          {isAdmin && <TableHead>Συνεργάτης</TableHead>}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {cancellationMovements.map((m) => {
+                          const policy = one(m.policies);
+                          const client = one(policy?.clients ?? null);
+                          const agent = one(policy?.agency_users ?? null);
+                          const carrier = one(policy?.carriers ?? null);
+                          const line = one(policy?.insurance_lines ?? null);
+                          return (
+                            <TableRow key={m.id}>
+                              <TableCell>
+                                <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
+                                  {policy?.policy_number ?? "—"}
+                                </Link>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
+                              <TableCell>{line?.name_el ?? "—"}</TableCell>
+                              <TableCell>{carrier?.name ?? "—"}</TableCell>
+                              <TableCell>{client?.display_name ?? "—"}</TableCell>
+                              <TableCell>
+                                <Badge variant="destructive">{Math.abs(m.premium_gross).toFixed(2)} €</Badge>
+                              </TableCell>
+                              {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              {reversals.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <h2 className="text-sm font-medium text-muted-foreground">Ακυρώσεις εισπράξεων ημέρας</h2>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Ώρα</TableHead>
+                          <TableHead>Συμβόλαιο</TableHead>
+                          <TableHead>Χαρακτηριστικό</TableHead>
+                          <TableHead>Κλάδος</TableHead>
+                          <TableHead>Εταιρεία</TableHead>
+                          <TableHead>Πελάτης</TableHead>
+                          <TableHead>Ποσό</TableHead>
+                          <TableHead>Αιτιολογία</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {reversals.map((c) => {
+                          const { number, client, riskLabel, carrier, line } = clientLabel(c.policy_installments);
+                          return (
+                            <TableRow key={c.id}>
+                              <TableCell>{c.reversed_at ? formatTime(c.reversed_at) : "—"}</TableCell>
+                              <TableCell>
+                                <Link
+                                  href={`/dashboard/policies/${one(c.policy_installments)?.policy_id}`}
+                                  className="hover:underline"
+                                >
+                                  {number}
+                                </Link>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">{riskLabel}</TableCell>
+                              <TableCell>{line}</TableCell>
+                              <TableCell>{carrier}</TableCell>
+                              <TableCell>{client}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{c.amount.toFixed(2)} €</Badge>
+                              </TableCell>
+                              <TableCell>{c.reversal_reason ?? "—"}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </>
           )}
-        </>
-      )}
+        </TabsContent>
+
+        <TabsContent value="uncollected" className="flex flex-col gap-6 pt-4">
+          <div className="w-fit rounded-md border bg-muted px-4 py-2">
+            <p className="text-xs text-muted-foreground">Σύνολο ανείσπρακτων</p>
+            <p className="text-lg font-semibold">{allOutstandingTotal.toFixed(2)} €</p>
+          </div>
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Ημ. λήξης</TableHead>
+                  <TableHead>Συμβόλαιο</TableHead>
+                  <TableHead>Χαρακτηριστικό</TableHead>
+                  <TableHead>Κλάδος</TableHead>
+                  <TableHead>Εταιρεία</TableHead>
+                  <TableHead>Πελάτης</TableHead>
+                  <TableHead>Ποσό δόσης</TableHead>
+                  <TableHead>Ανείσπρακτο</TableHead>
+                  {isAdmin && <TableHead>Συνεργάτης</TableHead>}
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {allOutstanding.length ? (
+                  allOutstanding.map((inst) => {
+                    const policy = one(inst.policies);
+                    const client = one(policy?.clients ?? null);
+                    const agent = one(policy?.agency_users ?? null);
+                    const carrier = one(policy?.carriers ?? null);
+                    const line = one(policy?.insurance_lines ?? null);
+                    const remaining = installmentRemaining(inst);
+                    return (
+                      <TableRow key={inst.id}>
+                        <TableCell>{formatDate(inst.due_date)}</TableCell>
+                        <TableCell>
+                          <Link href={`/dashboard/policies/${inst.policy_id}`} className="hover:underline">
+                            {policy?.policy_number ?? "—"}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
+                        <TableCell>{line?.name_el ?? "—"}</TableCell>
+                        <TableCell>{carrier?.name ?? "—"}</TableCell>
+                        <TableCell>{client?.display_name ?? "—"}</TableCell>
+                        <TableCell>{inst.amount.toFixed(2)} €</TableCell>
+                        <TableCell>
+                          <Badge variant="warning">{remaining.toFixed(2)} €</Badge>
+                        </TableCell>
+                        {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
+                        <TableCell>
+                          <CollectFromCashRegister
+                            policyId={inst.policy_id}
+                            documentLabel={policy?.policy_number ?? "—"}
+                            kindLabel={null}
+                            installments={[
+                              {
+                                id: inst.id,
+                                installmentNumber: inst.installment_number,
+                                dueDate: inst.due_date,
+                                paidDate: null,
+                                amount: inst.amount,
+                                paidAmount: inst.paid_amount,
+                                status: inst.status,
+                              },
+                            ]}
+                            paymentMethods={paymentMethods ?? []}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={isAdmin ? 10 : 9} className="text-center text-muted-foreground">
+                      Δεν υπάρχουν ανείσπρακτες δόσεις.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
