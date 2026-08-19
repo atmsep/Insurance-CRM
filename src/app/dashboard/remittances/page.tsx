@@ -14,7 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListPageHeader } from "@/components/list-page-header";
-import { formatDate } from "@/lib/date";
+import { Pagination } from "@/components/ui/pagination";
+import { formatDate, formatDateTime } from "@/lib/date";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
 import {
   togglePremiumRemittance,
@@ -24,6 +25,7 @@ import {
 } from "../policies/movements-actions";
 import { getOutgoingCommissionsByMovement } from "../reports/production/commissions";
 import { ProductionFiltersPanel } from "../reports/production/_components/production-filters-panel";
+import { parsePerPage } from "../policies/filters";
 import { parseRemittanceFilters, applyRemittanceFilters } from "./filters";
 import { RemittancesTabs } from "./_components/remittances-tabs";
 import { BulkSelectionProvider, BulkSelectCheckbox, BulkSelectAllCheckbox } from "@/components/bulk-selection";
@@ -59,6 +61,14 @@ const MOVEMENT_SELECT =
   "policies!inner(policy_number, risk_label, assigned_agent_id, carrier_id, insurance_line_id, status, " +
   "clients!inner(display_name), agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))";
 
+// Separate module-scope constants (not concatenated inline at the query
+// call site) for the "Αποδοθέντα" view's two extra columns — inlining a
+// template literal into .select() there blew up the PostgREST client's
+// type inference (TS2589, excessively deep instantiation) on this
+// already-embed-heavy select string.
+const MOVEMENT_SELECT_PREMIUM_DONE = MOVEMENT_SELECT + ", premium_remitted_at";
+const MOVEMENT_SELECT_COMMISSION_DONE = MOVEMENT_SELECT + ", outgoing_commission_remitted_at";
+
 // Rows on this page are always the currently-unremitted ones (that's the
 // whole point of a worklist), so the toggle here only ever goes one
 // direction — these wrappers just fix currentlyRemitted=false and discard
@@ -72,6 +82,19 @@ async function remitPremium(movementId: string) {
 async function remitCommission(movementId: string) {
   "use server";
   await toggleOutgoingCommissionRemittance(movementId, false);
+}
+
+// Mirror pair for the "Αποδοθέντα" (already-remitted) view below — every
+// row there is already remitted, so these always undo (clear the
+// timestamp back to null) rather than set it.
+async function undoPremiumRemit(movementId: string) {
+  "use server";
+  await togglePremiumRemittance(movementId, true);
+}
+
+async function undoCommissionRemit(movementId: string) {
+  "use server";
+  await toggleOutgoingCommissionRemittance(movementId, true);
 }
 
 // Worklist for the two per-movement remittance toggles that already exist
@@ -95,6 +118,9 @@ export default async function RemittancesPage({
   const sp = await searchParams;
   const filters = parseRemittanceFilters(sp);
   const activeTab = sp.tab === "commission" ? "commission" : "premium";
+  const remitStatus = sp.remit_status === "done" ? "done" : "pending";
+  const page = Math.max(1, Number(sp.page) || 1);
+  const perPage = parsePerPage(sp.per_page);
   const admin = createAdminClient();
 
   const [{ data: agents }, { data: carriers }, { data: insuranceLines }] = await Promise.all([
@@ -103,157 +129,338 @@ export default async function RemittancesPage({
     admin.from("insurance_lines").select("id, name_el").order("sort_order"),
   ]);
 
-  const [{ data: rawPremiumPending }, { data: rawCommissionCandidates }] = await Promise.all([
-    applyRemittanceFilters(
-      admin.from("policy_movements").select(MOVEMENT_SELECT).is("premium_remitted_at", null),
-      filters,
-    ).order("issue_date", { ascending: true }),
-    applyRemittanceFilters(
-      admin.from("policy_movements").select(MOVEMENT_SELECT).is("outgoing_commission_remitted_at", null),
-      filters,
-    ).order("issue_date", { ascending: true }),
-  ]);
+  let premiumRows: (RemittanceMovementRow & { premium_remitted_at?: string })[] = [];
+  let commissionRows: (RemittanceMovementRow & { commission: number; outgoing_commission_remitted_at?: string })[] =
+    [];
+  let premiumTotalPages = 1;
+  let commissionTotalPages = 1;
+  let premiumTotalCount = 0;
+  let commissionTotalCount = 0;
 
-  const premiumPending = (rawPremiumPending ?? []) as unknown as RemittanceMovementRow[];
-  const commissionCandidates = (rawCommissionCandidates ?? []) as unknown as RemittanceMovementRow[];
+  if (remitStatus === "pending") {
+    const [{ data: rawPremiumPending }, { data: rawCommissionCandidates }] = await Promise.all([
+      applyRemittanceFilters(
+        admin.from("policy_movements").select(MOVEMENT_SELECT).is("premium_remitted_at", null),
+        filters,
+      ).order("issue_date", { ascending: true }),
+      applyRemittanceFilters(
+        admin.from("policy_movements").select(MOVEMENT_SELECT).is("outgoing_commission_remitted_at", null),
+        filters,
+      ).order("issue_date", { ascending: true }),
+    ]);
 
-  // Only movements that actually carry a nonzero outgoing commission are
-  // worth listing — matches the production report's own precedent for
-  // resolving "Προμήθεια Συνεργάτη" (first-installment path for every kind
-  // but cancellation, which attaches via policy_movement_id instead).
-  const commissionByMovement = await getOutgoingCommissionsByMovement(
-    admin,
-    commissionCandidates.map((m) => ({ id: m.id, isReal: true })),
-  );
-  const commissionPending = commissionCandidates
-    .map((m) => ({ ...m, commission: commissionByMovement.get(m.id) ?? 0 }))
-    .filter((m) => m.commission !== 0);
+    premiumRows = (rawPremiumPending ?? []) as unknown as RemittanceMovementRow[];
+    const commissionCandidates = (rawCommissionCandidates ?? []) as unknown as RemittanceMovementRow[];
 
-  function renderTable<T extends RemittanceMovementRow>(
-    rows: T[],
-    amountLabel: string,
-    getAmount: (m: T) => number,
-    action: (movementId: string) => Promise<void>,
-    bulkAction: (movementIds: string[]) => Promise<{ error: string } | undefined>,
-    bulkSuccessLabel: string,
-  ) {
+    // Only movements that actually carry a nonzero outgoing commission are
+    // worth listing — matches the production report's own precedent for
+    // resolving "Προμήθεια Συνεργάτη" (first-installment path for every kind
+    // but cancellation, which attaches via policy_movement_id instead).
+    const commissionByMovement = await getOutgoingCommissionsByMovement(
+      admin,
+      commissionCandidates.map((m) => ({ id: m.id, isReal: true })),
+    );
+    commissionRows = commissionCandidates
+      .map((m) => ({ ...m, commission: commissionByMovement.get(m.id) ?? 0 }))
+      .filter((m) => m.commission !== 0);
+    premiumTotalCount = premiumRows.length;
+    commissionTotalCount = commissionRows.length;
+  } else {
+    // "Αποδοθέντα" — an audit trail of everything already marked remitted,
+    // newest first. Unlike the pending worklist (always small — a remit
+    // action removes the row) this only ever grows, so it's paginated;
+    // and it deliberately does NOT drop zero-commission rows the way the
+    // pending list does — a history view should show what was actually
+    // marked done, not re-apply "was this worth remitting" hindsight.
+    const from = (page - 1) * perPage;
+
+    // Four applyRemittanceFilters calls in one function body (two count
+    // queries, two row queries) push the PostgREST client's type inference
+    // past TS's instantiation-depth limit (TS2589) — applyRemittanceFilters'
+    // T extends FilterableQuery<T> constraint is fine once or twice per
+    // scope, but not four times over against this page's already
+    // embed-heavy select (policy_movements → policies → clients, plus
+    // siblings). Routing through `any` here only affects these four
+    // call sites' *type checking*; the filters still run identically at
+    // runtime — applyRemittanceFilters' own body has no generic magic,
+    // it's just a chain of .eq/.ilike/.in/.gte/.lte calls.
+    const applyFiltersUnsafe = (query: unknown) => applyRemittanceFilters(query as never, filters);
+
+    // head:true drops the response body (we only want the count), but the
+    // select string still needs every embed applyRemittanceFilters' filters
+    // dot-path through (policies, policies.clients, ...) — a flat "id"
+    // select can't resolve those, and PostgREST was silently returning
+    // count=0 for any filtered request instead of erroring.
+    let premiumCountQuery = admin
+      .from("policy_movements")
+      .select(MOVEMENT_SELECT, { count: "exact", head: true })
+      .not("premium_remitted_at", "is", null);
+    premiumCountQuery = applyFiltersUnsafe(premiumCountQuery);
+
+    let commissionCountQuery = admin
+      .from("policy_movements")
+      .select(MOVEMENT_SELECT, { count: "exact", head: true })
+      .not("outgoing_commission_remitted_at", "is", null);
+    commissionCountQuery = applyFiltersUnsafe(commissionCountQuery);
+
+    let premiumQuery = admin
+      .from("policy_movements")
+      .select(MOVEMENT_SELECT_PREMIUM_DONE)
+      .not("premium_remitted_at", "is", null);
+    premiumQuery = applyFiltersUnsafe(premiumQuery);
+    premiumQuery = premiumQuery.order("premium_remitted_at", { ascending: false }).range(from, from + perPage - 1);
+
+    let commissionQuery = admin
+      .from("policy_movements")
+      .select(MOVEMENT_SELECT_COMMISSION_DONE)
+      .not("outgoing_commission_remitted_at", "is", null);
+    commissionQuery = applyFiltersUnsafe(commissionQuery);
+    commissionQuery = commissionQuery
+      .order("outgoing_commission_remitted_at", { ascending: false })
+      .range(from, from + perPage - 1);
+
+    const [
+      { count: premiumCount },
+      { count: commissionCount },
+      { data: rawPremiumDone },
+      { data: rawCommissionDone },
+    ] = await Promise.all([premiumCountQuery, commissionCountQuery, premiumQuery, commissionQuery]);
+
+    premiumRows = (rawPremiumDone ?? []) as unknown as (RemittanceMovementRow & { premium_remitted_at: string })[];
+    const commissionDone = (rawCommissionDone ?? []) as unknown as (RemittanceMovementRow & {
+      outgoing_commission_remitted_at: string;
+    })[];
+    const commissionByMovement = await getOutgoingCommissionsByMovement(
+      admin,
+      commissionDone.map((m) => ({ id: m.id, isReal: true })),
+    );
+    commissionRows = commissionDone.map((m) => ({ ...m, commission: commissionByMovement.get(m.id) ?? 0 }));
+
+    premiumTotalCount = premiumCount ?? 0;
+    commissionTotalCount = commissionCount ?? 0;
+    premiumTotalPages = Math.max(1, Math.ceil(premiumTotalCount / perPage));
+    commissionTotalPages = Math.max(1, Math.ceil(commissionTotalCount / perPage));
+  }
+
+  function renderTable<T extends RemittanceMovementRow>(opts: {
+    rows: T[];
+    amountLabel: string;
+    getAmount: (m: T) => number;
+    action: (movementId: string) => Promise<void>;
+    bulkAction?: (movementIds: string[]) => Promise<{ error: string } | undefined>;
+    bulkSuccessLabel?: string;
+    mode: "pending" | "done";
+    getRemittedAt?: (m: T) => string | null | undefined;
+    totalPages?: number;
+  }) {
+    const { rows, amountLabel, getAmount, action, bulkAction, bulkSuccessLabel, mode, getRemittedAt, totalPages } =
+      opts;
     const ids = rows.map((m) => m.id);
+
+    const table = (
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {mode === "pending" ? (
+                <TableHead className="w-8">
+                  <BulkSelectAllCheckbox ids={ids} />
+                </TableHead>
+              ) : (
+                <TableHead>Αποδόθηκε</TableHead>
+              )}
+              <TableHead>Έκδοση</TableHead>
+              <TableHead>Είδος</TableHead>
+              <TableHead>Συμβόλαιο</TableHead>
+              <TableHead>Χαρακτηριστικό</TableHead>
+              <TableHead>Κλάδος</TableHead>
+              <TableHead>Εταιρεία</TableHead>
+              <TableHead>Πελάτης</TableHead>
+              <TableHead>{amountLabel}</TableHead>
+              <TableHead>Συνεργάτης</TableHead>
+              <TableHead />
+            </TableRow>
+            <TableRow>
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2">
+                <Input
+                  form="remittances-filters"
+                  name="policy_number"
+                  placeholder="Συμβόλαιο..."
+                  defaultValue={filters.policyNumber ?? ""}
+                  className="h-7 text-xs"
+                />
+              </TableHead>
+              <TableHead className="pb-2">
+                <Input
+                  form="remittances-filters"
+                  name="risk"
+                  placeholder="Χαρακτηριστικό..."
+                  defaultValue={filters.risk ?? ""}
+                  className="h-7 text-xs"
+                />
+              </TableHead>
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2">
+                <Input
+                  form="remittances-filters"
+                  name="client"
+                  placeholder="Πελάτης..."
+                  defaultValue={filters.clientName ?? ""}
+                  className="h-7 text-xs"
+                />
+              </TableHead>
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+              <TableHead className="pb-2" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.length ? (
+              rows.map((m) => {
+                const policy = one(m.policies);
+                const client = one(policy?.clients ?? null);
+                const agent = one(policy?.agency_users ?? null);
+                const carrier = one(policy?.carriers ?? null);
+                const line = one(policy?.insurance_lines ?? null);
+                return (
+                  <TableRow key={m.id}>
+                    {mode === "pending" ? (
+                      <TableCell>
+                        <BulkSelectCheckbox id={m.id} />
+                      </TableCell>
+                    ) : (
+                      <TableCell className="text-muted-foreground">
+                        {getRemittedAt?.(m) ? formatDateTime(getRemittedAt(m)!) : "—"}
+                      </TableCell>
+                    )}
+                    <TableCell>{formatDate(m.issue_date)}</TableCell>
+                    <TableCell>{POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}</TableCell>
+                    <TableCell>
+                      <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
+                        {policy?.policy_number ?? "—"}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
+                    <TableCell>{line?.name_el ?? "—"}</TableCell>
+                    <TableCell>{carrier?.name ?? "—"}</TableCell>
+                    <TableCell>{client?.display_name ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={mode === "pending" ? "warning" : "success"}>
+                        {getAmount(m).toFixed(2)} €
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{agent?.full_name ?? "—"}</TableCell>
+                    <TableCell>
+                      <form action={action.bind(null, m.id)}>
+                        <Button type="submit" size="sm" variant="outline">
+                          {mode === "pending" ? "Απόδοση" : "Αναίρεση"}
+                        </Button>
+                      </form>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            ) : (
+              <TableRow>
+                <TableCell colSpan={11} className="text-center text-muted-foreground">
+                  {mode === "pending" ? "Δεν υπάρχουν εκκρεμείς αποδόσεις." : "Δεν υπάρχουν αποδοθέντα."}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    );
+
+    if (mode === "done") {
+      return (
+        <div className="flex flex-col gap-3">
+          {table}
+          <Pagination
+            page={page}
+            totalPages={totalPages ?? 1}
+            basePath="/dashboard/remittances"
+            searchParams={{
+              tab: activeTab,
+              remit_status: "done",
+              per_page: sp.per_page,
+              policy_number: filters.policyNumber,
+              risk: filters.risk,
+              client: filters.clientName,
+              agent: filters.agentIds?.join(","),
+              carrier: filters.carrierId,
+              line: filters.lineId,
+              kind: filters.kinds?.join(","),
+              status: filters.status,
+              issue_from: filters.issueFrom,
+              issue_to: filters.issueTo,
+              start_from: filters.startFrom,
+              start_to: filters.startTo,
+            }}
+          />
+        </div>
+      );
+    }
+
     return (
       <BulkSelectionProvider>
         <div className="flex flex-col gap-3">
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-8">
-                    <BulkSelectAllCheckbox ids={ids} />
-                  </TableHead>
-                  <TableHead>Έκδοση</TableHead>
-                  <TableHead>Είδος</TableHead>
-                  <TableHead>Συμβόλαιο</TableHead>
-                  <TableHead>Χαρακτηριστικό</TableHead>
-                  <TableHead>Κλάδος</TableHead>
-                  <TableHead>Εταιρεία</TableHead>
-                  <TableHead>Πελάτης</TableHead>
-                  <TableHead>{amountLabel}</TableHead>
-                  <TableHead>Συνεργάτης</TableHead>
-                  <TableHead />
-                </TableRow>
-                <TableRow>
-                  <TableHead className="pb-2" />
-                  <TableHead className="pb-2" />
-                  <TableHead className="pb-2" />
-                  <TableHead className="pb-2">
-                    <Input
-                      form="remittances-filters"
-                      name="policy_number"
-                      placeholder="Συμβόλαιο..."
-                      defaultValue={filters.policyNumber ?? ""}
-                      className="h-7 text-xs"
-                    />
-                  </TableHead>
-                  <TableHead className="pb-2">
-                    <Input
-                      form="remittances-filters"
-                      name="risk"
-                      placeholder="Χαρακτηριστικό..."
-                      defaultValue={filters.risk ?? ""}
-                      className="h-7 text-xs"
-                    />
-                  </TableHead>
-                  <TableHead className="pb-2" />
-                  <TableHead className="pb-2" />
-                  <TableHead className="pb-2">
-                    <Input
-                      form="remittances-filters"
-                      name="client"
-                      placeholder="Πελάτης..."
-                      defaultValue={filters.clientName ?? ""}
-                      className="h-7 text-xs"
-                    />
-                  </TableHead>
-                  <TableHead className="pb-2" />
-                  <TableHead className="pb-2" />
-                  <TableHead className="pb-2" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.length ? (
-                  rows.map((m) => {
-                    const policy = one(m.policies);
-                    const client = one(policy?.clients ?? null);
-                    const agent = one(policy?.agency_users ?? null);
-                    const carrier = one(policy?.carriers ?? null);
-                    const line = one(policy?.insurance_lines ?? null);
-                    return (
-                      <TableRow key={m.id}>
-                        <TableCell>
-                          <BulkSelectCheckbox id={m.id} />
-                        </TableCell>
-                        <TableCell>{formatDate(m.issue_date)}</TableCell>
-                        <TableCell>{POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}</TableCell>
-                        <TableCell>
-                          <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
-                            {policy?.policy_number ?? "—"}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
-                        <TableCell>{line?.name_el ?? "—"}</TableCell>
-                        <TableCell>{carrier?.name ?? "—"}</TableCell>
-                        <TableCell>{client?.display_name ?? "—"}</TableCell>
-                        <TableCell>
-                          <Badge variant="warning">{getAmount(m).toFixed(2)} €</Badge>
-                        </TableCell>
-                        <TableCell>{agent?.full_name ?? "—"}</TableCell>
-                        <TableCell>
-                          <form action={action.bind(null, m.id)}>
-                            <Button type="submit" size="sm" variant="outline">
-                              Απόδοση
-                            </Button>
-                          </form>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={11} className="text-center text-muted-foreground">
-                      Δεν υπάρχουν εκκρεμείς αποδόσεις.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          <RemittanceBulkBar action={bulkAction} successLabel={bulkSuccessLabel} />
+          {table}
+          {bulkAction && bulkSuccessLabel && (
+            <RemittanceBulkBar action={bulkAction} successLabel={bulkSuccessLabel} />
+          )}
         </div>
       </BulkSelectionProvider>
     );
   }
 
+  // Preserves every filter/tab param when switching between the two views —
+  // only remit_status (and the page reset that implies) changes.
+  function statusToggleHref(target: "pending" | "done") {
+    const params = new URLSearchParams();
+    if (activeTab === "commission") params.set("tab", "commission");
+    if (target === "done") params.set("remit_status", "done");
+    if (filters.policyNumber) params.set("policy_number", filters.policyNumber);
+    if (filters.risk) params.set("risk", filters.risk);
+    if (filters.clientName) params.set("client", filters.clientName);
+    if (filters.agentIds?.length) params.set("agent", filters.agentIds.join(","));
+    if (filters.carrierId) params.set("carrier", filters.carrierId);
+    if (filters.lineId) params.set("line", filters.lineId);
+    if (filters.kinds?.length) params.set("kind", filters.kinds.join(","));
+    if (filters.status) params.set("status", filters.status);
+    if (filters.issueFrom) params.set("issue_from", filters.issueFrom);
+    if (filters.issueTo) params.set("issue_to", filters.issueTo);
+    if (filters.startFrom) params.set("start_from", filters.startFrom);
+    if (filters.startTo) params.set("start_to", filters.startTo);
+    const query = params.toString();
+    return query ? `/dashboard/remittances?${query}` : "/dashboard/remittances";
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <ListPageHeader title="Αποδόσεις" />
+      <ListPageHeader
+        title="Αποδόσεις"
+        actions={
+          <div className="flex items-center gap-1 rounded-md border p-0.5">
+            <Button
+              size="sm"
+              variant={remitStatus === "pending" ? "default" : "ghost"}
+              nativeButton={false}
+              render={<Link href={statusToggleHref("pending")}>Εκκρεμείς</Link>}
+            />
+            <Button
+              size="sm"
+              variant={remitStatus === "done" ? "default" : "ghost"}
+              nativeButton={false}
+              render={<Link href={statusToggleHref("done")}>Αποδοθέντα</Link>}
+            />
+          </div>
+        }
+      />
       <form id="remittances-filters" />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
@@ -275,24 +482,50 @@ export default async function RemittancesPage({
 
         <RemittancesTabs
           defaultTab={activeTab}
-          premiumCount={premiumPending.length}
-          commissionCount={commissionPending.length}
-          premiumContent={renderTable(
-            premiumPending,
-            "Μικτά",
-            (m) => m.premium_gross,
-            remitPremium,
-            bulkRemitPremiums,
-            "Αποδόθηκαν ασφάλιστρα",
-          )}
-          commissionContent={renderTable(
-            commissionPending,
-            "Προμήθεια",
-            (m) => m.commission,
-            remitCommission,
-            bulkRemitOutgoingCommissions,
-            "Αποδόθηκαν προμήθειες",
-          )}
+          premiumCount={premiumTotalCount}
+          commissionCount={commissionTotalCount}
+          premiumContent={
+            remitStatus === "pending"
+              ? renderTable({
+                  rows: premiumRows,
+                  amountLabel: "Μικτά",
+                  getAmount: (m) => m.premium_gross,
+                  action: remitPremium,
+                  bulkAction: bulkRemitPremiums,
+                  bulkSuccessLabel: "Αποδόθηκαν ασφάλιστρα",
+                  mode: "pending",
+                })
+              : renderTable({
+                  rows: premiumRows,
+                  amountLabel: "Μικτά",
+                  getAmount: (m) => m.premium_gross,
+                  action: undoPremiumRemit,
+                  mode: "done",
+                  getRemittedAt: (m) => m.premium_remitted_at,
+                  totalPages: premiumTotalPages,
+                })
+          }
+          commissionContent={
+            remitStatus === "pending"
+              ? renderTable({
+                  rows: commissionRows,
+                  amountLabel: "Προμήθεια",
+                  getAmount: (m) => m.commission,
+                  action: remitCommission,
+                  bulkAction: bulkRemitOutgoingCommissions,
+                  bulkSuccessLabel: "Αποδόθηκαν προμήθειες",
+                  mode: "pending",
+                })
+              : renderTable({
+                  rows: commissionRows,
+                  amountLabel: "Προμήθεια",
+                  getAmount: (m) => m.commission,
+                  action: undoCommissionRemit,
+                  mode: "done",
+                  getRemittedAt: (m) => m.outgoing_commission_remitted_at,
+                  totalPages: commissionTotalPages,
+                })
+          }
         />
       </div>
     </div>
