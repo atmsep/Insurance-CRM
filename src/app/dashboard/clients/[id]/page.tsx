@@ -7,7 +7,9 @@ import {
   createInteraction,
   updateIncomingCallNotes,
   updateClientProfile,
+  setCallerIdOwner,
 } from "../actions";
+import { normalizeGreekPhone } from "@/lib/phone";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
 import { createTicket } from "../../tickets/actions";
@@ -46,6 +48,10 @@ export default async function ClientDetailPage({
 
   if (!client) notFound();
 
+  const normalizedMobile = client.phone_mobile ? normalizeGreekPhone(client.phone_mobile) : null;
+  const normalizedLandline = client.phone_landline ? normalizeGreekPhone(client.phone_landline) : null;
+  const callerIdPhones = [...new Set([normalizedMobile, normalizedLandline].filter(Boolean))] as string[];
+
   const [
     { data: policies },
     { data: interactions },
@@ -58,6 +64,7 @@ export default async function ClientDetailPage({
     { data: referrals },
     { data: ownReferralRewards },
     { data: defaultRule },
+    { data: phoneOwners },
   ] = await Promise.all([
     supabase
       .from("policies")
@@ -117,6 +124,9 @@ export default async function ClientDetailPage({
       .select("calc_type, rate_percent, fixed_amount")
       .eq("referrer_client_id", id)
       .maybeSingle(),
+    callerIdPhones.length
+      ? supabase.from("phone_owner_overrides").select("phone_number, client_id").in("phone_number", callerIdPhones)
+      : Promise.resolve({ data: [] as { phone_number: string; client_id: string }[] }),
   ]);
 
   const name = resolveClientName(client);
@@ -132,6 +142,10 @@ export default async function ClientDetailPage({
   const addInteractionAction = createInteraction.bind(null, id);
   const addTicketAction = createTicket.bind(null, id);
   const updateCallNotesAction = updateIncomingCallNotes.bind(null, id);
+  const setCallerIdOwnerAction = setCallerIdOwner.bind(null, id);
+
+  const isCallerIdOwner = (normalized: string | null) =>
+    !!normalized && (phoneOwners ?? []).some((o) => o.phone_number === normalized && o.client_id === id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -168,6 +182,9 @@ export default async function ClientDetailPage({
               referralRewardTotal={referralRewardTotal}
               referralRewardPolicyCount={referralRewardPolicyCount}
               updateAction={updateAction}
+              isMobileCallerIdOwner={isCallerIdOwner(normalizedMobile)}
+              isLandlineCallerIdOwner={isCallerIdOwner(normalizedLandline)}
+              setCallerIdOwnerAction={setCallerIdOwnerAction}
             />
             <PoliciesTab policies={(policies ?? []) as unknown as ClientPolicy[]} />
           </div>

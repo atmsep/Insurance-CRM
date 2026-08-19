@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/date";
-import { updateCallNotes } from "./actions";
+import { updateCallNotes, resolveIncomingCallForm } from "./actions";
 import { SortableHeader } from "@/components/sortable-header";
 
 const PAGE_SIZE = 30;
@@ -59,7 +59,10 @@ export default async function CallsPage({
 
   let query = supabase
     .from("incoming_calls")
-    .select("id, phone_number, client_id, client_name, notes, created_at", { count: "exact" });
+    .select(
+      "id, phone_number, client_id, client_name, notes, needs_disambiguation, candidate_clients, created_at",
+      { count: "exact" },
+    );
 
   const sortable = sort ? SORTABLE_COLUMNS[sort] : undefined;
   query = sortable
@@ -154,7 +157,20 @@ export default async function CallsPage({
                   <TableCell className="whitespace-nowrap">{formatDateTime(call.created_at)}</TableCell>
                   <TableCell className="whitespace-nowrap">{call.phone_number}</TableCell>
                   <TableCell>
-                    {call.client_id && call.client_name ? (
+                    {call.needs_disambiguation && call.candidate_clients?.length ? (
+                      <div className="flex flex-col gap-1.5">
+                        <Badge variant="outline">Ασαφής αντιστοίχιση — ποιος ήταν;</Badge>
+                        <div className="flex flex-wrap gap-1">
+                          {call.candidate_clients.map((c: { id: string; display_name: string }) => (
+                            <form key={c.id} action={resolveIncomingCallForm.bind(null, call.id, c.id)}>
+                              <Button type="submit" size="sm" variant="outline">
+                                {c.display_name}
+                              </Button>
+                            </form>
+                          ))}
+                        </div>
+                      </div>
+                    ) : call.client_id && call.client_name ? (
                       <Link href={`/dashboard/clients/${call.client_id}`} className="hover:underline">
                         {call.client_name}
                       </Link>

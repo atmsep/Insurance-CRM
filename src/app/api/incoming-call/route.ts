@@ -1,6 +1,12 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizeGreekPhone } from "@/lib/phone";
 
+// Some numbers in the DB match a couple dozen (or a couple hundred)
+// clients — bad-import placeholder values, not real shared phones. Above
+// this many matches, a "which one was it?" prompt stops being useful, so
+// treat it the same as no match at all instead of showing an unusable list.
+const MAX_DISAMBIGUATION_CANDIDATES = 6;
+
 export async function POST(request: Request) {
   const authHeader = request.headers.get("authorization");
   if (
@@ -22,8 +28,23 @@ export async function POST(request: Request) {
 
   let clientId: string | null = null;
   let clientName: string | null = null;
+  let candidateClients: { id: string; display_name: string }[] | null = null;
 
-  if (lastDigits.length === 8) {
+  const { data: override } = await supabase
+    .from("phone_owner_overrides")
+    .select("client_id")
+    .eq("phone_number", normalized)
+    .maybeSingle();
+
+  if (override) {
+    const { data: overrideClient } = await supabase
+      .from("clients")
+      .select("display_name")
+      .eq("id", override.client_id)
+      .single();
+    clientId = override.client_id;
+    clientName = overrideClient?.display_name ?? null;
+  } else if (lastDigits.length === 8) {
     const { data: candidates } = await supabase
       .from("clients")
       .select("id, display_name, phone_mobile, phone_landline")
@@ -31,21 +52,29 @@ export async function POST(request: Request) {
       .eq("is_active", true)
       .limit(20);
 
-    const match = (candidates ?? []).find((c) => {
+    const matches = (candidates ?? []).filter((c) => {
       const mobile = c.phone_mobile ? normalizeGreekPhone(c.phone_mobile) : null;
       const landline = c.phone_landline ? normalizeGreekPhone(c.phone_landline) : null;
       return mobile === normalized || landline === normalized;
     });
 
-    if (match) {
-      clientId = match.id;
-      clientName = match.display_name;
+    if (matches.length === 1) {
+      clientId = matches[0].id;
+      clientName = matches[0].display_name;
+    } else if (matches.length > 1 && matches.length <= MAX_DISAMBIGUATION_CANDIDATES) {
+      candidateClients = matches.map((m) => ({ id: m.id, display_name: m.display_name }));
     }
   }
 
   const { data: call } = await supabase
     .from("incoming_calls")
-    .insert({ phone_number: phoneNumber, client_id: clientId, client_name: clientName })
+    .insert({
+      phone_number: phoneNumber,
+      client_id: clientId,
+      client_name: clientName,
+      needs_disambiguation: !!candidateClients,
+      candidate_clients: candidateClients,
+    })
     .select("id")
     .single();
 

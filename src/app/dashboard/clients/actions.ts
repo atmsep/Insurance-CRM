@@ -7,6 +7,7 @@ import { requireAgencyUser, getCurrentAgencyUser } from "@/lib/dal";
 import type { ClientType, InteractionType } from "@/lib/database.types";
 import { isValidAfm, isValidAmka, isValidEmail } from "@/lib/validation";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
+import { normalizeGreekPhone } from "@/lib/phone";
 
 export type ClientFormState = { error: string; field?: string } | undefined;
 
@@ -434,6 +435,42 @@ export async function updateIncomingCallNotes(clientId: string, callId: string, 
   await supabase.from("incoming_calls").update({ notes }).eq("id", callId);
 
   revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
+// Manual counterpart to resolveIncomingCall (calls/actions.ts) — lets staff
+// claim a phone number for this client up front, from the checkbox next to
+// the number on their card, without waiting for an ambiguous call to prompt
+// for it. Same phone_owner_overrides table, same effect on /api/incoming-call.
+export async function setCallerIdOwner(
+  clientId: string,
+  phoneNumber: string,
+  isOwner: boolean,
+): Promise<{ error: string } | { ok: true }> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const normalized = normalizeGreekPhone(phoneNumber);
+  if (!normalized) return { error: "Μη έγκυρο τηλέφωνο." };
+
+  if (isOwner) {
+    const { error } = await supabase
+      .from("phone_owner_overrides")
+      .upsert(
+        { phone_number: normalized, client_id: clientId, set_by: agencyUser.id, set_at: new Date().toISOString() },
+        { onConflict: "phone_number" },
+      );
+    if (error) return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+  } else {
+    const { error } = await supabase
+      .from("phone_owner_overrides")
+      .delete()
+      .eq("phone_number", normalized)
+      .eq("client_id", clientId);
+    if (error) return { error: "Σφάλμα κατά την αφαίρεση: " + error.message };
+  }
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+  return { ok: true };
 }
 
 export async function updateClientProfile(

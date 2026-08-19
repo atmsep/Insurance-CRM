@@ -4,12 +4,15 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { resolveIncomingCall } from "@/app/dashboard/calls/actions";
 
 type IncomingCall = {
   id: string;
   phone_number: string;
   client_id: string | null;
   client_name: string | null;
+  needs_disambiguation: boolean;
+  candidate_clients: { id: string; display_name: string }[] | null;
   created_at: string;
 };
 
@@ -51,6 +54,44 @@ export function IncomingCallListener({ enabled }: { enabled: boolean }) {
       if (shownCallIds.has(call.id)) return;
       shownCallIds.add(call.id);
 
+      if (call.needs_disambiguation && call.candidate_clients?.length) {
+        const toastId = toast.custom(
+          (t) => (
+            <div className="flex w-full flex-col gap-2 rounded-lg border bg-background p-3 shadow-lg">
+              <div className="text-sm font-medium">Ποιος πελάτης καλεί;</div>
+              <div className="text-xs text-muted-foreground">{call.phone_number}</div>
+              <div className="flex flex-wrap gap-2">
+                {call.candidate_clients!.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="rounded-md border px-2 py-1 text-xs hover:bg-accent"
+                    onClick={async () => {
+                      toast.dismiss(t);
+                      const result = await resolveIncomingCall(call.id, c.id);
+                      if (!result?.error) {
+                        toast(`Κλήση από: ${result.clientName ?? c.display_name}`, {
+                          description: call.phone_number,
+                          action: {
+                            label: "Άνοιγμα καρτέλας",
+                            onClick: () => router.push(`/dashboard/clients/${c.id}`),
+                          },
+                        });
+                      }
+                    }}
+                  >
+                    {c.display_name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ),
+          { duration: Infinity },
+        );
+        dismissTimers.push(setTimeout(() => toast.dismiss(toastId), TOAST_VISIBLE_MS));
+        return;
+      }
+
       const toastId =
         call.client_id && call.client_name
           ? toast(`Κλήση από: ${call.client_name}`, {
@@ -72,7 +113,7 @@ export function IncomingCallListener({ enabled }: { enabled: boolean }) {
     async function catchUp() {
       const { data } = await supabase
         .from("incoming_calls")
-        .select("id, phone_number, client_id, client_name, created_at")
+        .select("id, phone_number, client_id, client_name, needs_disambiguation, candidate_clients, created_at")
         .gt("created_at", lastSeenAt)
         .order("created_at", { ascending: true });
 

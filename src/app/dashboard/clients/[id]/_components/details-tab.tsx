@@ -64,6 +64,56 @@ function ViewField({ label, value }: { label: string; value: string | null | und
   );
 }
 
+function PhoneViewField({
+  label,
+  value,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  value: string | null | undefined;
+  checked: boolean;
+  onToggle: (next: boolean) => Promise<{ error: string } | { ok: true }>;
+}) {
+  const [isChecked, setIsChecked] = useState(checked);
+  const [pending, setPending] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-3">
+        <span className="text-sm">{value || "—"}</span>
+        {value && (
+          <label
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            title="Οι κλήσεις Caller ID από αυτόν τον αριθμό θα αντιστοιχίζονται σε αυτόν τον πελάτη"
+          >
+            <input
+              type="checkbox"
+              checked={isChecked}
+              disabled={pending}
+              onChange={async (e) => {
+                const next = e.target.checked;
+                setIsChecked(next);
+                setPending(true);
+                const result = await onToggle(next);
+                setPending(false);
+                if ("error" in result) {
+                  setIsChecked(!next);
+                  toast.error(result.error);
+                } else {
+                  toast.success(next ? "Αντιστοιχίστηκε στο Caller ID." : "Η αντιστοίχιση αφαιρέθηκε.");
+                }
+              }}
+            />
+            Caller ID
+          </label>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DetailsTab({
   client,
   agents,
@@ -71,6 +121,9 @@ export function DetailsTab({
   referralRewardTotal,
   referralRewardPolicyCount,
   updateAction,
+  isMobileCallerIdOwner,
+  isLandlineCallerIdOwner,
+  setCallerIdOwnerAction,
 }: {
   client: Client;
   agents: { id: string; full_name: string }[];
@@ -78,6 +131,12 @@ export function DetailsTab({
   referralRewardTotal: number;
   referralRewardPolicyCount: number;
   updateAction: (formData: FormData) => Promise<{ error: string } | undefined>;
+  isMobileCallerIdOwner: boolean;
+  isLandlineCallerIdOwner: boolean;
+  setCallerIdOwnerAction: (
+    phoneNumber: string,
+    isOwner: boolean,
+  ) => Promise<{ error: string } | { ok: true }>;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -330,8 +389,18 @@ export function DetailsTab({
               <ViewField label="ΑΦΜ" value={client.afm} />
               <ViewField label="ΔΟΥ" value={client.doy} />
               <ViewField label="Email" value={client.email} />
-              <ViewField label="Κινητό τηλέφωνο" value={client.phone_mobile} />
-              <ViewField label="Σταθερό τηλέφωνο" value={client.phone_landline} />
+              <PhoneViewField
+                label="Κινητό τηλέφωνο"
+                value={client.phone_mobile}
+                checked={isMobileCallerIdOwner}
+                onToggle={(next) => setCallerIdOwnerAction(client.phone_mobile as string, next)}
+              />
+              <PhoneViewField
+                label="Σταθερό τηλέφωνο"
+                value={client.phone_landline}
+                checked={isLandlineCallerIdOwner}
+                onToggle={(next) => setCallerIdOwnerAction(client.phone_landline as string, next)}
+              />
               <ViewField label="Οδός" value={client.address_street} />
               <ViewField label="Αριθμός" value={client.address_number} />
               <ViewField label="Πόλη" value={client.address_city} />

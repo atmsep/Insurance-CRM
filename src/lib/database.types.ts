@@ -426,12 +426,27 @@ export interface Database {
           client_id: string | null;
           client_name: string | null;
           notes: string | null;
+          needs_disambiguation: boolean;
+          candidate_clients: { id: string; display_name: string }[] | null;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["incoming_calls"]["Row"]> & {
           phone_number: string;
         };
         Update: Partial<Database["public"]["Tables"]["incoming_calls"]["Row"]>;
+      };
+      phone_owner_overrides: {
+        Row: {
+          phone_number: string;
+          client_id: string;
+          set_by: string | null;
+          set_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["phone_owner_overrides"]["Row"]> & {
+          phone_number: string;
+          client_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["phone_owner_overrides"]["Row"]>;
       };
       error_log: {
         Row: {
