@@ -24,7 +24,8 @@ import { PoliciesTab, type Policy as ClientPolicy } from "./_components/policies
 import { InteractionsTab } from "./_components/interactions-tab";
 import { CallsTab } from "./_components/calls-tab";
 import { TicketsTab } from "./_components/tickets-tab";
-import { ReferralsTab, type ReferredClient } from "./_components/referrals-tab";
+import { ReferralsTab } from "./_components/referrals-tab";
+import { flattenReferredPolicies, type ReferredClient, type RawReferredPolicy } from "./_components/referrals-data";
 import { TasksTab } from "./_components/tasks-tab";
 import { ActivityFeed, type ActivityEntry } from "@/components/activity-feed";
 
@@ -114,7 +115,9 @@ export default async function ClientDetailPage({
         "id, client_code, client_type, is_active, created_at, " +
           "client_individuals(first_name,last_name), client_legal_entities(company_name), " +
           "policies(id, policy_number, status, premium_net, renewal_number, " +
-          "referral_rewards(calc_type, rate_percent, fixed_amount, reward_amount, status, notes, source))",
+          "referral_rewards(calc_type, rate_percent, fixed_amount, reward_amount, status, notes, source), " +
+          "policy_movements(id, kind, start_date, premium_net, " +
+          "referral_rewards(calc_type, rate_percent, fixed_amount, reward_amount, status, notes, source)))",
       )
       .eq("referred_by_client_id", id)
       .order("created_at", { ascending: false }),
@@ -136,6 +139,10 @@ export default async function ClientDetailPage({
   const activeOwnRewards = (ownReferralRewards ?? []).filter((r) => r.status !== "cancelled");
   const referralRewardTotal = activeOwnRewards.reduce((sum, r) => sum + r.reward_amount, 0);
   const referralRewardPolicyCount = activeOwnRewards.length;
+
+  const referralClients = ((referrals ?? []) as unknown as (ReferredClient & { policies: RawReferredPolicy[] })[]).map(
+    (r) => ({ ...r, policies: flattenReferredPolicies(r.policies) }),
+  );
 
   const updateAction = updateClientNotes.bind(null, id);
   const updateProfileAction = updateClientProfile.bind(null, id);
@@ -214,7 +221,7 @@ export default async function ClientDetailPage({
         <TabsContent value="referrals" className="pt-4">
           <ReferralsTab
             referrerClientId={id}
-            referrals={(referrals ?? []) as unknown as ReferredClient[]}
+            referrals={referralClients}
             isAdmin={isAdmin}
             defaultRule={defaultRule ?? null}
           />

@@ -269,6 +269,16 @@ export async function createPolicy(
           .update({ movement_id: backfillMovement.id })
           .eq("policy_id", source.id)
           .is("movement_id", null);
+        // Same re-parenting for a pre-existing referral reward on this
+        // policy_id (see referral-reward-actions.ts) — otherwise it would
+        // silently drop out of the Συστάσεις tab the moment this policy
+        // gets its first real movement, since that tab switches to
+        // showing movement-keyed rewards once any movement exists.
+        await supabase
+          .from("referral_rewards")
+          .update({ policy_movement_id: backfillMovement.id })
+          .eq("policy_id", source.id)
+          .is("policy_movement_id", null);
       }
     }
 

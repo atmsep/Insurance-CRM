@@ -693,7 +693,62 @@ export async function createMovementForPolicy(
     }
   }
 
+  await applyReferralRewardIfAny(supabase, {
+    policyId: params.policyId,
+    movementId: movement.id,
+    baseAmount,
+    createdBy: params.createdBy,
+  });
+
   return movement.id;
+}
+
+// Every movement (new business or renewal — the only two kinds routed
+// through here, see the function doc above) that belongs to a referred
+// client's policy earns its own reward when that referrer has a default
+// rule, exactly like the commission logic just above earns its own
+// commission per movement. Never touches a manually-set reward (there
+// isn't one yet for a movement that was just created) and never fires
+// without a rule — staff can still set one by hand afterwards either way.
+async function applyReferralRewardIfAny(
+  supabase: SupabaseServerClient,
+  params: { policyId: string; movementId: string; baseAmount: number; createdBy: string },
+): Promise<void> {
+  const { data: policy } = await supabase
+    .from("policies")
+    .select("client_id, clients!inner(referred_by_client_id)")
+    .eq("id", params.policyId)
+    .single();
+  const referrerClientId = (policy?.clients as unknown as { referred_by_client_id: string | null } | null)
+    ?.referred_by_client_id;
+  if (!policy || !referrerClientId) return;
+
+  const { data: rule } = await supabase
+    .from("referral_reward_default_rule")
+    .select("calc_type, rate_percent, fixed_amount")
+    .eq("referrer_client_id", referrerClientId)
+    .maybeSingle();
+  if (!rule) return;
+
+  const rewardAmount =
+    rule.calc_type === "percent"
+      ? Math.round(((params.baseAmount * (rule.rate_percent ?? 0)) / 100) * 100) / 100
+      : (rule.fixed_amount ?? 0);
+
+  await supabase.from("referral_rewards").insert({
+    referrer_client_id: referrerClientId,
+    referred_client_id: policy.client_id,
+    policy_id: params.policyId,
+    policy_movement_id: params.movementId,
+    calc_type: rule.calc_type,
+    rate_percent: rule.rate_percent,
+    fixed_amount: rule.fixed_amount,
+    base_amount: params.baseAmount,
+    reward_amount: rewardAmount,
+    status: "pending",
+    source: "auto",
+    created_by: params.createdBy,
+  });
 }
 
 // Καταχώρηση είσπραξης — one payment against one installment. Extends the

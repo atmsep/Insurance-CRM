@@ -19,34 +19,9 @@ import { POLICY_STATUS_LABELS } from "../../../policies/policy-labels";
 import { ReferralRewardForm } from "./referral-reward-form";
 import { DefaultRewardRuleDialog } from "./default-reward-rule-dialog";
 import { saveReferralReward, setDefaultReferralRewardRule } from "../../referral-reward-actions";
+import type { ReferredPolicy, ReferredClient } from "./referrals-data";
 
-export type ReferredPolicy = {
-  id: string;
-  policy_number: string;
-  status: string;
-  premium_net: number | null;
-  renewal_number: number;
-  referral_rewards: {
-    calc_type: "percent" | "fixed";
-    rate_percent: number | null;
-    fixed_amount: number | null;
-    reward_amount: number;
-    status: string;
-    notes: string | null;
-    source: "auto" | "manual";
-  } | null;
-};
-
-export type ReferredClient = {
-  id: string;
-  client_code: number;
-  client_type: string;
-  is_active: boolean;
-  created_at: string;
-  client_individuals: { first_name: string; last_name: string } | null;
-  client_legal_entities: { company_name: string } | null;
-  policies: ReferredPolicy[];
-};
+export type { ReferredPolicy, ReferredClient } from "./referrals-data";
 
 type Column = {
   key: string;
@@ -161,14 +136,20 @@ function ReferredClientCard({
               visiblePolicies.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell>
-                    <Link href={`/dashboard/policies/${p.id}`} className="hover:underline">
+                    <Link href={`/dashboard/policies/${p.policyId}`} className="hover:underline">
                       {p.policy_number}
                     </Link>
-                    {p.renewal_number > 1 && (
-                      <Badge variant="outline" className="ml-2">
-                        Ανανέωση #{p.renewal_number}
-                      </Badge>
-                    )}
+                    {p.movementId
+                      ? p.periodLabel && (
+                          <Badge variant="outline" className="ml-2">
+                            {p.periodLabel}
+                          </Badge>
+                        )
+                      : p.renewal_number > 1 && (
+                          <Badge variant="outline" className="ml-2">
+                            Ανανέωση #{p.renewal_number}
+                          </Badge>
+                        )}
                   </TableCell>
                   <TableCell>{p.premium_net != null ? `${p.premium_net.toFixed(2)} €` : "—"}</TableCell>
                   <TableCell>
@@ -180,7 +161,7 @@ function ReferredClientCard({
                     <ReferralRewardForm
                       premiumNet={p.premium_net}
                       reward={p.referral_rewards}
-                      rewardAction={saveReferralReward.bind(null, referrerClientId, client.id, p.id)}
+                      rewardAction={saveReferralReward.bind(null, referrerClientId, client.id, p.policyId, p.movementId)}
                     />
                   </TableCell>
                 </TableRow>
