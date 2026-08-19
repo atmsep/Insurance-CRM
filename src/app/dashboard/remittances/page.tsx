@@ -418,49 +418,9 @@ export default async function RemittancesPage({
     );
   }
 
-  // Preserves every filter/tab param when switching between the two views —
-  // only remit_status (and the page reset that implies) changes.
-  function statusToggleHref(target: "pending" | "done") {
-    const params = new URLSearchParams();
-    if (activeTab === "commission") params.set("tab", "commission");
-    if (target === "done") params.set("remit_status", "done");
-    if (filters.policyNumber) params.set("policy_number", filters.policyNumber);
-    if (filters.risk) params.set("risk", filters.risk);
-    if (filters.clientName) params.set("client", filters.clientName);
-    if (filters.agentIds?.length) params.set("agent", filters.agentIds.join(","));
-    if (filters.carrierId) params.set("carrier", filters.carrierId);
-    if (filters.lineId) params.set("line", filters.lineId);
-    if (filters.kinds?.length) params.set("kind", filters.kinds.join(","));
-    if (filters.status) params.set("status", filters.status);
-    if (filters.issueFrom) params.set("issue_from", filters.issueFrom);
-    if (filters.issueTo) params.set("issue_to", filters.issueTo);
-    if (filters.startFrom) params.set("start_from", filters.startFrom);
-    if (filters.startTo) params.set("start_to", filters.startTo);
-    const query = params.toString();
-    return query ? `/dashboard/remittances?${query}` : "/dashboard/remittances";
-  }
-
   return (
     <div className="flex flex-col gap-6">
-      <ListPageHeader
-        title="Αποδόσεις"
-        actions={
-          <div className="flex items-center gap-1 rounded-md border p-0.5">
-            <Button
-              size="sm"
-              variant={remitStatus === "pending" ? "default" : "ghost"}
-              nativeButton={false}
-              render={<Link href={statusToggleHref("pending")}>Εκκρεμείς</Link>}
-            />
-            <Button
-              size="sm"
-              variant={remitStatus === "done" ? "default" : "ghost"}
-              nativeButton={false}
-              render={<Link href={statusToggleHref("done")}>Αποδοθέντα</Link>}
-            />
-          </div>
-        }
-      />
+      <ListPageHeader title="Αποδόσεις" />
       <form id="remittances-filters" />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
@@ -478,6 +438,11 @@ export default async function RemittancesPage({
           issueTo={filters.issueTo}
           startFrom={filters.startFrom}
           startTo={filters.startTo}
+          remitStatusOptions={[
+            { id: "pending", label: "Εκκρεμείς" },
+            { id: "done", label: "Αποδοθέντα" },
+          ]}
+          remitStatus={remitStatus}
         />
 
         <RemittancesTabs

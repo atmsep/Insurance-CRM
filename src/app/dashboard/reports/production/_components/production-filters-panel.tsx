@@ -30,6 +30,8 @@ export function ProductionFiltersPanel({
   startTo,
   groupByOptions,
   groupBy,
+  remitStatusOptions,
+  remitStatus,
 }: {
   form: string;
   agents: Option[];
@@ -50,6 +52,11 @@ export function ProductionFiltersPanel({
   // is the very first criterion on that screen).
   groupByOptions?: Option[];
   groupBy?: string;
+  // Only Αποδόσεις passes these — Εκκρεμείς/Αποδοθέντα, applied together
+  // with every other criterion here instead of a separate standalone
+  // toggle.
+  remitStatusOptions?: Option[];
+  remitStatus?: string;
 }) {
   const kindOptions = Object.entries(POLICY_MOVEMENT_KIND_LABELS).map(([id, label]) => ({ id, label }));
   const statusOptions = Object.entries(POLICY_STATUS_LABELS).map(([id, label]) => ({ id, label }));
@@ -68,6 +75,19 @@ export function ProductionFiltersPanel({
               name="group_by"
               defaultValue={groupBy ?? groupByOptions[0]?.id ?? ""}
               options={groupByOptions}
+              hideAll
+              className="h-9 w-full text-sm"
+            />
+          </div>
+        ) : null}
+        {remitStatusOptions ? (
+          <div className="flex flex-col gap-2">
+            <Label>Κατάσταση απόδοσης</Label>
+            <FilterSelect
+              form={form}
+              name="remit_status"
+              defaultValue={remitStatus ?? remitStatusOptions[0]?.id ?? ""}
+              options={remitStatusOptions}
               hideAll
               className="h-9 w-full text-sm"
             />
