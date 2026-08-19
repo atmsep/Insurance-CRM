@@ -2,8 +2,10 @@ import { redirect } from "next/navigation";
 import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Button } from "@/components/ui/button";
+import { PrintButton } from "@/components/print-button";
 import { ListPageHeader } from "@/components/list-page-header";
 import { ProductionFiltersPanel } from "../production/_components/production-filters-panel";
+import { ReportPrintHeader } from "../_components/report-print-header";
 import { parseProductionFilters, parseGroupBy, GROUP_BY_OPTIONS, GROUP_BY_LABELS } from "./filters";
 import { GroupedTable, type GroupedRow } from "./_components/grouped-table";
 
@@ -82,35 +84,45 @@ export default async function ProductionSummaryReportPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <ListPageHeader
-        title="Παραγωγή Συγκεντρωτικά"
-        actions={
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={<a href={`/dashboard/reports/production-summary/export?${exportParams.toString()}`}>Εξαγωγή</a>}
-          />
-        }
-      />
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
-        <ProductionFiltersPanel
-          form={FORM_ID}
-          agents={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
-          carriers={(carriers ?? []).map((c) => ({ id: c.id, label: c.name }))}
-          insuranceLines={(insuranceLines ?? []).map((l) => ({ id: l.id, label: l.name_el }))}
-          agentIds={filters.agentIds}
-          carrierId={filters.carrierId}
-          lineId={filters.lineId}
-          kinds={filters.kinds}
-          status={filters.status}
-          issueFrom={filters.issueFrom}
-          issueTo={filters.issueTo}
-          startFrom={filters.startFrom}
-          startTo={filters.startTo}
-          groupByOptions={GROUP_BY_OPTIONS}
-          groupBy={groupBy}
+      <ReportPrintHeader title="Παραγωγή Συγκεντρωτικά" />
+      <div className="no-print">
+        <ListPageHeader
+          title="Παραγωγή Συγκεντρωτικά"
+          actions={
+            <div className="flex gap-2">
+              <PrintButton />
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={
+                  <a href={`/dashboard/reports/production-summary/export?${exportParams.toString()}`}>Εξαγωγή</a>
+                }
+              />
+            </div>
+          }
         />
+      </div>
+
+      <div className="print-grid grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
+        <div className="no-print">
+          <ProductionFiltersPanel
+            form={FORM_ID}
+            agents={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
+            carriers={(carriers ?? []).map((c) => ({ id: c.id, label: c.name }))}
+            insuranceLines={(insuranceLines ?? []).map((l) => ({ id: l.id, label: l.name_el }))}
+            agentIds={filters.agentIds}
+            carrierId={filters.carrierId}
+            lineId={filters.lineId}
+            kinds={filters.kinds}
+            status={filters.status}
+            issueFrom={filters.issueFrom}
+            issueTo={filters.issueTo}
+            startFrom={filters.startFrom}
+            startTo={filters.startTo}
+            groupByOptions={GROUP_BY_OPTIONS}
+            groupBy={groupBy}
+          />
+        </div>
 
         <div className="flex flex-col gap-4">
           {error ? (

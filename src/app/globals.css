@@ -173,4 +173,10 @@
   main {
     padding: 0 !important;
   }
+  /* A filters-sidebar grid track would otherwise stay reserved (blank)
+     once the sidebar itself is hidden via .no-print — collapse it to a
+     single column so the report table uses the full printable width. */
+  .print-grid {
+    grid-template-columns: 1fr !important;
+  }
 }

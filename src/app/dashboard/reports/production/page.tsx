@@ -180,11 +180,22 @@ export default async function ProductionReportPage({
       <ListPageHeader
         title="Παραγωγή Αναλυτικά"
         actions={
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={<a href={`/dashboard/reports/production/export?${exportParams.toString()}`}>Εξαγωγή</a>}
-          />
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <a href={`/dashboard/reports/production/print?${exportParams.toString()}`} target="_blank">
+                  Εκτύπωση
+                </a>
+              }
+            />
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<a href={`/dashboard/reports/production/export?${exportParams.toString()}`}>Εξαγωγή</a>}
+            />
+          </div>
         }
       />
 
