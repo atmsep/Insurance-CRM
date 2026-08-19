@@ -64,6 +64,9 @@ export function LoginForm() {
       <Button type="submit" disabled={loading} className="mt-2">
         {loading ? "Σύνδεση..." : "Σύνδεση"}
       </Button>
+      <a href="/forgot-password" className="text-center text-sm text-muted-foreground underline">
+        Ξέχασες τον κωδικό σου;
+      </a>
     </form>
   );
 }

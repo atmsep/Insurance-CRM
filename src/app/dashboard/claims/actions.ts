@@ -74,7 +74,8 @@ export async function createClaim(
 export async function updateClaimStatus(claimId: string, policyId: string, status: string) {
   const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
-  await supabase.from("claims").update({ status }).eq("id", claimId);
+  const { error } = await supabase.from("claims").update({ status }).eq("id", claimId);
+  if (error) return;
   await logActivity(supabase, {
     entityType: "policy",
     entityId: policyId,
@@ -129,7 +130,7 @@ export async function updateClaimDetails(claimId: string, policyId: string, form
   const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
-  await supabase
+  const { error: updateError } = await supabase
     .from("claims")
     .update({
       claim_number: str(formData, "claim_number"),
@@ -145,6 +146,7 @@ export async function updateClaimDetails(claimId: string, policyId: string, form
       adjuster_contact: str(formData, "adjuster_contact"),
     })
     .eq("id", claimId);
+  if (updateError) return;
 
   await logActivity(supabase, {
     entityType: "policy",

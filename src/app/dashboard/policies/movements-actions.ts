@@ -2,6 +2,7 @@
 
 import { revalidatePath, updateTag } from "next/cache";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgencyUser } from "@/lib/dal";
 import { logActivity } from "@/lib/activity-log";
 import { CACHE_TAGS } from "@/lib/cache-tags";
@@ -776,7 +777,15 @@ export async function collectInstallmentPayment(policyId: string, installmentId:
   if (newPayment <= 0) return;
 
   const paymentMethodId = str(formData, "payment_method_id");
-  const receiptNumber = str(formData, "receipt_number");
+  // Auto-number when the field is left blank — the sequence lives in the DB
+  // (migration 0100) so two simultaneous collections can't share a number.
+  // A hand-typed number (χειρόγραφο μπλοκ) still wins. If the RPC isn't
+  // deployed yet, the receipt just stays unnumbered like before.
+  let receiptNumber = str(formData, "receipt_number");
+  if (!receiptNumber) {
+    const { data: nextNumber } = await createAdminClient().rpc("next_receipt_number");
+    if (nextNumber != null) receiptNumber = String(nextNumber);
+  }
   const chequeBank = str(formData, "cheque_bank");
   const chequeNumber = str(formData, "cheque_number");
   const chequeDueDate = str(formData, "cheque_due_date");

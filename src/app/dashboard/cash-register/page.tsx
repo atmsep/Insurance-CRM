@@ -17,6 +17,7 @@ import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
 import { installmentRemaining, isBillablePolicyStatus } from "../policies/balance";
 import { formatDate } from "@/lib/date";
 import { CollectFromCashRegister } from "./_components/collect-from-cash-register";
+import { ReversePaymentButton } from "./_components/reverse-payment-button";
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString("el-GR", {
@@ -412,6 +413,7 @@ export default async function CashRegisterPage({
                       <TableHead>Μέθοδος</TableHead>
                       <TableHead>Απόδειξη</TableHead>
                       {isAdmin && <TableHead>Συνεργάτης</TableHead>}
+                      <TableHead />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -453,12 +455,24 @@ export default async function CashRegisterPage({
                             </TableCell>
                             <TableCell>{c.receipt_number ?? "—"}</TableCell>
                             {isAdmin && <TableCell>{collector?.full_name ?? "—"}</TableCell>}
+                            <TableCell className="whitespace-nowrap">
+                              <Link
+                                href={`/dashboard/cash-register/receipt/${c.id}`}
+                                target="_blank"
+                                className="text-sm underline-offset-2 hover:underline"
+                              >
+                                Εκτύπωση
+                              </Link>
+                              {isAdmin && (
+                                <ReversePaymentButton paymentId={c.id} amountLabel={`${c.amount.toFixed(2)} €`} />
+                              )}
+                            </TableCell>
                           </TableRow>
                         );
                       })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={isAdmin ? 10 : 9} className="text-center text-muted-foreground">
+                        <TableCell colSpan={isAdmin ? 11 : 10} className="text-center text-muted-foreground">
                           Δεν υπάρχουν εισπράξεις για αυτή την ημέρα.
                         </TableCell>
                       </TableRow>

@@ -349,6 +349,40 @@ export async function updateAgencyUserProfile(
   updateTag(CACHE_TAGS.agencyUsers);
 }
 
+// Admin-set password for a locked-out συνεργάτης — the recovery path when
+// the self-service "Ξέχασα τον κωδικό μου" email flow isn't an option
+// (no email access, typo'd address, etc.).
+export async function adminSetUserPassword(
+  userId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+
+  const password = (formData.get("password") as string) || "";
+  const confirm = (formData.get("confirm_password") as string) || "";
+  if (password.length < 8) {
+    return { error: "Ο κωδικός πρέπει να έχει τουλάχιστον 8 χαρακτήρες." };
+  }
+  if (password !== confirm) {
+    return { error: "Οι κωδικοί δεν ταιριάζουν." };
+  }
+
+  const supabase = await createSupabaseClient();
+  const { data: target } = await supabase
+    .from("agency_users")
+    .select("auth_user_id, full_name")
+    .eq("id", userId)
+    .single();
+  if (!target) return { error: "Ο συνεργάτης δεν βρέθηκε." };
+
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(target.auth_user_id, { password });
+  if (error) return { error: "Σφάλμα ορισμού κωδικού: " + error.message };
+
+  return { success: `Ορίστηκε νέος κωδικός για τον/την ${target.full_name}.` };
+}
+
 export async function inviteAgencyUser(
   _prevState: ActionState,
   formData: FormData,

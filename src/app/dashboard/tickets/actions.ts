@@ -17,7 +17,7 @@ export async function createTicket(clientId: string, formData: FormData) {
   const subject = str(formData, "subject");
   if (!subject) return;
 
-  await supabase.from("client_tickets").insert({
+  const { error } = await supabase.from("client_tickets").insert({
     client_id: clientId,
     subject,
     description: str(formData, "description"),
@@ -25,6 +25,7 @@ export async function createTicket(clientId: string, formData: FormData) {
     assigned_to: agencyUser.id,
     created_by: agencyUser.id,
   });
+  if (error) return;
 
   await logActivity(supabase, {
     entityType: "client",
@@ -50,7 +51,7 @@ export async function updateTicketStatus(
 
   const isClosing = status === "resolved" || status === "closed";
 
-  await supabase
+  const { error } = await supabase
     .from("client_tickets")
     .update({
       status,
@@ -58,6 +59,7 @@ export async function updateTicketStatus(
       ...(resolutionNotes !== undefined ? { resolution_notes: resolutionNotes } : {}),
     })
     .eq("id", ticketId);
+  if (error) return;
 
   await logActivity(supabase, {
     entityType: "client",
@@ -84,7 +86,11 @@ export async function assignTicket(ticketId: string, clientId: string, agentId: 
     .eq("id", agentId)
     .maybeSingle();
 
-  await supabase.from("client_tickets").update({ assigned_to: agentId }).eq("id", ticketId);
+  const { error } = await supabase
+    .from("client_tickets")
+    .update({ assigned_to: agentId })
+    .eq("id", ticketId);
+  if (error) return;
 
   await logActivity(supabase, {
     entityType: "client",

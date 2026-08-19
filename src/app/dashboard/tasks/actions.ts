@@ -18,7 +18,7 @@ export async function createTask(formData: FormData) {
 
   if (!title || !dueDate) return;
 
-  await supabase.from("tasks").insert({
+  const { error } = await supabase.from("tasks").insert({
     title,
     due_date: dueDate,
     priority,
@@ -26,6 +26,7 @@ export async function createTask(formData: FormData) {
     assigned_to: agencyUser.id,
     created_by: agencyUser.id,
   });
+  if (error) return;
 
   revalidatePath("/dashboard/tasks");
   revalidatePath("/dashboard/tasks/calendar");
@@ -34,13 +35,28 @@ export async function createTask(formData: FormData) {
 }
 
 export async function completeTask(taskId: string) {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
-  await supabase
+  // Only the person the task belongs to (assignee or creator) — or an
+  // admin — may close it; anyone else's click is a silent no-op instead of
+  // marking someone else's reminder as done.
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("assigned_to, created_by")
+    .eq("id", taskId)
+    .maybeSingle();
+  if (!task) return;
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
+  if (!isAdmin && task.assigned_to !== agencyUser.id && task.created_by !== agencyUser.id) {
+    return;
+  }
+
+  const { error } = await supabase
     .from("tasks")
     .update({ status: "completed", completed_at: new Date().toISOString() })
     .eq("id", taskId);
+  if (error) return;
 
   revalidatePath("/dashboard/tasks");
   revalidatePath("/dashboard/tasks/calendar");

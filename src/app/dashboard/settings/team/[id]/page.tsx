@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { updateAgencyUserProfile } from "../../actions";
 import { AgentDetailsCard } from "./_components/agent-details-card";
 import { AgentStatusToggle } from "./_components/agent-status-toggle";
+import { SetPasswordCard } from "./_components/set-password-card";
 
 export default async function AgentDetailPage({
   params,
@@ -55,21 +56,24 @@ export default async function AgentDetailPage({
           <AgentDetailsCard agent={agent} isSelf={isSelf} updateAction={updateAction} />
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Επισκόπηση απόδοσης</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Ανατεθειμένοι πελάτες</span>
-              <span className="text-right font-medium">{clientsCount ?? 0}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Ενεργά συμβόλαια</span>
-              <span className="text-right font-medium">{activePoliciesCount ?? 0}</span>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Επισκόπηση απόδοσης</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Ανατεθειμένοι πελάτες</span>
+                <span className="text-right font-medium">{clientsCount ?? 0}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Ενεργά συμβόλαια</span>
+                <span className="text-right font-medium">{activePoliciesCount ?? 0}</span>
+              </div>
+            </CardContent>
+          </Card>
+          <SetPasswordCard userId={agent.id} />
+        </div>
       </div>
     </div>
   );

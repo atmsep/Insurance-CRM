@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +68,7 @@ export function DocumentsSection({
   documents: DocumentWithUrl[];
 }) {
   const boundUpload = uploadDocument.bind(null, entityType, entityId);
+  const [, startDeleteTransition] = useTransition();
   const [state, formAction, pending] = useActionState<UploadDocumentState, FormData>(
     boundUpload,
     undefined,
@@ -154,19 +156,25 @@ export function DocumentsSection({
                   <TableCell>{formatSize(doc.file_size_bytes)}</TableCell>
                   <TableCell>{formatDate(doc.uploaded_at)}</TableCell>
                   <TableCell>
-                    <form
-                      action={deleteDocument.bind(
-                        null,
-                        entityType,
-                        entityId,
-                        doc.id,
-                        doc.storage_path,
-                      )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (!window.confirm(`Οριστική διαγραφή του "${doc.file_name}";`)) return;
+                        startDeleteTransition(async () => {
+                          const result = await deleteDocument(
+                            entityType,
+                            entityId,
+                            doc.id,
+                            doc.storage_path,
+                          );
+                          if (result?.error) toast.error(result.error);
+                        });
+                      }}
                     >
-                      <Button type="submit" size="sm" variant="outline">
-                        Διαγραφή
-                      </Button>
-                    </form>
+                      Διαγραφή
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))

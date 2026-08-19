@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
+import { logActivity } from "@/lib/activity-log";
 
 export type EntityType = "client" | "policy" | "claim";
 export type UploadDocumentState = { error: string } | undefined;
@@ -72,12 +73,35 @@ export async function deleteDocument(
   entityId: string,
   documentId: string,
   storagePath: string,
-) {
-  await requireAgencyUser();
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
+  // Deletion is permanent (file + record) — allowed only to whoever
+  // uploaded it, or an admin. Logged either way, so a vanished έγγραφο is
+  // always traceable to who removed it and when.
+  const { data: doc } = await supabase
+    .from("documents")
+    .select("file_name, uploaded_by")
+    .eq("id", documentId)
+    .maybeSingle();
+  if (!doc) return { error: "Δεν βρέθηκε το έγγραφο." };
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
+  if (!isAdmin && doc.uploaded_by !== agencyUser.id) {
+    return { error: "Μόνο όποιος ανέβασε το έγγραφο (ή διαχειριστής) μπορεί να το διαγράψει." };
+  }
+
+  const { error: dbError } = await supabase.from("documents").delete().eq("id", documentId);
+  if (dbError) return { error: "Σφάλμα κατά τη διαγραφή: " + dbError.message };
   await supabase.storage.from("documents").remove([storagePath]);
-  await supabase.from("documents").delete().eq("id", documentId);
+
+  await logActivity(supabase, {
+    entityType,
+    entityId,
+    action: "document_deleted",
+    description: `Διαγράφηκε το έγγραφο "${doc.file_name}".`,
+    actorId: agencyUser.id,
+  });
 
   revalidatePath(pathFor(entityType, entityId));
 }

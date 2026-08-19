@@ -144,6 +144,11 @@ export async function bulkImportClients(rows: ImportClientRow[]): Promise<Import
   const supabase = await createSupabaseClient();
 
   const summary: ImportSummary = { created: 0, skipped: 0, errors: [] };
+
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    summary.errors.push({ row: 0, reason: "Μόνο διαχειριστής μπορεί να κάνει μαζική εισαγωγή." });
+    return summary;
+  }
   const seenAfm = new Set<string>();
 
   if (rows.length > 500) {
@@ -351,10 +356,20 @@ export async function updateClientNotes(
   revalidatePath(`/dashboard/clients/${clientId}`);
 }
 
-export async function toggleClientActive(clientId: string, isActive: boolean) {
+export async function toggleClientActive(
+  clientId: string,
+  isActive: boolean,
+): Promise<{ error: string } | undefined> {
   const agencyUser = await requireAgencyUser();
+  // Deactivation hides the client (and their book) from every list and
+  // from caller-ID matching — an admin decision, same boundary as the bulk
+  // variant below.
+  if (!isActive && agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Μόνο διαχειριστής μπορεί να απενεργοποιήσει πελάτη." };
+  }
   const supabase = await createSupabaseClient();
-  await supabase.from("clients").update({ is_active: isActive }).eq("id", clientId);
+  const { error } = await supabase.from("clients").update({ is_active: isActive }).eq("id", clientId);
+  if (error) return { error: "Σφάλμα: " + error.message };
   await logActivity(supabase, {
     entityType: "client",
     entityId: clientId,
@@ -371,6 +386,9 @@ export async function deactivateClients(
 ): Promise<{ error: string } | undefined> {
   const agencyUser = await requireAgencyUser();
   if (clientIds.length === 0) return;
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Μόνο διαχειριστής μπορεί να απενεργοποιήσει πελάτες." };
+  }
   const supabase = await createSupabaseClient();
 
   const { error } = await supabase.from("clients").update({ is_active: false }).in("id", clientIds);
@@ -400,7 +418,7 @@ export async function createInteraction(clientId: string, formData: FormData) {
   const notes = (formData.get("notes") as string) || null;
   const followUpNeeded = formData.get("follow_up_needed") === "on";
 
-  await supabase.from("interactions").insert({
+  const { error } = await supabase.from("interactions").insert({
     client_id: clientId,
     agent_id: agencyUser.id,
     interaction_type: interactionType,
@@ -408,6 +426,7 @@ export async function createInteraction(clientId: string, formData: FormData) {
     notes,
     follow_up_needed: followUpNeeded,
   });
+  if (error) return;
 
   await logActivity(supabase, {
     entityType: "client",
@@ -432,7 +451,8 @@ export async function updateIncomingCallNotes(clientId: string, callId: string, 
 
   const notes = (formData.get("notes") as string) || null;
 
-  await supabase.from("incoming_calls").update({ notes }).eq("id", callId);
+  const { error } = await supabase.from("incoming_calls").update({ notes }).eq("id", callId);
+  if (error) return;
 
   revalidatePath(`/dashboard/clients/${clientId}`);
 }
