@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileTab } from "./profile-tab";
+import { AgencyProfileTab } from "./agency-profile-tab";
 import { CarriersTab } from "./carriers-tab";
 import { TeamTab } from "./team-tab";
 import { BrokerOfficesTab } from "./broker-offices-tab";
@@ -9,11 +10,14 @@ import { AutomationsTab } from "./automations-tab";
 import { EmailTemplatesTab } from "./email-templates-tab";
 import { ErrorsTab } from "./errors-tab";
 import { ParametricTablesTab } from "./parametric-tables-tab";
+import { getAgencyProfile, type AgencyProfile } from "@/lib/agency-profile";
 
 export default async function SettingsPage() {
   const agencyUser = await requireAgencyUser();
   const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
   const supabase = await createClient();
+
+  const emptyAgencyProfile: AgencyProfile = { name: null, address: null, phone: null, email: null, logoUrl: null };
 
   const [
     { data: carriers },
@@ -22,6 +26,7 @@ export default async function SettingsPage() {
     { data: appSettings },
     { data: emailTemplates },
     { data: recentErrors },
+    agencyProfile,
   ] = await Promise.all([
     isAdmin
       ? supabase.from("carriers").select("*").order("name")
@@ -45,6 +50,7 @@ export default async function SettingsPage() {
           .order("created_at", { ascending: false })
           .limit(100)
       : Promise.resolve({ data: [] }),
+    isAdmin ? getAgencyProfile(supabase) : Promise.resolve(emptyAgencyProfile),
   ]);
 
   return (
@@ -54,6 +60,7 @@ export default async function SettingsPage() {
       <Tabs defaultValue="profile">
         <TabsList>
           <TabsTrigger value="profile">Προφίλ</TabsTrigger>
+          {isAdmin && <TabsTrigger value="agency">Στοιχεία Γραφείου</TabsTrigger>}
           {isAdmin && <TabsTrigger value="carriers">Ασφαλιστικές εταιρείες</TabsTrigger>}
           {isAdmin && <TabsTrigger value="team">Συνεργάτες</TabsTrigger>}
           {isAdmin && <TabsTrigger value="brokers">Συνεργαζόμενα Γραφεία</TabsTrigger>}
@@ -65,6 +72,11 @@ export default async function SettingsPage() {
         <TabsContent value="profile" className="pt-4">
           <ProfileTab fullName={agencyUser.full_name} email={agencyUser.email} />
         </TabsContent>
+        {isAdmin && (
+          <TabsContent value="agency" className="pt-4">
+            <AgencyProfileTab profile={agencyProfile} />
+          </TabsContent>
+        )}
         {isAdmin && (
           <TabsContent value="carriers" className="pt-4">
             <CarriersTab carriers={carriers ?? []} />

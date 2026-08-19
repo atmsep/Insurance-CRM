@@ -448,6 +448,20 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["phone_owner_overrides"]["Row"]>;
       };
+      agency_profile: {
+        Row: {
+          key: string;
+          name: string | null;
+          address: string | null;
+          phone: string | null;
+          email: string | null;
+          logo_storage_path: string | null;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["agency_profile"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["agency_profile"]["Row"]>;
+      };
       error_log: {
         Row: {
           id: string;

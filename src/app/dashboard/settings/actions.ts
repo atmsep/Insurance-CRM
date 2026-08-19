@@ -42,6 +42,62 @@ export async function requireAdmin() {
   return agencyUser;
 }
 
+// Logo is stored at a fixed path (upsert: true) rather than one file per
+// upload — there's only ever one current logo, so this avoids accumulating
+// orphaned files in the bucket and sidesteps stale-extension mismatches
+// (storage serves by the object's stored content-type, not the path).
+export async function updateAgencyProfile(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const agencyUser = await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  const name = (formData.get("name") as string) || null;
+  const address = (formData.get("address") as string) || null;
+  const phone = (formData.get("phone") as string) || null;
+  const email = (formData.get("email") as string) || null;
+  if (email && !isValidEmail(email)) {
+    return { error: "Μη έγκυρο email." };
+  }
+
+  const { data: existing } = await supabase
+    .from("agency_profile")
+    .select("logo_storage_path")
+    .eq("key", "default")
+    .maybeSingle();
+
+  let logoStoragePath = existing?.logo_storage_path ?? null;
+
+  const logoFile = formData.get("logo") as File | null;
+  if (logoFile && logoFile.size > 0) {
+    const { error: uploadError } = await supabase.storage
+      .from("agency-assets")
+      .upload("logo/current", logoFile, { contentType: logoFile.type || undefined, upsert: true });
+    if (uploadError) {
+      return { error: "Σφάλμα κατά το ανέβασμα του λογότυπου: " + uploadError.message };
+    }
+    logoStoragePath = "logo/current";
+  }
+
+  const { error } = await supabase.from("agency_profile").upsert({
+    key: "default",
+    name,
+    address,
+    phone,
+    email,
+    logo_storage_path: logoStoragePath,
+    updated_by: agencyUser.id,
+  });
+  if (error) {
+    return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+  }
+
+  updateTag(CACHE_TAGS.agencyProfile);
+  revalidatePath("/dashboard/settings");
+  return { success: "Τα στοιχεία γραφείου αποθηκεύτηκαν." };
+}
+
 // Δικαιούχοι Προμηθειών ARE the team's own συνεργάτες — every agency_user
 // gets a linked commission_payees row (is_external = false) kept in sync
 // here instead of requiring a separate manual "Προσθήκη δικαιούχου" entry.

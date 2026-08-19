@@ -8,6 +8,7 @@ import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
 import { resolveClientName } from "@/lib/client-name";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { PrintLetterhead } from "@/components/print-letterhead";
 import { PolicyHeader } from "./_components/policy-header";
 import { CarrierContactCard } from "./_components/carrier-contact-card";
 import { VisitTracker } from "./_components/visit-tracker";
@@ -127,6 +128,7 @@ export default async function PolicyDetailPage({
   return (
     <div className="flex flex-col gap-6">
       <VisitTracker policyId={id} />
+      <PrintLetterhead />
       <Breadcrumbs items={[{ label: "Συμβόλαια", href: "/dashboard/policies" }, { label: policy.policy_number }]} />
       <PolicyHeader
         policyId={id}

@@ -2,6 +2,7 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCelebrationTemplates, type CelebrationTemplates } from "@/lib/celebrations";
+import { getAgencyProfile, type AgencyProfile } from "@/lib/agency-profile";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 
 // unstable_cache can't wrap the cookie-bound Supabase client (Next
@@ -20,6 +21,20 @@ export const getCelebrationTemplatesCached = cache(
     },
     ["celebration-templates"],
     { revalidate: 3600, tags: [CACHE_TAGS.celebrationTemplates] },
+  ),
+);
+
+// Read on every print (client/policy pages) and every outgoing email
+// (manual and cron), so this is exactly the kind of small, rarely-changed,
+// agency-wide config this cache layer exists for.
+export const getAgencyProfileCached = cache(
+  unstable_cache(
+    async (): Promise<AgencyProfile> => {
+      const admin = createAdminClient();
+      return getAgencyProfile(admin as unknown as Parameters<typeof getAgencyProfile>[0]);
+    },
+    ["agency-profile"],
+    { revalidate: 3600, tags: [CACHE_TAGS.agencyProfile] },
   ),
 );
 

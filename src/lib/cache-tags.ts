@@ -5,4 +5,5 @@ export const CACHE_TAGS = {
   reports: "reports",
   celebrationTemplates: "celebration-templates",
   agencyUsers: "agency-users",
+  agencyProfile: "agency-profile",
 } as const;
