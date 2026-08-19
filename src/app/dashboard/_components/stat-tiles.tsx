@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { StatTile } from "./stat-tile";
 import { addDays, todayISO } from "./date-utils";
+import { athensDayStartUtc } from "@/lib/date";
 
 export async function ActivePoliciesTile() {
   const supabase = await createClient();
@@ -104,10 +105,12 @@ export async function OpenTicketsTile() {
 
 export async function TodayCallsTile() {
   const supabase = await createClient();
-  const today = todayISO();
+  // Athens calendar day, not the server's UTC one — otherwise the tile
+  // resets at 02:00/03:00 τοπική and early-morning calls land on "χθες".
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
   const { count } = await supabase
     .from("incoming_calls")
     .select("id", { count: "exact", head: true })
-    .gte("created_at", `${today}T00:00:00.000Z`);
+    .gte("created_at", athensDayStartUtc(today));
   return <StatTile label="Κλήσεις σήμερα" value={count ?? 0} href="/dashboard/calls" />;
 }

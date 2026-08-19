@@ -138,19 +138,35 @@ export default async function RemittancesPage({
   let commissionTotalCount = 0;
 
   if (remitStatus === "pending") {
-    const [{ data: rawPremiumPending }, { data: rawCommissionCandidates }] = await Promise.all([
-      applyRemittanceFilters(
-        admin.from("policy_movements").select(MOVEMENT_SELECT).is("premium_remitted_at", null),
-        filters,
-      ).order("issue_date", { ascending: true }),
-      applyRemittanceFilters(
-        admin.from("policy_movements").select(MOVEMENT_SELECT).is("outgoing_commission_remitted_at", null),
-        filters,
-      ).order("issue_date", { ascending: true }),
+    // PostgREST silently caps a response at 1000 rows — an unchunked fetch
+    // here would quietly truncate the worklist (and its totals) once the
+    // backlog grows past that, so page through explicitly. The id tiebreak
+    // keeps the paging stable across equal issue_dates.
+    const CHUNK = 1000;
+    const MAX_WORKLIST_ROWS = 10000;
+    const fetchAllPending = async (column: "premium_remitted_at" | "outgoing_commission_remitted_at") => {
+      const rows: RemittanceMovementRow[] = [];
+      for (let from = 0; from < MAX_WORKLIST_ROWS; from += CHUNK) {
+        const { data } = await applyRemittanceFilters(
+          admin.from("policy_movements").select(MOVEMENT_SELECT).is(column, null),
+          filters,
+        )
+          .order("issue_date", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, from + CHUNK - 1);
+        const batch = (data ?? []) as unknown as RemittanceMovementRow[];
+        rows.push(...batch);
+        if (batch.length < CHUNK) break;
+      }
+      return rows;
+    };
+
+    const [rawPremiumPending, commissionCandidates] = await Promise.all([
+      fetchAllPending("premium_remitted_at"),
+      fetchAllPending("outgoing_commission_remitted_at"),
     ]);
 
-    premiumRows = (rawPremiumPending ?? []) as unknown as RemittanceMovementRow[];
-    const commissionCandidates = (rawCommissionCandidates ?? []) as unknown as RemittanceMovementRow[];
+    premiumRows = rawPremiumPending;
 
     // Only movements that actually carry a nonzero outgoing commission are
     // worth listing — matches the production report's own precedent for

@@ -1209,7 +1209,7 @@ export async function createManualMovement(
         }
       }
     }
-  } else {
+  } else if (premiumGross >= 0) {
     await supabase.from("policy_installments").insert({
       policy_id: policyId,
       movement_id: movement.id,
@@ -1218,6 +1218,9 @@ export async function createManualMovement(
       amount: premiumGross,
     });
   }
+  // A negative (πιστωτικό) endorsement gets NO δόση — it's a refund owed to
+  // the client, not a receivable, same treatment as Ακύρωση (migration 0101
+  // relaxed the premium check for exactly this case).
 
   if (kind === "cancellation") {
     await supabase.from("policies").update({ status: "cancelled", status_auto_managed: false }).eq("id", policyId);

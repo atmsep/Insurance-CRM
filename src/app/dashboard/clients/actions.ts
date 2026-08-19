@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser, getCurrentAgencyUser } from "@/lib/dal";
 import type { ClientType, InteractionType } from "@/lib/database.types";
-import { isValidAfm, isValidAmka, isValidEmail } from "@/lib/validation";
+import { isValidAfm, isValidAmka, isValidEmail, isValidIban, normalizePhoneForStorage } from "@/lib/validation";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
 import { normalizeGreekPhone } from "@/lib/phone";
 
@@ -57,17 +57,27 @@ export async function createClientRecord(
     return { error: "Το ΑΜΚΑ πρέπει να έχει ακριβώς 11 ψηφία.", field: "amka" };
   }
 
+  const iban = (formData.get("iban") as string) || null;
+  if (iban && !isValidIban(iban)) {
+    return { error: "Το IBAN δεν είναι έγκυρο.", field: "iban" };
+  }
+
+  const phoneMobile = (formData.get("phone_mobile") as string) || null;
+  const phoneLandline = (formData.get("phone_landline") as string) || null;
+
   const common = {
     client_type: clientType,
     afm,
     doy: (formData.get("doy") as string) || null,
     email,
-    phone_mobile: (formData.get("phone_mobile") as string) || null,
-    phone_landline: (formData.get("phone_landline") as string) || null,
+    // Stored in bare-digits normal form so caller-ID matching and search
+    // compare like with like, however the number was typed.
+    phone_mobile: phoneMobile ? normalizePhoneForStorage(phoneMobile) : null,
+    phone_landline: phoneLandline ? normalizePhoneForStorage(phoneLandline) : null,
     address_city: (formData.get("address_city") as string) || null,
     address_region: (formData.get("address_region") as string) || null,
     address_postal_code: (formData.get("address_postal_code") as string) || null,
-    iban: (formData.get("iban") as string) || null,
+    iban,
     notes: (formData.get("notes") as string) || null,
     referral_source: (formData.get("referral_source") as string) || null,
     referred_by_client_id: (formData.get("referred_by_client_id") as string) || null,
@@ -82,6 +92,9 @@ export async function createClientRecord(
     .select("id")
     .single();
 
+  if (clientError?.code === "23505") {
+    return { error: "Υπάρχει ήδη πελάτης με αυτό το ΑΦΜ.", field: "afm" };
+  }
   if (clientError || !client) {
     return { error: "Σφάλμα κατά τη δημιουργία πελάτη: " + (clientError?.message ?? "") };
   }
@@ -261,6 +274,11 @@ export async function updateClientNotes(
     return { error: "Το ΑΦΜ δεν είναι έγκυρο." };
   }
 
+  const updateIban = (formData.get("iban") as string) || null;
+  if (updateIban && !isValidIban(updateIban)) {
+    return { error: "Το IBAN δεν είναι έγκυρο." };
+  }
+
   const referredByClientId = (formData.get("referred_by_client_id") as string) || null;
   if (referredByClientId === clientId) {
     return { error: "Ένας πελάτης δεν μπορεί να είναι συστήνων του εαυτού του." };
@@ -283,14 +301,18 @@ export async function updateClientNotes(
       afm,
       doy: (formData.get("doy") as string) || null,
       email,
-      phone_mobile: (formData.get("phone_mobile") as string) || null,
-      phone_landline: (formData.get("phone_landline") as string) || null,
+      phone_mobile: (formData.get("phone_mobile") as string)
+        ? normalizePhoneForStorage(formData.get("phone_mobile") as string)
+        : null,
+      phone_landline: (formData.get("phone_landline") as string)
+        ? normalizePhoneForStorage(formData.get("phone_landline") as string)
+        : null,
       address_street: (formData.get("address_street") as string) || null,
       address_number: (formData.get("address_number") as string) || null,
       address_city: (formData.get("address_city") as string) || null,
       address_region: (formData.get("address_region") as string) || null,
       address_postal_code: (formData.get("address_postal_code") as string) || null,
-      iban: (formData.get("iban") as string) || null,
+      iban: updateIban,
       notes: (formData.get("notes") as string) || null,
       referral_source: (formData.get("referral_source") as string) || null,
       referred_by_client_id: referredByClientId,
@@ -299,6 +321,9 @@ export async function updateClientNotes(
     })
     .eq("id", clientId);
 
+  if (clientError?.code === "23505") {
+    return { error: "Υπάρχει ήδη άλλος πελάτης με αυτό το ΑΦΜ." };
+  }
   if (clientError) {
     return { error: "Σφάλμα κατά την αποθήκευση: " + clientError.message };
   }

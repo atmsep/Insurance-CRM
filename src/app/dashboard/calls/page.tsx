@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDateTime } from "@/lib/date";
+import { formatDateTime, athensDayStartUtc, athensNextDayStartUtc } from "@/lib/date";
 import { updateCallNotes, resolveIncomingCallForm } from "./actions";
 import { SortableHeader } from "@/components/sortable-header";
 
@@ -73,8 +73,8 @@ export default async function CallsPage({
   if (client) query = query.ilike("client_name", `%${client}%`);
   if (matched === "yes") query = query.not("client_id", "is", null);
   else if (matched === "no") query = query.is("client_id", null);
-  if (dateFrom) query = query.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) query = query.lte("created_at", `${dateTo}T23:59:59.999Z`);
+  if (dateFrom) query = query.gte("created_at", athensDayStartUtc(dateFrom));
+  if (dateTo) query = query.lt("created_at", athensNextDayStartUtc(dateTo));
   if (notes) query = query.ilike("notes", `%${notes}%`);
 
   const from = (page - 1) * PAGE_SIZE;

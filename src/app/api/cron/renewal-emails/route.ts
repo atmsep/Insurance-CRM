@@ -25,6 +25,11 @@ async function sendBatch(
   daysRemaining: number,
   sentColumn: "renewal_notice_30d_sent_at" | "renewal_notice_7d_sent_at",
   templateKey: "renewal_30d" | "renewal_7d",
+  // Lower bound (days from today, exclusive) for this batch's window — the
+  // primary batch passes the final batch's horizon here so a policy already
+  // inside the final window gets ONLY the final notice, never both emails
+  // on the same morning.
+  minDaysExclusive = 0,
 ) {
   const { data: template } = await supabase
     .from("email_templates")
@@ -39,6 +44,8 @@ async function sendBatch(
   const today = new Date();
   const cutoff = new Date(today);
   cutoff.setDate(cutoff.getDate() + daysRemaining);
+  const windowStart = new Date(today);
+  windowStart.setDate(windowStart.getDate() + minDaysExclusive + (minDaysExclusive > 0 ? 1 : 0));
 
   const { data: policies } = await supabase
     .from("policies")
@@ -48,7 +55,7 @@ async function sendBatch(
     .in("status", ["active", "pending_renewal"])
     .eq("is_current_term", true)
     .is(sentColumn, null)
-    .gte("end_date", today.toISOString().slice(0, 10))
+    .gte("end_date", windowStart.toISOString().slice(0, 10))
     .lte("end_date", cutoff.toISOString().slice(0, 10));
 
   let sent = 0;
@@ -113,7 +120,9 @@ export async function GET(request: Request) {
   const finalDays = finalSetting?.value ?? 7;
 
   const [result30, result7] = await Promise.all([
-    sendBatch(supabase, primaryDays, "renewal_notice_30d_sent_at", "renewal_30d"),
+    // The primary batch starts strictly AFTER the final window, so a policy
+    // expiring within finalDays gets only the final notice (see sendBatch).
+    sendBatch(supabase, primaryDays, "renewal_notice_30d_sent_at", "renewal_30d", finalDays),
     sendBatch(supabase, finalDays, "renewal_notice_7d_sent_at", "renewal_7d"),
   ]);
 

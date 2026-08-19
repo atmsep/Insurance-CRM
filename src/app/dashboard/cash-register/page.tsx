@@ -15,7 +15,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
 import { installmentRemaining, isBillablePolicyStatus } from "../policies/balance";
-import { formatDate } from "@/lib/date";
+import { formatDate, athensDayStartUtc, athensNextDayStartUtc } from "@/lib/date";
 import { CollectFromCashRegister } from "./_components/collect-from-cash-register";
 import { ReversePaymentButton } from "./_components/reverse-payment-button";
 
@@ -134,11 +134,12 @@ export default async function CashRegisterPage({
   const { date, agent_id } = await searchParams;
   const agencyUser = await requireAgencyUser();
   const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
-  const selectedDate = date || new Date().toISOString().slice(0, 10);
+  const selectedDate =
+    date || new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
   const admin = createAdminClient();
 
-  const dayStart = `${selectedDate}T00:00:00.000Z`;
-  const dayEnd = new Date(new Date(dayStart).getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const dayStart = athensDayStartUtc(selectedDate);
+  const dayEnd = athensNextDayStartUtc(selectedDate);
 
   const scopeAgentId = isAdmin ? agent_id || null : agencyUser.id;
 
@@ -189,18 +190,33 @@ export default async function CashRegisterPage({
 
   // "Ανείσπρακτα" tab: every currently-owed δόση, not just ones tied to a
   // movement issued on the selected date — this is a standing balance view,
-  // independent of the Ημερομηνία filter above. ~665 rows agency-wide at
-  // last check, comfortably under PostgREST's 1000-row cap, so no chunking.
-  let allOutstandingQuery = admin
-    .from("policy_installments")
-    .select(
-      "id, policy_id, installment_number, due_date, amount, paid_amount, status, " +
-        "policies!inner(policy_number, risk_label, status, assigned_agent_id, clients(display_name), " +
-        "agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))",
-    )
-    .in("status", ["pending", "overdue", "partially_paid"])
-    .order("due_date", { ascending: true });
-  if (scopeAgentId) allOutstandingQuery = allOutstandingQuery.eq("policies.assigned_agent_id", scopeAgentId);
+  // independent of the Ημερομηνία filter above. Chunked because PostgREST
+  // silently caps a response at 1000 rows and this list only grows (~666
+  // agency-wide today, and the planned Profia reimport will multiply it).
+  const fetchAllOutstanding = async () => {
+    const CHUNK = 1000;
+    const MAX_ROWS = 10000;
+    const rows: unknown[] = [];
+    for (let from = 0; from < MAX_ROWS; from += CHUNK) {
+      let q = admin
+        .from("policy_installments")
+        .select(
+          "id, policy_id, installment_number, due_date, amount, paid_amount, status, " +
+            "policies!inner(policy_number, risk_label, status, assigned_agent_id, clients(display_name), " +
+            "agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))",
+        )
+        .in("status", ["pending", "overdue", "partially_paid"])
+        .order("due_date", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + CHUNK - 1);
+      if (scopeAgentId) q = q.eq("policies.assigned_agent_id", scopeAgentId);
+      const { data } = await q;
+      const batch = data ?? [];
+      rows.push(...batch);
+      if (batch.length < CHUNK) break;
+    }
+    return { data: rows };
+  };
 
   const [
     { data: rawCollections, error },
@@ -217,7 +233,7 @@ export default async function CashRegisterPage({
       : Promise.resolve({ data: [] }),
     movementsQuery,
     admin.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
-    allOutstandingQuery,
+    fetchAllOutstanding(),
   ]);
   const collections = (rawCollections ?? []) as unknown as CollectionRow[];
   const reversals = (rawReversals ?? []) as unknown as ReversalRow[];
