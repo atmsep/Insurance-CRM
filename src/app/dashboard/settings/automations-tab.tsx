@@ -35,6 +35,11 @@ const LABELS: Record<string, { title: string; description: string }> = {
     description:
       "Δημιουργεί καθημερινά υπενθύμιση όταν πελάτης γιορτάζει ή έχει γενέθλια, στο ημερολόγιο και στις εργασίες ημέρας. Η αποστολή ευχών γίνεται χειροκίνητα με κλικ πάνω στην υπενθύμιση.",
   },
+  kteo_reminder_tasks: {
+    title: "Υπενθυμίσεις λήξης ΚΤΕΟ",
+    description:
+      "Δημιουργεί υπενθύμιση στον συνεργάτη του συμβολαίου 14 ημέρες πριν λήξει το ΚΤΕΟ οχήματος (μία ανά όχημα/λήξη).",
+  },
 };
 
 function RenewalReminderDaysForm({ primaryDays, finalDays }: { primaryDays: number; finalDays: number }) {

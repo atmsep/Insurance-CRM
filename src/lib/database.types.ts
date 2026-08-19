@@ -37,7 +37,13 @@ export type ClaimStatus =
   | "closed";
 export type TaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
-export type TaskType = "renewal_reminder" | "follow_up" | "payment_due" | "birthday" | "custom";
+export type TaskType =
+  | "renewal_reminder"
+  | "follow_up"
+  | "payment_due"
+  | "birthday"
+  | "kteo_reminder"
+  | "custom";
 export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
 export type VehicleUsage = "private" | "commercial" | "taxi" | "rental" | "motorcycle" | "other";
 export type PropertyType = "apartment" | "house" | "commercial" | "industrial" | "land" | "other";

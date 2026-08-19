@@ -50,6 +50,34 @@ export default async function ReportsPage() {
             </CardContent>
           </Card>
         </Link>
+
+        <Link href="/dashboard/reports/commission-statement" className="block">
+          <Card className="h-full transition-colors hover:bg-muted/50">
+            <CardHeader>
+              <CardTitle className="text-base">Εκκαθάριση Προμηθειών</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Εκτυπώσιμη κατάσταση προμηθειών ανά συνεργάτη και περίοδο, με κατάσταση απόδοσης, σύνολα και
+                υπογραφές.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/dashboard/reports/receivables" className="block">
+          <Card className="h-full transition-colors hover:bg-muted/50">
+            <CardHeader>
+              <CardTitle className="text-base">Καθυστερούμενες Οφειλές</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Ανοιχτές οφειλές ανά πελάτη με ηλικία καθυστέρησης (1–30, 31–60, 61–90, 90+ ημέρες) και σύνολα —
+                η λίστα για τηλέφωνα οφειλών.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <Suspense fallback={<StatTileGridSkeleton count={1} />}>

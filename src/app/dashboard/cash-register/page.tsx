@@ -18,6 +18,8 @@ import { installmentRemaining, isBillablePolicyStatus } from "../policies/balanc
 import { formatDate, athensDayStartUtc, athensNextDayStartUtc } from "@/lib/date";
 import { CollectFromCashRegister } from "./_components/collect-from-cash-register";
 import { ReversePaymentButton } from "./_components/reverse-payment-button";
+import { PrintButton } from "@/components/print-button";
+import { ReportPrintHeader } from "../reports/_components/report-print-header";
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString("el-GR", {
@@ -339,19 +341,27 @@ export default async function CashRegisterPage({
     tipsTotal += tipByPaymentId.get(c.id) ?? 0;
   }
 
+  const selectedAgentName = agent_id ? ((agents ?? []).find((a) => a.id === agent_id)?.full_name ?? null) : null;
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <ReportPrintHeader
+        title={`Κλείσιμο Ταμείου — ${formatDate(selectedDate)}${selectedAgentName ? ` — ${selectedAgentName}` : ""}`}
+      />
+      <div className="no-print flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Ταμείο</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          nativeButton={false}
-          render={<Link href="/dashboard/cash-register/calendar">Ημερολόγιο</Link>}
-        />
+        <div className="flex items-center gap-2">
+          <PrintButton />
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<Link href="/dashboard/cash-register/calendar">Ημερολόγιο</Link>}
+          />
+        </div>
       </div>
 
-      <form className="flex flex-wrap items-end gap-3">
+      <form className="no-print flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium" htmlFor="date">
             Ημερομηνία
@@ -384,7 +394,7 @@ export default async function CashRegisterPage({
       </form>
 
       <Tabs defaultValue="day">
-        <TabsList>
+        <TabsList className="no-print">
           <TabsTrigger value="day">Ημέρα</TabsTrigger>
           <TabsTrigger value="uncollected">Ανείσπρακτα</TabsTrigger>
         </TabsList>
@@ -429,7 +439,7 @@ export default async function CashRegisterPage({
                       <TableHead>Μέθοδος</TableHead>
                       <TableHead>Απόδειξη</TableHead>
                       {isAdmin && <TableHead>Συνεργάτης</TableHead>}
-                      <TableHead />
+                      <TableHead className="no-print" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -471,7 +481,7 @@ export default async function CashRegisterPage({
                             </TableCell>
                             <TableCell>{c.receipt_number ?? "—"}</TableCell>
                             {isAdmin && <TableCell>{collector?.full_name ?? "—"}</TableCell>}
-                            <TableCell className="whitespace-nowrap">
+                            <TableCell className="no-print whitespace-nowrap">
                               <Link
                                 href={`/dashboard/cash-register/receipt/${c.id}`}
                                 target="_blank"
@@ -513,7 +523,7 @@ export default async function CashRegisterPage({
                           <TableHead>Ποσό κίνησης</TableHead>
                           <TableHead>Ανείσπρακτο</TableHead>
                           {isAdmin && <TableHead>Συνεργάτης</TableHead>}
-                          <TableHead />
+                          <TableHead className="no-print" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -540,7 +550,7 @@ export default async function CashRegisterPage({
                                 <Badge variant="warning">{m.outstanding.toFixed(2)} €</Badge>
                               </TableCell>
                               {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
-                              <TableCell>
+                              <TableCell className="no-print">
                                 <CollectFromCashRegister
                                   policyId={m.policy_id}
                                   documentLabel={policy?.policy_number ?? "—"}
@@ -652,6 +662,13 @@ export default async function CashRegisterPage({
                   </div>
                 </div>
               )}
+
+              <div className="print-only mt-10 text-sm">
+                <div className="flex items-end justify-between">
+                  <div className="w-56 border-t pt-2 text-center text-muted-foreground">Ο ταμίας</div>
+                  <div className="w-56 border-t pt-2 text-center text-muted-foreground">Ο διαχειριστής</div>
+                </div>
+              </div>
             </>
           )}
         </TabsContent>
@@ -704,7 +721,7 @@ export default async function CashRegisterPage({
                           <Badge variant="warning">{remaining.toFixed(2)} €</Badge>
                         </TableCell>
                         {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
-                        <TableCell>
+                        <TableCell className="no-print">
                           <CollectFromCashRegister
                             policyId={inst.policy_id}
                             documentLabel={policy?.policy_number ?? "—"}
