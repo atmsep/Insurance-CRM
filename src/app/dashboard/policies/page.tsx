@@ -58,7 +58,7 @@ type PolicyListRow = {
 };
 
 const POLICY_LIST_SELECT =
-  "id, policy_number, status, issue_date, start_date, end_date, premium_gross, premium_net, risk_label, renewal_number, assigned_agent_id, broker_office_id, insurance_lines(name_el), carriers(name), broker_offices(name), agency_users!policies_assigned_agent_id_fkey(full_name), clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name))";
+  "id, policy_number, status, issue_date, start_date, end_date, premium_gross, premium_net, risk_label, renewal_number, assigned_agent_id, broker_office_id, insurance_lines(name_el), carriers(name, assistance_phone, claims_phone, claims_email), broker_offices(name), agency_users!policies_assigned_agent_id_fkey(full_name), clients!inner(display_name, client_individuals(first_name,last_name), client_legal_entities(company_name))";
 
 // Maps a `sort` URL param to the underlying column to order by. Columns
 // from a joined table use PostgREST's embedded-resource order syntax
@@ -396,7 +396,13 @@ export default async function PoliciesPage({
                 } | null;
                 const name = resolveClientName(client);
                 const lineName = (policy.insurance_lines as unknown as { name_el: string } | null)?.name_el;
-                const carrierName = (policy.carriers as unknown as { name: string } | null)?.name;
+                const carrier = policy.carriers as unknown as {
+                  name: string;
+                  assistance_phone: string | null;
+                  claims_phone: string | null;
+                  claims_email: string | null;
+                } | null;
+                const carrierName = carrier?.name;
                 const agentName = (policy.agency_users as unknown as { full_name: string } | null)?.full_name;
                 const brokerOfficeName = (policy.broker_offices as unknown as { name: string } | null)?.name;
                 return (
@@ -438,6 +444,9 @@ export default async function PoliciesPage({
                         <QuickViewField label="Πελάτης" value={name} />
                         <QuickViewField label="Κλάδος" value={lineName} />
                         <QuickViewField label="Εταιρεία" value={carrierName} />
+                        <QuickViewField label="Φροντίδα ατυχήματος" value={carrier?.assistance_phone} />
+                        <QuickViewField label="Κλάδος ζημιών (τηλ.)" value={carrier?.claims_phone} />
+                        <QuickViewField label="Κλάδος ζημιών (email)" value={carrier?.claims_email} />
                         <QuickViewField label="Συνεργάτης" value={agentName} />
                         <QuickViewField label="Γραφείο" value={brokerOfficeName} />
                         <QuickViewField

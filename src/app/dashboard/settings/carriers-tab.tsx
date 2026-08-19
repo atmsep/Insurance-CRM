@@ -46,6 +46,9 @@ const COLUMNS: Column[] = [
   { key: "name", label: "Επωνυμία", getValue: (c) => c.name, getSortKey: (c) => c.name },
   { key: "contact_phone", label: "Τηλέφωνο", getValue: (c) => c.contact_phone ?? "—", getSortKey: (c) => c.contact_phone ?? "" },
   { key: "contact_email", label: "Email", getValue: (c) => c.contact_email ?? "—", getSortKey: (c) => c.contact_email ?? "" },
+  { key: "assistance_phone", label: "Φροντίδα ατυχήματος", getValue: (c) => c.assistance_phone ?? "—", getSortKey: (c) => c.assistance_phone ?? "" },
+  { key: "claims_phone", label: "Κλάδος ζημιών (τηλ.)", getValue: (c) => c.claims_phone ?? "—", getSortKey: (c) => c.claims_phone ?? "" },
+  { key: "claims_email", label: "Κλάδος ζημιών (email)", getValue: (c) => c.claims_email ?? "—", getSortKey: (c) => c.claims_email ?? "" },
   { key: "status", label: "Κατάσταση", getValue: (c) => (c.is_active ? "Ενεργή" : "Ανενεργή"), getSortKey: (c) => (c.is_active ? 1 : 0) },
 ];
 
@@ -175,6 +178,9 @@ export function CarriersTab({ carriers }: { carriers: Carrier[] }) {
                   <TableCell>{carrier.name}</TableCell>
                   <TableCell>{carrier.contact_phone ?? "—"}</TableCell>
                   <TableCell>{carrier.contact_email ?? "—"}</TableCell>
+                  <TableCell>{carrier.assistance_phone ?? "—"}</TableCell>
+                  <TableCell>{carrier.claims_phone ?? "—"}</TableCell>
+                  <TableCell>{carrier.claims_email ?? "—"}</TableCell>
                   <TableCell>
                     <Badge variant={carrier.is_active ? "default" : "outline"}>
                       {carrier.is_active ? "Ενεργή" : "Ανενεργή"}
@@ -203,7 +209,7 @@ export function CarriersTab({ carriers }: { carriers: Carrier[] }) {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   {carriers.length ? "Καμία εγγραφή δεν ταιριάζει με τα φίλτρα." : "Δεν υπάρχουν ασφαλιστικές εταιρείες."}
                 </TableCell>
               </TableRow>
