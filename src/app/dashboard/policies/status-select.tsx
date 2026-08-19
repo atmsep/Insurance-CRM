@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { toast } from "sonner";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,7 +40,19 @@ export function StatusSelect({
         value={status}
         disabled={pending}
         onValueChange={(value) => {
-          if (value) startTransition(() => updatePolicyStatus(policyId, value));
+          if (!value) return;
+          if (
+            value === "cancelled" &&
+            !window.confirm(
+              "Η χειροκίνητη ακύρωση αλλάζει μόνο την κατάσταση — ΔΕΝ δημιουργεί κίνηση Ακύρωσης (επιστροφή ασφαλίστρων / αντιλογισμό προμηθειών). Για πλήρη ακύρωση χρησιμοποίησε «Νέα Κίνηση → Ακύρωση». Συνέχεια;",
+            )
+          ) {
+            return;
+          }
+          startTransition(async () => {
+            const result = await updatePolicyStatus(policyId, value);
+            if (result?.error) toast.error(result.error);
+          });
         }}
       >
         <SelectTrigger className="w-44">

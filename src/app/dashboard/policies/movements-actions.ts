@@ -993,7 +993,11 @@ export async function transferMovement(
   }
   const supabase = await createSupabaseClient();
 
-  const { data: target } = await supabase.from("policies").select("id").eq("id", targetPolicyId).maybeSingle();
+  const { data: target } = await supabase
+    .from("policies")
+    .select("id, client_id")
+    .eq("id", targetPolicyId)
+    .maybeSingle();
   if (!target) return { error: "Δεν βρέθηκε το συμβόλαιο-στόχος." };
 
   const { data: movement } = await supabase
@@ -1003,7 +1007,35 @@ export async function transferMovement(
     .single();
   if (!movement) return { error: "Δεν βρέθηκε η κίνηση." };
 
-  await supabase.from("policy_movements").update({ policy_id: targetPolicyId }).eq("id", movementId);
+  const { error } = await supabase
+    .from("policy_movements")
+    .update({ policy_id: targetPolicyId })
+    .eq("id", movementId);
+  if (error) return { error: "Σφάλμα κατά τη μεταφορά: " + error.message };
+
+  // The movement's whole financial subtree carries its own policy_id and
+  // has to travel with it — δόσεις, their commissions, the cancellation
+  // commissions anchored on the movement itself, and any referral reward —
+  // otherwise balances, Ταμείο and the production/commission reports keep
+  // counting them under the old policy.
+  const { data: movedInstallments } = await supabase
+    .from("policy_installments")
+    .select("id")
+    .eq("movement_id", movementId);
+  await supabase.from("policy_installments").update({ policy_id: targetPolicyId }).eq("movement_id", movementId);
+  const movedInstallmentIds = (movedInstallments ?? []).map((i) => i.id);
+  if (movedInstallmentIds.length) {
+    await supabase
+      .from("commissions")
+      .update({ policy_id: targetPolicyId })
+      .in("policy_installment_id", movedInstallmentIds);
+  }
+  await supabase.from("commissions").update({ policy_id: targetPolicyId }).eq("policy_movement_id", movementId);
+  await supabase
+    .from("referral_rewards")
+    .update({ policy_id: targetPolicyId, referred_client_id: target.client_id })
+    .eq("policy_movement_id", movementId);
+
   revalidatePath(`/dashboard/policies/${movement.policy_id}`);
   revalidatePath(`/dashboard/policies/${targetPolicyId}`);
 }

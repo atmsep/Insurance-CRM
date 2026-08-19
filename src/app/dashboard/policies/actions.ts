@@ -300,6 +300,12 @@ export async function createPolicy(
         is_renewal: true,
         status: "active",
         status_auto_managed: true,
+        // Re-arm the renewal-reminder emails for the new term — the cron
+        // stamps these when it sends, and a permanent policy row would
+        // otherwise keep last term's stamps forever, silently skipping
+        // every reminder from the second year on.
+        renewal_notice_30d_sent_at: null,
+        renewal_notice_7d_sent_at: null,
       })
       .eq("id", policyId);
     if (updateError) {
@@ -341,26 +347,31 @@ export async function createPolicy(
 
   let branchError: string | null = null;
 
+  // Upsert (not update) on renewal: a policy that changes insurance line on
+  // renewal — or a legacy import that never had a details row — has no row
+  // to UPDATE, which used to match 0 rows and silently drop the branch
+  // details. policy_id is the PK on all three tables, so upsert covers both
+  // the fresh-insert and the overwrite case.
   if (line.requires_vehicle_details) {
     const payload = vehicleDetailsPayload(formData);
-    const { error } = renewFromPolicyId
-      ? await supabase.from("policy_vehicle_details").update(payload).eq("policy_id", policyId)
-      : await supabase.from("policy_vehicle_details").insert({ policy_id: policyId, ...payload });
+    const { error } = await supabase
+      .from("policy_vehicle_details")
+      .upsert({ policy_id: policyId, ...payload }, { onConflict: "policy_id" });
     branchError = error?.message ?? null;
   } else if (line.requires_property_details) {
     const payload = propertyDetailsPayload(formData);
-    const { error } = renewFromPolicyId
-      ? await supabase.from("policy_property_details").update(payload).eq("policy_id", policyId)
-      : await supabase.from("policy_property_details").insert({ policy_id: policyId, ...payload });
+    const { error } = await supabase
+      .from("policy_property_details")
+      .upsert({ policy_id: policyId, ...payload }, { onConflict: "policy_id" });
     branchError = error?.message ?? null;
   } else if (line.requires_life_health_details) {
     const payload = {
       coverage_type: str(formData, "coverage_type"),
       sum_insured: num(formData, "sum_insured"),
     };
-    const { error } = renewFromPolicyId
-      ? await supabase.from("policy_life_health_details").update(payload).eq("policy_id", policyId)
-      : await supabase.from("policy_life_health_details").insert({ policy_id: policyId, ...payload });
+    const { error } = await supabase
+      .from("policy_life_health_details")
+      .upsert({ policy_id: policyId, ...payload }, { onConflict: "policy_id" });
     branchError = error?.message ?? null;
   }
 
@@ -399,12 +410,26 @@ export async function createPolicy(
   redirect(`/dashboard/policies/${policyId}?toast=${encodeURIComponent("Το συμβόλαιο δημιουργήθηκε.")}`);
 }
 
-export async function updatePolicyStatus(policyId: string, status: string) {
+export async function updatePolicyStatus(
+  policyId: string,
+  status: string,
+): Promise<{ error: string } | undefined> {
   const agencyUser = await requireAgencyUser();
+  // Manually flipping to "Ακυρωμένο" is a financial decision — it hides the
+  // policy's open δόσεις from every receivables view WITHOUT recording a
+  // cancellation movement (refund/clawback), so it stays admin-only, same
+  // boundary as createManualMovement's Ακύρωση.
+  if (status === "cancelled" && agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Μόνο διαχειριστής μπορεί να ακυρώσει συμβόλαιο." };
+  }
   const supabase = await createSupabaseClient();
   // A manual status choice sticks "μέχρι νεωτέρας" — the daily automatic
   // recompute only ever touches status_auto_managed = true rows.
-  await supabase.from("policies").update({ status, status_auto_managed: false }).eq("id", policyId);
+  const { error } = await supabase
+    .from("policies")
+    .update({ status, status_auto_managed: false })
+    .eq("id", policyId);
+  if (error) return { error: "Σφάλμα κατά την αλλαγή κατάστασης: " + error.message };
   await logActivity(supabase, {
     entityType: "policy",
     entityId: policyId,
@@ -421,6 +446,11 @@ export async function bulkUpdatePolicyStatus(
 ): Promise<{ error: string } | undefined> {
   const agencyUser = await requireAgencyUser();
   if (policyIds.length === 0) return;
+  // Same admin-only boundary as the single-policy dropdown — see
+  // updatePolicyStatus above.
+  if (status === "cancelled" && agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Μόνο διαχειριστής μπορεί να ακυρώσει συμβόλαια." };
+  }
   const supabase = await createSupabaseClient();
 
   const { error } = await supabase
@@ -473,6 +503,95 @@ export async function resetPolicyStatusToAuto(
   revalidatePath(`/dashboard/policies/${policyId}`);
 }
 
+// When the premium fields change here, the CURRENT movement's snapshot, its
+// (single, unpaid) δόση and its auto-calculated commissions are synced to
+// the new amounts — otherwise the καρτέλα would show the new premium while
+// Ανείσπρακτα/Ταμείο/Αναφορές keep billing the old one. Once real money or
+// a remittance is attached to the movement, the edit is refused and the
+// correction must go through a movement (Πρόσθετη πράξη / Ακύρωση) instead,
+// so the permanent ledger is never silently rewritten under collected cash.
+async function syncCurrentMovementPremium(
+  supabase: Awaited<ReturnType<typeof createSupabaseClient>>,
+  policyId: string,
+  newGross: number,
+  newNet: number | null,
+): Promise<{ error: string } | undefined> {
+  const { data: movement } = await supabase
+    .from("policy_movements")
+    .select("id, premium_gross, premium_net, premium_remitted_at, outgoing_commission_remitted_at")
+    .eq("policy_id", policyId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  // Legacy policy without movements — nothing to sync, same behavior as
+  // before the rebuild.
+  if (!movement) return;
+  if (movement.premium_gross === newGross && (movement.premium_net ?? null) === (newNet ?? null)) return;
+
+  if (movement.premium_remitted_at || movement.outgoing_commission_remitted_at) {
+    return {
+      error:
+        "Η τρέχουσα κίνηση έχει ήδη αποδοθεί — το ασφάλιστρο δεν αλλάζει από εδώ. Καταχώρησε Πρόσθετη πράξη ή Ακύρωση.",
+    };
+  }
+
+  const { data: installments } = await supabase
+    .from("policy_installments")
+    .select("id, amount, paid_amount")
+    .eq("movement_id", movement.id)
+    .order("installment_number", { ascending: true });
+
+  if ((installments ?? []).some((i) => (i.paid_amount ?? 0) > 0)) {
+    return {
+      error:
+        "Υπάρχει ήδη είσπραξη στην τρέχουσα κίνηση — το ασφάλιστρο δεν αλλάζει από εδώ. Καταχώρησε Πρόσθετη πράξη ή Ακύρωση.",
+    };
+  }
+  if ((installments ?? []).length > 1) {
+    return {
+      error:
+        "Η τρέχουσα κίνηση έχει περισσότερες από μία δόσεις — προσάρμοσε τα ποσά από την Αλλαγή Δόσεων στην Απόδειξη της κίνησης.",
+    };
+  }
+
+  const { error: movementError } = await supabase
+    .from("policy_movements")
+    .update({ premium_gross: newGross, premium_net: newNet })
+    .eq("id", movement.id);
+  if (movementError) {
+    return { error: "Σφάλμα κατά την ενημέρωση της κίνησης: " + movementError.message };
+  }
+
+  const installment = (installments ?? [])[0];
+  if (installment) {
+    await supabase.from("policy_installments").update({ amount: newGross }).eq("id", installment.id);
+
+    // Recompute the auto-calculated commissions off the new net at their
+    // stored rates; a manually-overridden amount is someone's deliberate
+    // number and is left alone.
+    const { data: commissions } = await supabase
+      .from("commissions")
+      .select("id, commission_rate_percent, reference_rate_percent, is_manual_override")
+      .eq("policy_installment_id", installment.id);
+    const base = newNet ?? 0;
+    for (const c of commissions ?? []) {
+      if (c.is_manual_override) continue;
+      const rate = c.commission_rate_percent ?? 0;
+      await supabase
+        .from("commissions")
+        .update({
+          base_amount: base,
+          commission_amount: Math.round(((base * rate) / 100) * 100) / 100,
+          reference_amount:
+            c.reference_rate_percent != null
+              ? Math.round(((base * c.reference_rate_percent) / 100) * 100) / 100
+              : null,
+        })
+        .eq("id", c.id);
+    }
+  }
+}
+
 export async function updatePolicyDetails(
   policyId: string,
   hasVehicle: boolean,
@@ -482,6 +601,12 @@ export async function updatePolicyDetails(
 ): Promise<{ error: string } | undefined> {
   const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
+
+  const newGross = num(formData, "premium_gross");
+  if (newGross !== null) {
+    const syncError = await syncCurrentMovementPremium(supabase, policyId, newGross, num(formData, "premium_net"));
+    if (syncError) return syncError;
+  }
 
   const { error: policyError } = await supabase
     .from("policies")
