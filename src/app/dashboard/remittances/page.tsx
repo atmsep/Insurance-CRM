@@ -16,11 +16,18 @@ import {
 import { ListPageHeader } from "@/components/list-page-header";
 import { formatDate } from "@/lib/date";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
-import { togglePremiumRemittance, toggleOutgoingCommissionRemittance } from "../policies/movements-actions";
+import {
+  togglePremiumRemittance,
+  toggleOutgoingCommissionRemittance,
+  bulkRemitPremiums,
+  bulkRemitOutgoingCommissions,
+} from "../policies/movements-actions";
 import { getOutgoingCommissionsByMovement } from "../reports/production/commissions";
 import { ProductionFiltersPanel } from "../reports/production/_components/production-filters-panel";
 import { parseRemittanceFilters, applyRemittanceFilters } from "./filters";
 import { RemittancesTabs } from "./_components/remittances-tabs";
+import { BulkSelectionProvider, BulkSelectCheckbox, BulkSelectAllCheckbox } from "@/components/bulk-selection";
+import { RemittanceBulkBar } from "./_components/remittance-bulk-bar";
 
 type SingleOrMany<T> = T | T[] | null;
 function one<T>(v: SingleOrMany<T>): T | null {
@@ -127,105 +134,120 @@ export default async function RemittancesPage({
     amountLabel: string,
     getAmount: (m: T) => number,
     action: (movementId: string) => Promise<void>,
+    bulkAction: (movementIds: string[]) => Promise<{ error: string } | undefined>,
+    bulkSuccessLabel: string,
   ) {
+    const ids = rows.map((m) => m.id);
     return (
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Έκδοση</TableHead>
-              <TableHead>Είδος</TableHead>
-              <TableHead>Συμβόλαιο</TableHead>
-              <TableHead>Χαρακτηριστικό</TableHead>
-              <TableHead>Κλάδος</TableHead>
-              <TableHead>Εταιρεία</TableHead>
-              <TableHead>Πελάτης</TableHead>
-              <TableHead>{amountLabel}</TableHead>
-              <TableHead>Συνεργάτης</TableHead>
-              <TableHead />
-            </TableRow>
-            <TableRow>
-              <TableHead className="pb-2" />
-              <TableHead className="pb-2" />
-              <TableHead className="pb-2">
-                <Input
-                  form="remittances-filters"
-                  name="policy_number"
-                  placeholder="Συμβόλαιο..."
-                  defaultValue={filters.policyNumber ?? ""}
-                  className="h-7 text-xs"
-                />
-              </TableHead>
-              <TableHead className="pb-2">
-                <Input
-                  form="remittances-filters"
-                  name="risk"
-                  placeholder="Χαρακτηριστικό..."
-                  defaultValue={filters.risk ?? ""}
-                  className="h-7 text-xs"
-                />
-              </TableHead>
-              <TableHead className="pb-2" />
-              <TableHead className="pb-2" />
-              <TableHead className="pb-2">
-                <Input
-                  form="remittances-filters"
-                  name="client"
-                  placeholder="Πελάτης..."
-                  defaultValue={filters.clientName ?? ""}
-                  className="h-7 text-xs"
-                />
-              </TableHead>
-              <TableHead className="pb-2" />
-              <TableHead className="pb-2" />
-              <TableHead className="pb-2" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length ? (
-              rows.map((m) => {
-                const policy = one(m.policies);
-                const client = one(policy?.clients ?? null);
-                const agent = one(policy?.agency_users ?? null);
-                const carrier = one(policy?.carriers ?? null);
-                const line = one(policy?.insurance_lines ?? null);
-                return (
-                  <TableRow key={m.id}>
-                    <TableCell>{formatDate(m.issue_date)}</TableCell>
-                    <TableCell>{POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}</TableCell>
-                    <TableCell>
-                      <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
-                        {policy?.policy_number ?? "—"}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
-                    <TableCell>{line?.name_el ?? "—"}</TableCell>
-                    <TableCell>{carrier?.name ?? "—"}</TableCell>
-                    <TableCell>{client?.display_name ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="warning">{getAmount(m).toFixed(2)} €</Badge>
-                    </TableCell>
-                    <TableCell>{agent?.full_name ?? "—"}</TableCell>
-                    <TableCell>
-                      <form action={action.bind(null, m.id)}>
-                        <Button type="submit" size="sm" variant="outline">
-                          Απόδοση
-                        </Button>
-                      </form>
+      <BulkSelectionProvider>
+        <div className="flex flex-col gap-3">
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8">
+                    <BulkSelectAllCheckbox ids={ids} />
+                  </TableHead>
+                  <TableHead>Έκδοση</TableHead>
+                  <TableHead>Είδος</TableHead>
+                  <TableHead>Συμβόλαιο</TableHead>
+                  <TableHead>Χαρακτηριστικό</TableHead>
+                  <TableHead>Κλάδος</TableHead>
+                  <TableHead>Εταιρεία</TableHead>
+                  <TableHead>Πελάτης</TableHead>
+                  <TableHead>{amountLabel}</TableHead>
+                  <TableHead>Συνεργάτης</TableHead>
+                  <TableHead />
+                </TableRow>
+                <TableRow>
+                  <TableHead className="pb-2" />
+                  <TableHead className="pb-2" />
+                  <TableHead className="pb-2" />
+                  <TableHead className="pb-2">
+                    <Input
+                      form="remittances-filters"
+                      name="policy_number"
+                      placeholder="Συμβόλαιο..."
+                      defaultValue={filters.policyNumber ?? ""}
+                      className="h-7 text-xs"
+                    />
+                  </TableHead>
+                  <TableHead className="pb-2">
+                    <Input
+                      form="remittances-filters"
+                      name="risk"
+                      placeholder="Χαρακτηριστικό..."
+                      defaultValue={filters.risk ?? ""}
+                      className="h-7 text-xs"
+                    />
+                  </TableHead>
+                  <TableHead className="pb-2" />
+                  <TableHead className="pb-2" />
+                  <TableHead className="pb-2">
+                    <Input
+                      form="remittances-filters"
+                      name="client"
+                      placeholder="Πελάτης..."
+                      defaultValue={filters.clientName ?? ""}
+                      className="h-7 text-xs"
+                    />
+                  </TableHead>
+                  <TableHead className="pb-2" />
+                  <TableHead className="pb-2" />
+                  <TableHead className="pb-2" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.length ? (
+                  rows.map((m) => {
+                    const policy = one(m.policies);
+                    const client = one(policy?.clients ?? null);
+                    const agent = one(policy?.agency_users ?? null);
+                    const carrier = one(policy?.carriers ?? null);
+                    const line = one(policy?.insurance_lines ?? null);
+                    return (
+                      <TableRow key={m.id}>
+                        <TableCell>
+                          <BulkSelectCheckbox id={m.id} />
+                        </TableCell>
+                        <TableCell>{formatDate(m.issue_date)}</TableCell>
+                        <TableCell>{POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}</TableCell>
+                        <TableCell>
+                          <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
+                            {policy?.policy_number ?? "—"}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
+                        <TableCell>{line?.name_el ?? "—"}</TableCell>
+                        <TableCell>{carrier?.name ?? "—"}</TableCell>
+                        <TableCell>{client?.display_name ?? "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant="warning">{getAmount(m).toFixed(2)} €</Badge>
+                        </TableCell>
+                        <TableCell>{agent?.full_name ?? "—"}</TableCell>
+                        <TableCell>
+                          <form action={action.bind(null, m.id)}>
+                            <Button type="submit" size="sm" variant="outline">
+                              Απόδοση
+                            </Button>
+                          </form>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center text-muted-foreground">
+                      Δεν υπάρχουν εκκρεμείς αποδόσεις.
                     </TableCell>
                   </TableRow>
-                );
-              })
-            ) : (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground">
-                  Δεν υπάρχουν εκκρεμείς αποδόσεις.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <RemittanceBulkBar action={bulkAction} successLabel={bulkSuccessLabel} />
+        </div>
+      </BulkSelectionProvider>
     );
   }
 
@@ -255,8 +277,22 @@ export default async function RemittancesPage({
           defaultTab={activeTab}
           premiumCount={premiumPending.length}
           commissionCount={commissionPending.length}
-          premiumContent={renderTable(premiumPending, "Μικτά", (m) => m.premium_gross, remitPremium)}
-          commissionContent={renderTable(commissionPending, "Προμήθεια", (m) => m.commission, remitCommission)}
+          premiumContent={renderTable(
+            premiumPending,
+            "Μικτά",
+            (m) => m.premium_gross,
+            remitPremium,
+            bulkRemitPremiums,
+            "Αποδόθηκαν ασφάλιστρα",
+          )}
+          commissionContent={renderTable(
+            commissionPending,
+            "Προμήθεια",
+            (m) => m.commission,
+            remitCommission,
+            bulkRemitOutgoingCommissions,
+            "Αποδόθηκαν προμήθειες",
+          )}
         />
       </div>
     </div>

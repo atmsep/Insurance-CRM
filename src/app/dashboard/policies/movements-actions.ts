@@ -943,6 +943,43 @@ export async function toggleOutgoingCommissionRemittance(movementId: string, cur
   revalidatePath("/dashboard/remittances");
 }
 
+// Bulk variants for the Αποδόσεις worklist's "select several, remit at
+// once" bar — always one direction (mark remitted), same as the per-row
+// buttons there. The .is(...) guard is defense-in-depth: the worklist only
+// ever offers ids that are already pending, but a selection made before a
+// revalidation shouldn't be able to re-stamp an already-remitted row.
+export async function bulkRemitPremiums(movementIds: string[]): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  if (!movementIds.length) return;
+  const supabase = await createSupabaseClient();
+  const { error } = await supabase
+    .from("policy_movements")
+    .update({ premium_remitted_at: new Date().toISOString() })
+    .in("id", movementIds)
+    .is("premium_remitted_at", null);
+  if (error) return { error: "Σφάλμα κατά την απόδοση: " + error.message };
+  revalidatePath("/dashboard/remittances");
+}
+
+export async function bulkRemitOutgoingCommissions(movementIds: string[]): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  if (!movementIds.length) return;
+  const supabase = await createSupabaseClient();
+  const { error } = await supabase
+    .from("policy_movements")
+    .update({ outgoing_commission_remitted_at: new Date().toISOString() })
+    .in("id", movementIds)
+    .is("outgoing_commission_remitted_at", null);
+  if (error) return { error: "Σφάλμα κατά την απόδοση: " + error.message };
+  revalidatePath("/dashboard/remittances");
+}
+
 // Μεταφορά παραστατικού σε άλλο συμβόλαιο — admin only. Basic existence
 // check on the target; no other validation (matches Profia, which lets the
 // user move a document freely between contracts).

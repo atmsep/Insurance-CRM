@@ -12,7 +12,7 @@ export function BulkActionsShell({
   exportBasePath,
   children,
 }: {
-  exportBasePath: string;
+  exportBasePath?: string;
   children: (ids: string[]) => ReactNode;
 }) {
   const { selected, clear } = useBulkSelection();
@@ -26,12 +26,14 @@ export function BulkActionsShell({
       <span className="text-sm text-muted-foreground">Επιλέχθηκαν {ids.length}</span>
       <div className="flex items-center gap-2">
         {children(ids)}
-        <Button
-          variant="outline"
-          size="sm"
-          nativeButton={false}
-          render={<a href={`${exportBasePath}?ids=${ids.join(",")}`}>Εξαγωγή επιλεγμένων</a>}
-        />
+        {exportBasePath && (
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<a href={`${exportBasePath}?ids=${ids.join(",")}`}>Εξαγωγή επιλεγμένων</a>}
+          />
+        )}
         <Button variant="ghost" size="sm" onClick={clear}>
           Ακύρωση
         </Button>
