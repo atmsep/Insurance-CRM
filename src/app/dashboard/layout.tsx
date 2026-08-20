@@ -8,6 +8,7 @@ import { ToastListener } from "@/components/toast-listener";
 import { IncomingCallListener } from "@/components/incoming-call-listener";
 import { GlobalSearch } from "@/components/global-search";
 import { QuickCreateMenu } from "@/components/quick-create-menu";
+import { NotificationBell } from "@/components/notification-bell";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { Button } from "@/components/ui/button";
 
@@ -43,6 +44,7 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
           </div>
           <div className="flex items-center gap-2">
             <GlobalSearch />
+            <NotificationBell />
             <QuickCreateMenu />
             <form action={signOut}>
               <Button type="submit" variant="outline" size="sm">

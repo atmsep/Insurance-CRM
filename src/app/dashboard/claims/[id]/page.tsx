@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusSelect } from "../status-select";
 import { ClaimCategorySelect } from "../claim-category-select";
 import { updateClaimDetails } from "../actions";
+import { DeleteClaimButton } from "../delete-claim-button";
+import { requireAgencyUser } from "@/lib/dal";
 import type { ClaimStatus } from "@/lib/database.types";
 import { DocumentsSection } from "../../documents/documents-section";
 import { getDocumentsFor } from "../../documents/get-documents";
@@ -24,6 +26,8 @@ export default async function ClaimDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const agencyUser = await requireAgencyUser();
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
   const supabase = await createClient();
 
   const { data: claim } = await supabase
@@ -75,7 +79,10 @@ export default async function ClaimDetailPage({
             </Link>
           </p>
         </div>
-        <StatusSelect claimId={claim.id} policyId={policy?.id ?? ""} status={claim.status as ClaimStatus} />
+        <div className="flex items-center gap-2">
+          {isAdmin && <DeleteClaimButton claimId={claim.id} policyId={policy?.id ?? ""} />}
+          <StatusSelect claimId={claim.id} policyId={policy?.id ?? ""} status={claim.status as ClaimStatus} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

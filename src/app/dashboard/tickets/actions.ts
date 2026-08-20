@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAgencyUser } from "@/lib/dal";
 import { logActivity, logActivityBatch } from "@/lib/activity-log";
+import { notify } from "@/lib/notifications";
 
 function str(formData: FormData, key: string) {
   const v = formData.get(key);
@@ -91,6 +92,20 @@ export async function assignTicket(ticketId: string, clientId: string, agentId: 
     .update({ assigned_to: agentId })
     .eq("id", ticketId);
   if (error) return;
+
+  const { data: ticket } = await supabase
+    .from("client_tickets")
+    .select("subject")
+    .eq("id", ticketId)
+    .maybeSingle();
+  await notify(supabase, {
+    recipientId: agentId,
+    actorId: agencyUser.id,
+    kind: "ticket_assigned",
+    title: "Σου ανατέθηκε αίτημα πελάτη",
+    body: ticket?.subject ?? null,
+    link: `/dashboard/clients/${clientId}?tab=tickets`,
+  });
 
   await logActivity(supabase, {
     entityType: "client",

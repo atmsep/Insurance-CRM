@@ -126,6 +126,57 @@ export async function bulkUpdateClaimStatus(
   updateTag(CACHE_TAGS.reports);
 }
 
+// Διαγραφή λάθος καταχωρημένης ζημιάς — admin/owner only. Refused while
+// έγγραφα are still attached (they'd orphan in storage) or while a paid
+// amount is recorded (real money shouldn't vanish silently) — clear those
+// first, deliberately.
+export async function deleteClaim(
+  claimId: string,
+  policyId: string,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Μόνο διαχειριστής μπορεί να διαγράψει ζημιά." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const { data: claim } = await supabase
+    .from("claims")
+    .select("claim_amount_paid")
+    .eq("id", claimId)
+    .maybeSingle();
+  if (!claim) return { error: "Δεν βρέθηκε η ζημιά." };
+  if ((claim.claim_amount_paid ?? 0) > 0) {
+    return { error: "Η ζημιά έχει καταχωρημένη αποζημίωση — δεν διαγράφεται." };
+  }
+
+  const { count: docCount } = await supabase
+    .from("documents")
+    .select("id", { count: "exact", head: true })
+    .eq("claim_id", claimId);
+  if ((docCount ?? 0) > 0) {
+    return { error: "Διάγραψε πρώτα τα έγγραφα της ζημιάς." };
+  }
+
+  await supabase.from("tasks").delete().eq("claim_id", claimId);
+  const { error } = await supabase.from("claims").delete().eq("id", claimId);
+  if (error) return { error: "Σφάλμα κατά τη διαγραφή: " + error.message };
+
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "claim_deleted",
+    description: "Διαγράφηκε μια ζημιά.",
+    actorId: agencyUser.id,
+  });
+
+  revalidatePath("/dashboard/claims");
+  revalidatePath(`/dashboard/policies/${policyId}`);
+  revalidatePath("/dashboard/reports");
+  updateTag(CACHE_TAGS.reports);
+  redirect(`/dashboard/claims?toast=${encodeURIComponent("Η ζημιά διαγράφηκε.")}`);
+}
+
 export async function updateClaimDetails(claimId: string, policyId: string, formData: FormData) {
   const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();

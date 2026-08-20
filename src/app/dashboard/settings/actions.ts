@@ -5,6 +5,7 @@ import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgencyUser } from "@/lib/dal";
 import { isValidEmail } from "@/lib/validation";
+import { logActivity } from "@/lib/activity-log";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 
 export type ActionState = { error: string } | { success: string } | undefined;
@@ -280,6 +281,22 @@ export async function toggleAgencyUserActive(userId: string, isActive: boolean) 
   const supabase = await createSupabaseClient();
   await supabase.from("agency_users").update({ is_active: isActive }).eq("id", userId);
   await supabase.from("commission_payees").update({ is_active: isActive }).eq("agency_user_id", userId);
+
+  // RLS already locks a deactivated user out of every table, but their auth
+  // session would otherwise stay technically valid — ban the login itself
+  // too (and lift the ban on reactivation).
+  const { data: target } = await supabase
+    .from("agency_users")
+    .select("auth_user_id")
+    .eq("id", userId)
+    .maybeSingle();
+  if (target?.auth_user_id) {
+    const admin = createAdminClient();
+    await admin.auth.admin.updateUserById(target.auth_user_id, {
+      ban_duration: isActive ? "none" : "876000h",
+    });
+  }
+
   revalidatePath("/dashboard/settings");
   updateTag(CACHE_TAGS.agencyUsers);
 }
@@ -381,6 +398,66 @@ export async function adminSetUserPassword(
   if (error) return { error: "Σφάλμα ορισμού κωδικού: " + error.message };
 
   return { success: `Ορίστηκε νέος κωδικός για τον/την ${target.full_name}.` };
+}
+
+// Μεταφορά χαρτοφυλακίου — όταν φεύγει (ή αλλάζει ρόλο) ένας συνεργάτης:
+// όλοι οι πελάτες, τα συμβόλαιά τους και οι ανοιχτές εκκρεμότητες
+// (υπενθυμίσεις/αιτήματα) περνούν μαζικά σε άλλον. Ιστορικά δεδομένα
+// (κινήσεις, εισπράξεις, προμήθειες) μένουν στον αρχικό — αφορούν το
+// παρελθόν του.
+export async function transferPortfolio(
+  fromUserId: string,
+  toUserId: string,
+): Promise<{ error: string } | { success: string }> {
+  const actingUser = await requireAdmin();
+  if (fromUserId === toUserId) return { error: "Επίλεξε διαφορετικό συνεργάτη-παραλήπτη." };
+  const supabase = await createSupabaseClient();
+
+  const [{ data: fromUser }, { data: toUser }] = await Promise.all([
+    supabase.from("agency_users").select("id, full_name").eq("id", fromUserId).maybeSingle(),
+    supabase.from("agency_users").select("id, full_name, is_active").eq("id", toUserId).maybeSingle(),
+  ]);
+  if (!fromUser || !toUser) return { error: "Δεν βρέθηκε ο συνεργάτης." };
+  if (!toUser.is_active) return { error: "Ο παραλήπτης είναι ανενεργός." };
+
+  const { count: clientCount, error: clientsError } = await supabase
+    .from("clients")
+    .update({ assigned_agent_id: toUserId }, { count: "exact" })
+    .eq("assigned_agent_id", fromUserId);
+  if (clientsError) return { error: "Σφάλμα στη μεταφορά πελατών: " + clientsError.message };
+
+  const { count: policyCount, error: policiesError } = await supabase
+    .from("policies")
+    .update({ assigned_agent_id: toUserId }, { count: "exact" })
+    .eq("assigned_agent_id", fromUserId);
+  if (policiesError) return { error: "Σφάλμα στη μεταφορά συμβολαίων: " + policiesError.message };
+
+  await supabase
+    .from("tasks")
+    .update({ assigned_to: toUserId })
+    .eq("assigned_to", fromUserId)
+    .eq("status", "pending");
+  await supabase
+    .from("client_tickets")
+    .update({ assigned_to: toUserId })
+    .eq("assigned_to", fromUserId)
+    .in("status", ["open", "in_progress"]);
+
+  const summary = `Μεταφέρθηκε το χαρτοφυλάκιο του/της ${fromUser.full_name} στον/στην ${toUser.full_name}: ${clientCount ?? 0} πελάτες, ${policyCount ?? 0} συμβόλαια, συν ανοιχτές υπενθυμίσεις/αιτήματα.`;
+  await logActivity(supabase, {
+    entityType: "agency_user",
+    entityId: fromUserId,
+    action: "portfolio_transferred",
+    description: summary,
+    actorId: actingUser.id,
+  });
+
+  revalidatePath("/dashboard/settings");
+  revalidatePath(`/dashboard/settings/team/${fromUserId}`);
+  revalidatePath("/dashboard/clients");
+  revalidatePath("/dashboard/policies");
+  updateTag(CACHE_TAGS.agencyUsers);
+  return { success: summary };
 }
 
 export async function inviteAgencyUser(

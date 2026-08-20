@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { requireAgencyUser } from "@/lib/dal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTileGridSkeleton, TableCardSkeleton } from "../_components/skeletons";
@@ -14,8 +13,30 @@ import {
 
 export default async function ReportsPage() {
   const agencyUser = await requireAgencyUser();
+  // An agent gets a slim hub with just their own production (the report
+  // itself force-scopes to them server-side); everything else stays
+  // admin-only.
   if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
-    redirect("/dashboard");
+    return (
+      <div className="flex flex-col gap-6">
+        <h1 className="text-2xl font-semibold">Αναφορές</h1>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Link href="/dashboard/reports/production" className="block">
+            <Card className="h-full transition-colors hover:bg-muted/50">
+              <CardHeader>
+                <CardTitle className="text-base">Η παραγωγή μου</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Οι δικές σου κινήσεις (νέα συμβόλαια, ανανεώσεις, πρόσθετες πράξεις, ακυρώσεις) με φίλτρα,
+                  σύνολα, εξαγωγή και εκτύπωση.
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -60,6 +81,20 @@ export default async function ReportsPage() {
               <p className="text-sm text-muted-foreground">
                 Εκτυπώσιμη κατάσταση προμηθειών ανά συνεργάτη και περίοδο, με κατάσταση απόδοσης, σύνολα και
                 υπογραφές.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/dashboard/reports/retention" className="block">
+          <Card className="h-full transition-colors hover:bg-muted/50">
+            <CardHeader>
+              <CardTitle className="text-base">Ανανεωσιμότητα</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Ποσοστό ανανέωσης και ακυρώσεων για τις λήξεις μιας περιόδου, ανά εταιρεία, κλάδο ή συνεργάτη —
+                με τα ασφάλιστρα που κρατήθηκαν και χάθηκαν.
               </p>
             </CardContent>
           </Card>

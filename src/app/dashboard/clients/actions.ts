@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgencyUser, getCurrentAgencyUser } from "@/lib/dal";
 import type { ClientType, InteractionType } from "@/lib/database.types";
 import { isValidAfm, isValidAmka, isValidEmail, isValidIban, normalizePhoneForStorage } from "@/lib/validation";
@@ -15,12 +16,20 @@ export async function searchClients(
   query: string,
   excludeId?: string,
 ): Promise<{ id: string; label: string }[]> {
-  await requireAgencyUser();
-  const supabase = await createSupabaseClient();
+  const agencyUser = await requireAgencyUser();
 
   if (!query.trim()) return [];
 
-  let dbQuery = supabase
+  // Admin client for the same reason as searchPolicies: clients_select is
+  // a per-row policy evaluation and this is a leading-wildcard search over
+  // 6k+ rows that runs in parallel with the (much heavier) policy search —
+  // together they were tripping the statement timeout, which supabase-js
+  // reports as an empty result rather than an error. Scoping re-applied
+  // here in application code.
+  const admin = createAdminClient();
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
+
+  let dbQuery = admin
     .from("clients")
     .select("id, display_name")
     .eq("is_active", true)
@@ -28,6 +37,7 @@ export async function searchClients(
     .order("display_name")
     .limit(20);
 
+  if (!isAdmin) dbQuery = dbQuery.eq("assigned_agent_id", agencyUser.id);
   if (excludeId) dbQuery = dbQuery.neq("id", excludeId);
 
   const { data } = await dbQuery;
@@ -464,6 +474,72 @@ export async function createInteraction(clientId: string, formData: FormData) {
   revalidatePath(`/dashboard/clients/${clientId}`);
 }
 
+// Edit/delete an existing επικοινωνία — its author or an admin only.
+async function canTouchInteraction(
+  supabase: Awaited<ReturnType<typeof createSupabaseClient>>,
+  agencyUser: { id: string; role: string },
+  interactionId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("interactions")
+    .select("agent_id")
+    .eq("id", interactionId)
+    .maybeSingle();
+  if (!data) return false;
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
+  return isAdmin || data.agent_id === agencyUser.id;
+}
+
+export async function updateInteraction(
+  clientId: string,
+  interactionId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  if (!(await canTouchInteraction(supabase, agencyUser, interactionId))) {
+    return { error: "Μόνο όποιος την καταχώρησε (ή διαχειριστής) μπορεί να την αλλάξει." };
+  }
+
+  const { error } = await supabase
+    .from("interactions")
+    .update({
+      interaction_type: ((formData.get("interaction_type") as string) || "note") as InteractionType,
+      subject: (formData.get("subject") as string) || null,
+      notes: (formData.get("notes") as string) || null,
+    })
+    .eq("id", interactionId);
+  if (error) return { error: "Σφάλμα: " + error.message };
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
+export async function deleteInteraction(
+  clientId: string,
+  interactionId: string,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  if (!(await canTouchInteraction(supabase, agencyUser, interactionId))) {
+    return { error: "Μόνο όποιος την καταχώρησε (ή διαχειριστής) μπορεί να τη διαγράψει." };
+  }
+
+  const { error } = await supabase.from("interactions").delete().eq("id", interactionId);
+  if (error) return { error: "Σφάλμα κατά τη διαγραφή: " + error.message };
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: clientId,
+    action: "interaction_deleted",
+    description: "Διαγράφηκε μια καταχώρηση επικοινωνίας.",
+    actorId: agencyUser.id,
+  });
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
 // Never required — a call shows up in the history automatically the
 // moment the phone rings (see incoming-call-listener.tsx / the caller-ID
 // bridge), this just lets someone jot down what was discussed afterward.
@@ -560,6 +636,175 @@ export async function updateClientProfile(
   });
 
   revalidatePath(`/dashboard/clients/${clientId}`);
+}
+
+// Συγχώνευση διπλοεγγραφής — everything the source client owns moves to
+// the target (policies, documents, tickets, tasks, interactions, calls,
+// caller-ID overrides, referral links, activity history), and the source
+// stays behind deactivated with a breadcrumb note, its ΑΦΜ freed for the
+// target. Admin-only and deliberately irreversible-looking in the UI —
+// there is no automatic unmerge.
+export async function mergeClients(
+  sourceId: string,
+  targetId: string,
+): Promise<{ error: string } | { success: string }> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Μόνο διαχειριστής μπορεί να συγχωνεύσει πελάτες." };
+  }
+  if (sourceId === targetId) return { error: "Επίλεξε διαφορετικό πελάτη-στόχο." };
+  const supabase = await createSupabaseClient();
+
+  const [{ data: source }, { data: target }] = await Promise.all([
+    supabase.from("clients").select("id, display_name, afm").eq("id", sourceId).maybeSingle(),
+    supabase.from("clients").select("id, display_name, is_active").eq("id", targetId).maybeSingle(),
+  ]);
+  if (!source || !target) return { error: "Δεν βρέθηκε ο πελάτης." };
+  if (!target.is_active) return { error: "Ο πελάτης-στόχος είναι ανενεργός." };
+
+  // Re-point everything that carries client_id. Order doesn't matter here
+  // (no FK between these), but the source row update goes LAST so a failure
+  // midway leaves the source still visibly active for a retry.
+  const repointErrors: string[] = [];
+  const repoint = async (table: string, column: string) => {
+    const { error } = await supabase
+      .from(table as "policies")
+      .update({ [column]: targetId } as never)
+      .eq(column, sourceId);
+    if (error) repointErrors.push(`${table}: ${error.message}`);
+  };
+  await repoint("policies", "client_id");
+  await repoint("documents", "client_id");
+  await repoint("client_tickets", "client_id");
+  await repoint("tasks", "client_id");
+  await repoint("interactions", "client_id");
+  await repoint("incoming_calls", "client_id");
+  await repoint("phone_owner_overrides", "client_id");
+  await repoint("referral_rewards", "referrer_client_id");
+  await repoint("referral_rewards", "referred_client_id");
+  await repoint("clients", "referred_by_client_id");
+  await repoint("activity_log", "entity_id");
+  // Rows with a uniqueness on (client_id, ...) can collide on the target —
+  // these are derived/log data, safe to drop on the source side.
+  await supabase.from("client_visits").delete().eq("client_id", sourceId);
+  await supabase.from("client_celebrations_log").delete().eq("client_id", sourceId);
+  // A default referral-reward rule keyed to the source referrer collides
+  // with the target's own if both exist — keep the target's.
+  const { data: targetRule } = await supabase
+    .from("referral_reward_default_rule")
+    .select("referrer_client_id")
+    .eq("referrer_client_id", targetId)
+    .maybeSingle();
+  if (targetRule) {
+    await supabase.from("referral_reward_default_rule").delete().eq("referrer_client_id", sourceId);
+  } else {
+    await repoint("referral_reward_default_rule", "referrer_client_id");
+  }
+
+  if (repointErrors.length) {
+    return { error: "Η συγχώνευση δεν ολοκληρώθηκε: " + repointErrors.join(" · ") };
+  }
+
+  const { error: sourceError } = await supabase
+    .from("clients")
+    .update({ is_active: false, afm: null })
+    .eq("id", sourceId);
+  if (sourceError) return { error: "Σφάλμα στην απενεργοποίηση της διπλοεγγραφής: " + sourceError.message };
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: targetId,
+    action: "clients_merged",
+    description: `Συγχωνεύθηκε εδώ η διπλοεγγραφή «${source.display_name ?? sourceId}»${source.afm ? ` (ΑΦΜ ${source.afm})` : ""}.`,
+    actorId: agencyUser.id,
+  });
+
+  revalidatePath("/dashboard/clients");
+  revalidatePath(`/dashboard/clients/${targetId}`);
+  revalidatePath(`/dashboard/clients/${sourceId}`);
+  return { success: `Η συγχώνευση στον/στην «${target.display_name ?? targetId}» ολοκληρώθηκε.` };
+}
+
+// GDPR — ανωνυμοποίηση πελάτη: τα αναγνωριστικά στοιχεία σβήνονται
+// οριστικά, το συναλλακτικό ιστορικό (συμβόλαια, εισπράξεις) μένει ως
+// έχει (νόμιμη βάση τήρησης). Επιτρέπεται μόνο χωρίς ενεργά συμβόλαια.
+export async function anonymizeClient(clientId: string): Promise<{ error: string } | { success: string }> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Μόνο διαχειριστής μπορεί να ανωνυμοποιήσει πελάτη." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const { count: activePolicies } = await supabase
+    .from("policies")
+    .select("id", { count: "exact", head: true })
+    .eq("client_id", clientId)
+    .in("status", ["active", "pending_renewal"]);
+  if ((activePolicies ?? 0) > 0) {
+    return { error: "Ο πελάτης έχει ενεργά συμβόλαια — δεν επιτρέπεται ανωνυμοποίηση." };
+  }
+
+  const { error: clientError } = await supabase
+    .from("clients")
+    .update({
+      afm: null,
+      doy: null,
+      email: null,
+      phone_mobile: null,
+      phone_landline: null,
+      address_street: null,
+      address_number: null,
+      address_city: null,
+      address_region: null,
+      address_postal_code: null,
+      iban: null,
+      notes: "Ανωνυμοποιήθηκε κατόπιν αιτήματος (GDPR).",
+      referral_source: null,
+      referred_by_client_id: null,
+      referrer_relationship: null,
+      marketing_opt_in: false,
+      gdpr_consent_at: null,
+      is_active: false,
+    })
+    .eq("id", clientId);
+  if (clientError) return { error: "Σφάλμα: " + clientError.message };
+
+  await supabase
+    .from("client_individuals")
+    .update({
+      first_name: "ΑΝΩΝΥΜΟΣ",
+      last_name: "ΠΕΛΑΤΗΣ",
+      father_name: null,
+      date_of_birth: null,
+      occupation: null,
+      amka: null,
+      id_document_type: null,
+      id_document_number: null,
+    })
+    .eq("client_id", clientId);
+  await supabase
+    .from("client_legal_entities")
+    .update({
+      company_name: "ΑΝΩΝΥΜΗ ΕΓΓΡΑΦΗ",
+      legal_form: null,
+      kad: null,
+      gemi_number: null,
+      legal_representative_name: null,
+    })
+    .eq("client_id", clientId);
+  await supabase.from("phone_owner_overrides").delete().eq("client_id", clientId);
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: clientId,
+    action: "client_anonymized",
+    description: "Ο πελάτης ανωνυμοποιήθηκε κατόπιν αιτήματος (GDPR).",
+    actorId: agencyUser.id,
+  });
+
+  revalidatePath(`/dashboard/clients/${clientId}`);
+  revalidatePath("/dashboard/clients");
+  return { success: "Ο πελάτης ανωνυμοποιήθηκε." };
 }
 
 // Powers the clients list page's default "last 50 visited" view. Fired

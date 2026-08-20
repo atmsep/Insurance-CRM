@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { PrintButton } from "@/components/print-button";
 import { toggleClientActive } from "../../actions";
 import { CLIENT_TYPE_LABELS } from "../../client-labels";
+import { ClientAdminMenu } from "./client-admin-menu";
 
 export function ClientHeader({
   clientId,
@@ -16,6 +17,7 @@ export function ClientHeader({
   clientType,
   afm,
   isActive,
+  isAdmin = false,
 }: {
   clientId: string;
   clientCode: number;
@@ -23,6 +25,7 @@ export function ClientHeader({
   clientType: string;
   afm: string | null;
   isActive: boolean;
+  isAdmin?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -56,6 +59,7 @@ export function ClientHeader({
           nativeButton={false}
           render={<Link href={`/dashboard/policies/new?client_id=${clientId}`}>Νέο συμβόλαιο</Link>}
         />
+        {isAdmin && <ClientAdminMenu clientId={clientId} clientName={name} />}
       </div>
     </div>
   );

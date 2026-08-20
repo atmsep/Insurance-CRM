@@ -7,6 +7,7 @@ import { updateAgencyUserProfile } from "../../actions";
 import { AgentDetailsCard } from "./_components/agent-details-card";
 import { AgentStatusToggle } from "./_components/agent-status-toggle";
 import { SetPasswordCard } from "./_components/set-password-card";
+import { TransferPortfolioCard } from "./_components/transfer-portfolio-card";
 
 export default async function AgentDetailPage({
   params,
@@ -22,6 +23,12 @@ export default async function AgentDetailPage({
 
   const { data: agent } = await supabase.from("agency_users").select("*").eq("id", id).single();
   if (!agent) notFound();
+
+  const { data: activeAgents } = await supabase
+    .from("agency_users")
+    .select("id, full_name")
+    .eq("is_active", true)
+    .order("full_name");
 
   const [{ count: clientsCount }, { count: activePoliciesCount }] = await Promise.all([
     supabase
@@ -73,6 +80,11 @@ export default async function AgentDetailPage({
             </CardContent>
           </Card>
           <SetPasswordCard userId={agent.id} />
+          <TransferPortfolioCard
+            fromUserId={agent.id}
+            fromUserName={agent.full_name}
+            agents={activeAgents ?? []}
+          />
         </div>
       </div>
     </div>

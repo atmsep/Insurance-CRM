@@ -78,5 +78,25 @@ export async function POST(request: Request) {
     .select("id")
     .single();
 
+  // The live toast only reaches whoever has the app open right now — the
+  // client's own agent gets a persistent in-app notification too, so a call
+  // taken while they were away doesn't vanish.
+  if (clientId) {
+    const { data: client } = await supabase
+      .from("clients")
+      .select("assigned_agent_id")
+      .eq("id", clientId)
+      .maybeSingle();
+    if (client?.assigned_agent_id) {
+      await supabase.from("notifications").insert({
+        recipient_id: client.assigned_agent_id,
+        kind: "incoming_call",
+        title: `Κλήση από ${clientName ?? phoneNumber}`,
+        body: phoneNumber,
+        link: `/dashboard/clients/${clientId}?tab=calls`,
+      });
+    }
+  }
+
   return Response.json({ id: call?.id, matched: !!clientId, client_name: clientName });
 }

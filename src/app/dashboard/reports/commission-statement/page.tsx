@@ -27,6 +27,7 @@ const COMMISSION_TYPE_LABELS: Record<string, string> = {
   renewal: "Ανανέωση",
   override: "Override",
   cancellation: "Ακύρωση",
+  endorsement: "Πρόσθετη πράξη",
 };
 
 type SingleOrMany<T> = T | T[] | null;

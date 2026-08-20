@@ -1,11 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { updateInteraction, deleteInteraction } from "../../actions";
 import {
   Table,
   TableBody,
@@ -58,10 +66,98 @@ const COLUMNS: Column[] = [
   },
 ];
 
+function InteractionRowActions({ clientId, interaction }: { clientId: string; interaction: Interaction }) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>
+        Επεξεργασία
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="w-full sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Επεξεργασία επικοινωνίας</DialogTitle>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              startTransition(async () => {
+                const result = await updateInteraction(clientId, interaction.id, formData);
+                if (result?.error) {
+                  toast.error(result.error);
+                } else {
+                  toast.success("Η επικοινωνία ενημερώθηκε.");
+                  setOpen(false);
+                }
+              });
+            }}
+          >
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`itype-${interaction.id}`}>Τύπος</Label>
+              <select
+                id={`itype-${interaction.id}`}
+                name="interaction_type"
+                defaultValue={interaction.interaction_type}
+                className="h-9 rounded-md border border-input bg-transparent px-2.5 text-sm"
+              >
+                {Object.entries(INTERACTION_TYPE_LABELS).map(([id, label]) => (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`isubject-${interaction.id}`}>Θέμα</Label>
+              <Input id={`isubject-${interaction.id}`} name="subject" defaultValue={interaction.subject ?? ""} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`inotes-${interaction.id}`}>Σημειώσεις</Label>
+              <Input id={`inotes-${interaction.id}`} name="notes" defaultValue={interaction.notes ?? ""} />
+            </div>
+            <div className="flex items-center justify-between pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                className="text-destructive hover:text-destructive"
+                onClick={() => {
+                  if (!window.confirm("Οριστική διαγραφή της επικοινωνίας;")) return;
+                  startTransition(async () => {
+                    const result = await deleteInteraction(clientId, interaction.id);
+                    if (result?.error) {
+                      toast.error(result.error);
+                    } else {
+                      toast.success("Η επικοινωνία διαγράφηκε.");
+                      setOpen(false);
+                    }
+                  });
+                }}
+              >
+                Διαγραφή
+              </Button>
+              <Button type="submit" size="sm" disabled={pending}>
+                {pending ? "Αποθήκευση..." : "Αποθήκευση"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export function InteractionsTab({
+  clientId,
   interactions,
   addInteractionAction,
 }: {
+  clientId: string;
   interactions: Interaction[];
   addInteractionAction: (formData: FormData) => void | Promise<void>;
 }) {
@@ -123,6 +219,7 @@ export function InteractionsTab({
                   />
                 </TableHead>
               ))}
+              <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -140,11 +237,14 @@ export function InteractionsTab({
                   <TableCell>{interaction.subject ?? "—"}</TableCell>
                   <TableCell className="max-w-xs truncate">{interaction.notes ?? "—"}</TableCell>
                   <TableCell>{interaction.follow_up_needed ? "Ναι" : "—"}</TableCell>
+                  <TableCell>
+                    <InteractionRowActions clientId={clientId} interaction={interaction} />
+                  </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={6} className="text-center text-muted-foreground">
                   {interactions.length
                     ? "Καμία εγγραφή δεν ταιριάζει με τα φίλτρα."
                     : "Δεν υπάρχει ιστορικό επικοινωνίας."}

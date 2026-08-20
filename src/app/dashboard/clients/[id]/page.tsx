@@ -167,6 +167,7 @@ export default async function ClientDetailPage({
         clientType={client.client_type}
         afm={client.afm}
         isActive={client.is_active}
+        isAdmin={isAdmin}
       />
 
       <Tabs defaultValue="details">
@@ -204,7 +205,7 @@ export default async function ClientDetailPage({
         </TabsContent>
 
         <TabsContent value="interactions" className="pt-4">
-          <InteractionsTab interactions={interactions ?? []} addInteractionAction={addInteractionAction} />
+          <InteractionsTab clientId={id} interactions={interactions ?? []} addInteractionAction={addInteractionAction} />
         </TabsContent>
 
         <TabsContent value="calls" className="pt-4">

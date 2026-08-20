@@ -136,6 +136,7 @@ export default async function RemittancesPage({
   let commissionTotalPages = 1;
   let premiumTotalCount = 0;
   let commissionTotalCount = 0;
+  const uncollectedByMovement = new Map<string, number>();
 
   if (remitStatus === "pending") {
     // PostgREST silently caps a response at 1000 rows — an unchunked fetch
@@ -167,6 +168,22 @@ export default async function RemittancesPage({
     ]);
 
     premiumRows = rawPremiumPending;
+
+    // Απόδοση ασφαλίστρων που δεν έχουν καν εισπραχθεί είναι σχεδόν πάντα
+    // λάθος στιγμή — flag each pending movement's still-uncollected balance
+    // so the worklist shows it next to the amount instead of hiding it.
+    for (let start = 0; start < premiumRows.length; start += 200) {
+      const idsChunk = premiumRows.slice(start, start + 200).map((m) => m.id);
+      const { data: insts } = await admin
+        .from("policy_installments")
+        .select("movement_id, amount, paid_amount")
+        .in("movement_id", idsChunk);
+      for (const i of insts ?? []) {
+        if (!i.movement_id) continue;
+        const remaining = Math.max(i.amount - (i.paid_amount ?? 0), 0);
+        uncollectedByMovement.set(i.movement_id, (uncollectedByMovement.get(i.movement_id) ?? 0) + remaining);
+      }
+    }
 
     // Only movements that actually carry a nonzero outgoing commission are
     // worth listing — matches the production report's own precedent for
@@ -267,10 +284,21 @@ export default async function RemittancesPage({
     bulkSuccessLabel?: string;
     mode: "pending" | "done";
     getRemittedAt?: (m: T) => string | null | undefined;
+    getUncollected?: (m: T) => number;
     totalPages?: number;
   }) {
-    const { rows, amountLabel, getAmount, action, bulkAction, bulkSuccessLabel, mode, getRemittedAt, totalPages } =
-      opts;
+    const {
+      rows,
+      amountLabel,
+      getAmount,
+      action,
+      bulkAction,
+      bulkSuccessLabel,
+      mode,
+      getRemittedAt,
+      getUncollected,
+      totalPages,
+    } = opts;
     const ids = rows.map((m) => m.id);
 
     const table = (
@@ -368,6 +396,14 @@ export default async function RemittancesPage({
                       <Badge variant={mode === "pending" ? "warning" : "success"}>
                         {getAmount(m).toFixed(2)} €
                       </Badge>
+                      {(() => {
+                        const uncollected = getUncollected?.(m) ?? 0;
+                        return uncollected > 0 ? (
+                          <p className="mt-1 text-xs text-destructive">
+                            Ανείσπρακτο {uncollected.toFixed(2)} €
+                          </p>
+                        ) : null;
+                      })()}
                     </TableCell>
                     <TableCell>{agent?.full_name ?? "—"}</TableCell>
                     <TableCell>
@@ -475,6 +511,7 @@ export default async function RemittancesPage({
                   bulkAction: bulkRemitPremiums,
                   bulkSuccessLabel: "Αποδόθηκαν ασφάλιστρα",
                   mode: "pending",
+                  getUncollected: (m) => uncollectedByMovement.get(m.id) ?? 0,
                 })
               : renderTable({
                   rows: premiumRows,

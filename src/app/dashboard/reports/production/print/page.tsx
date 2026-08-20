@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PrintButton } from "@/components/print-button";
@@ -36,12 +35,12 @@ export default async function ProductionPrintPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const agencyUser = await requireAgencyUser();
-  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
-    redirect("/dashboard");
-  }
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
 
   const sp = await searchParams;
   const filters = parseProductionFilters(sp);
+  // Same self-scope forcing as the report page and the CSV export.
+  if (!isAdmin) filters.agentIds = [agencyUser.id];
   const admin = createAdminClient();
 
   let countQuery = admin.from("production_entries").select("id", { count: "exact", head: true });

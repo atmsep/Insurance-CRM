@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { toCsv, csvResponse } from "@/lib/csv";
@@ -9,13 +8,14 @@ import { fetchAllProductionEntries } from "../data";
 
 export async function GET(request: Request) {
   const agencyUser = await requireAgencyUser();
-  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
-    redirect("/dashboard");
-  }
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
 
   const admin = createAdminClient();
   const { searchParams: sp } = new URL(request.url);
   const filters = parseProductionFilters(Object.fromEntries(sp.entries()));
+  // Same self-scope forcing as the report page — an agent exports only
+  // their own production regardless of the URL's filters.
+  if (!isAdmin) filters.agentIds = [agencyUser.id];
 
   const rows = await fetchAllProductionEntries(admin, filters);
 

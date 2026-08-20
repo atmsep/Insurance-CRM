@@ -37,6 +37,12 @@ export async function uploadDocument(
   if (!file || file.size === 0) {
     return { error: "Επίλεξε ένα αρχείο." };
   }
+  // Supabase Storage default object cap is 50MB anyway — fail with a clear
+  // message well before that instead of a cryptic storage error.
+  const MAX_BYTES = 25 * 1024 * 1024;
+  if (file.size > MAX_BYTES) {
+    return { error: "Το αρχείο ξεπερνά τα 25MB — συμπίεσέ το ή χώρισέ το." };
+  }
 
   const documentType = (formData.get("document_type") as string) || null;
   const safeName = file.name.replace(/[^\w.\-]+/g, "_");

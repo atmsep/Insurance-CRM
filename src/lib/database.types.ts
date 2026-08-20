@@ -21,7 +21,7 @@ export type PaymentFrequency =
   | "annual";
 export type PaymentStatus = "pending" | "paid" | "overdue" | "partially_paid" | "cancelled";
 export type InteractionType = "call" | "email" | "meeting" | "sms" | "note" | "other";
-export type CommissionType = "new_business" | "renewal" | "override" | "cancellation";
+export type CommissionType = "new_business" | "renewal" | "override" | "cancellation" | "endorsement";
 export type CommissionStatus = "pending" | "invoiced" | "paid" | "cancelled";
 export type ReferralRewardStatus = "pending" | "paid" | "cancelled";
 export type ReferralRewardCalcType = "percent" | "fixed";
@@ -732,6 +732,25 @@ export interface Database {
           name: string;
         };
         Update: Partial<Database["public"]["Tables"]["commission_agreements"]["Row"]>;
+      };
+      notifications: {
+        Row: {
+          id: string;
+          recipient_id: string;
+          kind: string;
+          title: string;
+          body: string | null;
+          link: string | null;
+          actor_id: string | null;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["notifications"]["Row"]> & {
+          recipient_id: string;
+          kind: string;
+          title: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["notifications"]["Row"]>;
       };
       tasks: {
         Row: {

@@ -90,6 +90,14 @@ async function sendBatch(
     if (result.ok) {
       sent++;
       await supabase.from("policies").update({ [sentColumn]: new Date().toISOString() }).eq("id", p.id);
+      // Trace on the policy's Δραστηριότητα — actor null (automated send).
+      await supabase.from("activity_log").insert({
+        entity_type: "policy",
+        entity_id: p.id,
+        action: "email_sent",
+        description: `Στάλθηκε αυτόματο email υπενθύμισης λήξης (${daysRemaining} ημ.) στο ${client.email}.`,
+        actor_id: null,
+      });
     } else {
       errors.push(`${p.policy_number}: ${result.error}`);
     }

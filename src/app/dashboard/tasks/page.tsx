@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createTask, completeTask } from "./actions";
 import { PrioritySelect } from "./priority-select";
+import { TaskActions } from "./task-actions";
 import { taskPriorityVariant } from "@/lib/status-badge";
 import { CelebrationWishDialog } from "./celebration-wish-dialog";
 import {
@@ -34,6 +35,8 @@ type TaskRow = {
   due_date: string;
   priority: string;
   task_type: string;
+  assigned_to: string;
+  agency_users: { full_name: string } | { full_name: string }[] | null;
   clients: { email: string | null; display_name: string | null } | { email: string | null; display_name: string | null }[] | null;
 };
 
@@ -42,21 +45,25 @@ const LIST_CAP = 300;
 export default async function TasksPage() {
   const supabase = await createClient();
 
-  const [{ data: tasks, count }, templates] = await Promise.all([
+  const [{ data: tasks, count }, { data: agents }, templates] = await Promise.all([
     supabase
       .from("tasks")
-      .select("id, title, due_date, priority, task_type, clients(email, display_name)", {
-        count: "exact",
-      })
+      .select(
+        "id, title, due_date, priority, task_type, assigned_to, " +
+          "agency_users!tasks_assigned_to_fkey(full_name), clients(email, display_name)",
+        { count: "exact" },
+      )
       .eq("status", "pending")
       .order("due_date", { ascending: true })
       .limit(LIST_CAP),
+    supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
     getCelebrationTemplates(supabase),
   ]);
   const isTruncated = (count ?? 0) > LIST_CAP;
 
   const rows = ((tasks ?? []) as unknown as TaskRow[]).map((task) => {
     const client = Array.isArray(task.clients) ? (task.clients[0] ?? null) : task.clients;
+    const assignee = Array.isArray(task.agency_users) ? (task.agency_users[0] ?? null) : task.agency_users;
     const celebration = isCelebrationType(task.task_type)
       ? {
           icon: CELEBRATION_ICONS[task.task_type],
@@ -65,7 +72,15 @@ export default async function TasksPage() {
           ...buildCelebrationWish(templates[task.task_type], client?.display_name ?? "τον πελάτη"),
         }
       : null;
-    return { id: task.id, title: task.title, due_date: task.due_date, priority: task.priority, celebration };
+    return {
+      id: task.id,
+      title: task.title,
+      due_date: task.due_date,
+      priority: task.priority,
+      assignedTo: task.assigned_to,
+      assigneeName: assignee?.full_name ?? null,
+      celebration,
+    };
   });
 
   return (
@@ -101,6 +116,22 @@ export default async function TasksPage() {
               <Input id="due_date" name="due_date" type="date" required className="w-40" />
             </div>
             <PrioritySelect />
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="assigned_to">Ανάθεση σε</Label>
+              <select
+                id="assigned_to"
+                name="assigned_to"
+                defaultValue=""
+                className="h-9 rounded-md border border-input bg-transparent px-2.5 text-sm"
+              >
+                <option value="">Εμένα</option>
+                {(agents ?? []).map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Button type="submit">Προσθήκη</Button>
           </form>
         </CardContent>
@@ -113,7 +144,10 @@ export default async function TasksPage() {
               <CardContent className="flex items-center justify-between gap-4 py-4">
                 <div>
                   <p className="font-medium">{task.title}</p>
-                  <p className="text-sm text-muted-foreground">{formatDate(task.due_date)}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDate(task.due_date)}
+                    {task.assigneeName ? ` · ${task.assigneeName}` : ""}
+                  </p>
                 </div>
                 <div className="flex items-center gap-3">
                   {task.celebration && (
@@ -136,6 +170,14 @@ export default async function TasksPage() {
                       </Button>
                     </CelebrationWishDialog>
                   )}
+                  <TaskActions
+                    taskId={task.id}
+                    title={task.title}
+                    dueDate={task.due_date}
+                    priority={task.priority}
+                    assignedTo={task.assignedTo}
+                    agents={agents ?? []}
+                  />
                   <form action={completeTask.bind(null, task.id)}>
                     <Button type="submit" size="sm" variant="outline">
                       Ολοκληρώθηκε

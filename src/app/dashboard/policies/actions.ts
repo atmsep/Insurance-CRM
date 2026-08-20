@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgencyUser, getCurrentAgencyUser } from "@/lib/dal";
 import { sendEmail } from "@/lib/email";
 import { sendSms, sendViber, toYubotoPhoneNumber } from "@/lib/yuboto";
@@ -11,38 +12,88 @@ import type { PaymentFrequency } from "@/lib/database.types";
 import { POLICY_STATUS_LABELS } from "./policy-labels";
 import { createMovementForPolicy } from "./movements-actions";
 
+type PolicySearchRow = {
+  id: string;
+  policy_number: string;
+  risk_label: string | null;
+  clients: { display_name: string | null } | { display_name: string | null }[] | null;
+};
+
+type PolicySearchQuery = {
+  eq(column: string, value: unknown): PolicySearchQuery;
+  order(column: string, opts: { ascending: boolean }): PolicySearchQuery;
+  limit(count: number): PromiseLike<{ data: PolicySearchRow[] | null }>;
+};
+
 export type PolicyFormState = { error: string; field?: string } | undefined;
 export type SendEmailState = { error: string } | { success: string } | undefined;
 export type SendMessageState = { error: string } | { success: string } | undefined;
 
 export async function searchPolicies(query: string): Promise<{ id: string; label: string }[]> {
-  await requireAgencyUser();
-  const supabase = await createSupabaseClient();
+  const agencyUser = await requireAgencyUser();
 
   if (!query.trim()) return [];
 
+  // Admin client, NOT the RLS-bound one: policies_select evaluates
+  // is_agency_admin()/current_agency_user_id() per row, and across 20k+
+  // policies these leading-wildcard searches hit the statement timeout
+  // (57014) — confirmed live, all three queries cancelled at ~8s. Because
+  // supabase-js returns `data: null` on error, the search then silently
+  // rendered "κανένα αποτέλεσμα" instead of failing loudly (the exact trap
+  // documented in migration 0066). Per-agent scoping is re-applied below in
+  // application code, so a plain agent still sees only their own book.
+  const admin = createAdminClient();
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
+  // Narrow structural view of the PostgREST builder: chaining three of
+  // them through a generic helper in one scope blows past TS's
+  // instantiation-depth limit (TS2589). Runtime behavior is unchanged —
+  // these are the same .eq/.order/.limit calls.
+  const scope = (q: unknown) => {
+    const builder = q as PolicySearchQuery;
+    return isAdmin ? builder : builder.eq("assigned_agent_id", agencyUser.id);
+  };
+
   // PostgREST can't OR a base-table column against an embedded-table column
-  // in one filter tree, so this runs two queries (by policy number, by
-  // client name) and merges/dedupes the results.
-  const [byNumber, byClient] = await Promise.all([
-    supabase
-      .from("policies")
-      .select("id, policy_number, clients(display_name)")
-      .ilike("policy_number", `%${query}%`)
+  // in one filter tree, so this runs three queries (by policy number, by
+  // risk label — a plate/address is how vehicle clients usually identify
+  // themselves on the phone — and by client name) and merges/dedupes.
+  // toGreekPlate so a plate typed with Latin lookalikes still matches the
+  // Greek-normalized stored value.
+  const [byNumber, byRisk, byClient] = await Promise.all([
+    scope(
+      admin
+        .from("policies")
+        .select("id, policy_number, risk_label, clients(display_name)")
+        .ilike("policy_number", `%${query}%`),
+    )
       .order("created_at", { ascending: false })
       .limit(20),
-    supabase
-      .from("policies")
-      .select("id, policy_number, clients!inner(display_name)")
-      .ilike("clients.display_name", `%${query}%`)
+    scope(
+      admin
+        .from("policies")
+        .select("id, policy_number, risk_label, clients(display_name)")
+        .ilike("risk_label", `%${toGreekPlate(query) ?? query}%`),
+    )
+      .order("created_at", { ascending: false })
+      .limit(20),
+    scope(
+      admin
+        .from("policies")
+        .select("id, policy_number, risk_label, clients!inner(display_name)")
+        .ilike("clients.display_name", `%${query}%`),
+    )
       .order("created_at", { ascending: false })
       .limit(20),
   ]);
 
   const merged = new Map<string, { id: string; label: string }>();
-  for (const p of [...(byNumber.data ?? []), ...(byClient.data ?? [])]) {
+  for (const p of [...(byNumber.data ?? []), ...(byRisk.data ?? []), ...(byClient.data ?? [])]) {
     const client = p.clients as unknown as { display_name: string | null } | null;
-    merged.set(p.id, { id: p.id, label: `${p.policy_number} — ${client?.display_name ?? "—"}` });
+    const risk = (p as { risk_label?: string | null }).risk_label;
+    merged.set(p.id, {
+      id: p.id,
+      label: `${p.policy_number} — ${client?.display_name ?? "—"}${risk ? ` (${risk})` : ""}`,
+    });
   }
 
   return [...merged.values()].slice(0, 20);
@@ -393,6 +444,7 @@ export async function createPolicy(
     brokerOfficeId,
     assignedAgentId,
     createdBy: agencyUser.id,
+    paymentFrequency,
   });
 
   await logActivity(supabase, {
@@ -669,7 +721,7 @@ export async function sendPolicyEmail(
   _prevState: SendEmailState,
   formData: FormData,
 ): Promise<SendEmailState> {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
 
   const to = formData.get("to") as string;
   const subject = formData.get("subject") as string;
@@ -684,6 +736,17 @@ export async function sendPolicyEmail(
     return { error: "Σφάλμα αποστολής: " + result.error };
   }
 
+  // Every outgoing message leaves a trace — "τι στείλαμε και πότε" is
+  // answerable from the Δραστηριότητα tab instead of nowhere.
+  const supabase = await createSupabaseClient();
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "email_sent",
+    description: `Στάλθηκε email στο ${to} — «${subject}».`,
+    actorId: agencyUser.id,
+  });
+
   revalidatePath(`/dashboard/policies/${policyId}`);
   return { success: "Το email στάλθηκε." };
 }
@@ -693,7 +756,7 @@ export async function sendPolicySms(
   _prevState: SendMessageState,
   formData: FormData,
 ): Promise<SendMessageState> {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
 
   const to = formData.get("to") as string;
   const text = formData.get("text") as string;
@@ -705,6 +768,15 @@ export async function sendPolicySms(
   const result = await sendSms([toYubotoPhoneNumber(to)], { sender, text });
   if (!result.ok) return { error: "Σφάλμα αποστολής: " + result.error };
 
+  const supabase = await createSupabaseClient();
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "sms_sent",
+    description: `Στάλθηκε SMS στο ${to} — «${text.slice(0, 80)}${text.length > 80 ? "…" : ""}».`,
+    actorId: agencyUser.id,
+  });
+
   revalidatePath(`/dashboard/policies/${policyId}`);
   return { success: "Το SMS στάλθηκε." };
 }
@@ -714,7 +786,7 @@ export async function sendPolicyViber(
   _prevState: SendMessageState,
   formData: FormData,
 ): Promise<SendMessageState> {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
 
   const to = formData.get("to") as string;
   const text = formData.get("text") as string;
@@ -725,6 +797,15 @@ export async function sendPolicyViber(
 
   const result = await sendViber([toYubotoPhoneNumber(to)], { sender, text });
   if (!result.ok) return { error: "Σφάλμα αποστολής: " + result.error };
+
+  const supabase = await createSupabaseClient();
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: policyId,
+    action: "viber_sent",
+    description: `Στάλθηκε Viber στο ${to} — «${text.slice(0, 80)}${text.length > 80 ? "…" : ""}».`,
+    actorId: agencyUser.id,
+  });
 
   revalidatePath(`/dashboard/policies/${policyId}`);
   return { success: "Το μήνυμα Viber στάλθηκε." };

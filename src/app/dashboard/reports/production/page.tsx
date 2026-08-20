@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Button } from "@/components/ui/button";
@@ -91,21 +90,23 @@ export default async function ProductionReportPage({
   }>;
 }) {
   const agencyUser = await requireAgencyUser();
-  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
-    redirect("/dashboard");
-  }
+  // Admin sees everyone; an agent sees ONLY their own production — the
+  // filter is forced server-side, not just defaulted in the UI.
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
 
   const sp = await searchParams;
   const filters = parseProductionFilters(sp);
+  if (!isAdmin) filters.agentIds = [agencyUser.id];
   const admin = createAdminClient();
   const page = Math.max(1, Number(sp.page) || 1);
   const perPage = parsePerPage(sp.per_page);
 
-  const [{ data: agents }, { data: carriers }, { data: insuranceLines }] = await Promise.all([
+  const [{ data: allAgents }, { data: carriers }, { data: insuranceLines }] = await Promise.all([
     admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
     admin.from("carriers").select("id, name").order("name"),
     admin.from("insurance_lines").select("id, name_el").order("sort_order"),
   ]);
+  const agents = isAdmin ? allAgents : (allAgents ?? []).filter((a) => a.id === agencyUser.id);
 
   // Σύνολα for the whole filtered list (migration 0090) — a dedicated
   // aggregate RPC, not a sum of the current page's rows, since the table

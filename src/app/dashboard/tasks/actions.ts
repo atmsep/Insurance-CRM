@@ -6,6 +6,8 @@ import { requireAgencyUser } from "@/lib/dal";
 import type { TaskPriority } from "@/lib/database.types";
 import { sendEmail } from "@/lib/email";
 import { isCelebrationType } from "@/lib/celebrations";
+import { logActivity } from "@/lib/activity-log";
+import { notify } from "@/lib/notifications";
 
 export async function createTask(formData: FormData) {
   const agencyUser = await requireAgencyUser();
@@ -15,6 +17,9 @@ export async function createTask(formData: FormData) {
   const dueDate = formData.get("due_date") as string;
   const priority = (formData.get("priority") as TaskPriority) || "medium";
   const clientId = (formData.get("client_id") as string) || null;
+  // Optional assignment to a colleague — the daily "πάρε τον πελάτη Χ" that
+  // one person books for another. Defaults to self, exactly as before.
+  const assignedTo = (formData.get("assigned_to") as string) || agencyUser.id;
 
   if (!title || !dueDate) return;
 
@@ -23,10 +28,19 @@ export async function createTask(formData: FormData) {
     due_date: dueDate,
     priority,
     client_id: clientId,
-    assigned_to: agencyUser.id,
+    assigned_to: assignedTo,
     created_by: agencyUser.id,
   });
   if (error) return;
+
+  await notify(supabase, {
+    recipientId: assignedTo,
+    actorId: agencyUser.id,
+    kind: "task_assigned",
+    title: "Σου ανατέθηκε υπενθύμιση",
+    body: `${title} — έως ${dueDate}`,
+    link: "/dashboard/tasks",
+  });
 
   revalidatePath("/dashboard/tasks");
   revalidatePath("/dashboard/tasks/calendar");
@@ -63,6 +77,84 @@ export async function completeTask(taskId: string) {
   revalidatePath("/dashboard");
 }
 
+// Shared permission rule for touching an existing υπενθύμιση: its assignee,
+// its creator, or an admin — same boundary completeTask already enforces.
+async function canTouchTask(
+  supabase: Awaited<ReturnType<typeof createSupabaseClient>>,
+  agencyUser: { id: string; role: string },
+  taskId: string,
+): Promise<{ ok: boolean }> {
+  const { data: task } = await supabase
+    .from("tasks")
+    .select("assigned_to, created_by")
+    .eq("id", taskId)
+    .maybeSingle();
+  if (!task) return { ok: false };
+  const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
+  return { ok: isAdmin || task.assigned_to === agencyUser.id || task.created_by === agencyUser.id };
+}
+
+// Επεξεργασία υπενθύμισης — τίτλος, ημερομηνία (μετάθεση), προτεραιότητα
+// και ανάθεση σε άλλον συνεργάτη.
+export async function updateTask(
+  taskId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const allowed = await canTouchTask(supabase, agencyUser, taskId);
+  if (!allowed.ok) return { error: "Δεν έχεις δικαίωμα σε αυτή την υπενθύμιση." };
+
+  const title = (formData.get("title") as string) || "";
+  const dueDate = (formData.get("due_date") as string) || "";
+  const priority = ((formData.get("priority") as string) || "medium") as TaskPriority;
+  const assignedTo = (formData.get("assigned_to") as string) || null;
+  if (!title.trim() || !dueDate) return { error: "Συμπλήρωσε τίτλο και ημερομηνία." };
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      title: title.trim(),
+      due_date: dueDate,
+      priority,
+      ...(assignedTo ? { assigned_to: assignedTo } : {}),
+    })
+    .eq("id", taskId);
+  if (error) return { error: "Σφάλμα: " + error.message };
+
+  // Only tell someone when the task actually became theirs.
+  if (assignedTo && assignedTo !== agencyUser.id) {
+    await notify(supabase, {
+      recipientId: assignedTo,
+      actorId: agencyUser.id,
+      kind: "task_assigned",
+      title: "Σου ανατέθηκε υπενθύμιση",
+      body: `${title.trim()} — έως ${dueDate}`,
+      link: "/dashboard/tasks",
+    });
+  }
+
+  revalidatePath("/dashboard/tasks");
+  revalidatePath("/dashboard/tasks/calendar");
+  revalidatePath("/dashboard");
+}
+
+export async function deleteTask(taskId: string): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  const supabase = await createSupabaseClient();
+
+  const allowed = await canTouchTask(supabase, agencyUser, taskId);
+  if (!allowed.ok) return { error: "Δεν έχεις δικαίωμα σε αυτή την υπενθύμιση." };
+
+  const { error } = await supabase.from("tasks").delete().eq("id", taskId);
+  if (error) return { error: "Σφάλμα κατά τη διαγραφή: " + error.message };
+
+  revalidatePath("/dashboard/tasks");
+  revalidatePath("/dashboard/tasks/calendar");
+  revalidatePath("/dashboard");
+}
+
 export type SendWishState = { error: string } | { success: string } | undefined;
 
 // Sending a name-day/birthday wish is a deliberate manual click on the
@@ -74,7 +166,7 @@ export async function sendCelebrationWish(
   _prevState: SendWishState,
   formData: FormData,
 ): Promise<SendWishState> {
-  await requireAgencyUser();
+  const agencyUser = await requireAgencyUser();
   const supabase = await createSupabaseClient();
 
   const subject = formData.get("subject") as string;
@@ -107,6 +199,14 @@ export async function sendCelebrationWish(
   if (!result.ok) {
     return { error: "Σφάλμα αποστολής: " + result.error };
   }
+
+  await logActivity(supabase, {
+    entityType: "client",
+    entityId: task.client_id,
+    action: "email_sent",
+    description: `Στάλθηκαν ευχές στο ${client.email} — «${subject}».`,
+    actorId: agencyUser.id,
+  });
 
   await supabase
     .from("client_celebrations_log")

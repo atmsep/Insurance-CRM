@@ -8,6 +8,7 @@ import { logActivity } from "@/lib/activity-log";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { installmentRemaining, isBillablePolicyStatus } from "./balance";
 import { POLICY_MOVEMENT_KIND_LABELS } from "./movement-labels";
+import { buildInstallmentSchedule } from "./installment-schedule";
 import type { PolicyMovementKind } from "@/lib/database.types";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseClient>>;
@@ -418,7 +419,7 @@ export async function updateIncomingCommission(
       carrier_id: policy.carrier_id,
       policy_installment_id: installmentId,
       policy_movement_id: installmentId ? null : movementId,
-      commission_type: movement.kind === "renewal" ? "renewal" : movement.kind === "cancellation" ? "cancellation" : "new_business",
+      commission_type: movement.kind === "renewal" ? "renewal" : movement.kind === "cancellation" ? "cancellation" : movement.kind === "endorsement" ? "endorsement" : "new_business",
       direction: "incoming",
       base_amount: movement.premium_net,
       commission_rate_percent: ratePercent,
@@ -493,7 +494,7 @@ export async function updateOutgoingCommission(
       carrier_id: policy.carrier_id,
       policy_installment_id: installmentId,
       policy_movement_id: installmentId ? null : movementId,
-      commission_type: movement.kind === "renewal" ? "renewal" : movement.kind === "cancellation" ? "cancellation" : "new_business",
+      commission_type: movement.kind === "renewal" ? "renewal" : movement.kind === "cancellation" ? "cancellation" : movement.kind === "endorsement" ? "endorsement" : "new_business",
       direction: "outgoing",
       payee_id: payeeId,
       base_amount: movement.premium_net,
@@ -594,6 +595,8 @@ async function getOutgoingRate(
 // legacy-chain backfill movement) and createManualMovement's callers.
 // Commission insertion is skipped (not zeroed) when no rate resolves,
 // matching the old behavior — an admin can still set one by hand later.
+// δόσεις follow the policy's payment frequency (one per period in the
+// term); commission always hangs off the FIRST one.
 export async function createMovementForPolicy(
   supabase: SupabaseServerClient,
   params: {
@@ -611,6 +614,7 @@ export async function createMovementForPolicy(
     brokerOfficeId: string | null;
     assignedAgentId: string;
     createdBy: string;
+    paymentFrequency?: string | null;
   },
 ): Promise<string | null> {
   const { data: movement, error } = await supabase
@@ -632,17 +636,26 @@ export async function createMovementForPolicy(
     .single();
   if (error || !movement) return null;
 
-  const { data: installment } = await supabase
+  const schedule = buildInstallmentSchedule(
+    params.startDate,
+    params.endDate,
+    params.premiumGross,
+    params.paymentFrequency,
+  );
+  const { data: insertedInstallments } = await supabase
     .from("policy_installments")
-    .insert({
-      policy_id: params.policyId,
-      movement_id: movement.id,
-      installment_number: 1,
-      due_date: params.startDate,
-      amount: params.premiumGross,
-    })
-    .select("id")
-    .single();
+    .insert(
+      schedule.map((s) => ({
+        policy_id: params.policyId,
+        movement_id: movement.id,
+        installment_number: s.installmentNumber,
+        due_date: s.dueDate,
+        amount: s.amount,
+      })),
+    )
+    .select("id, installment_number");
+  const installment =
+    (insertedInstallments ?? []).sort((a, b) => a.installment_number - b.installment_number)[0] ?? null;
 
   const baseAmount = params.premiumNet ?? 0;
 
@@ -920,6 +933,14 @@ export async function deleteInstallment(installmentId: string): Promise<{ error:
   const { error } = await supabase.from("policy_installments").delete().eq("id", installmentId);
   if (error) return { error: "Δεν ήταν δυνατή η διαγραφή — υπάρχει συνδεδεμένη προμήθεια." };
 
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: installment.policy_id,
+    action: "installment_deleted",
+    description: "Διαγράφηκε μια δόση χωρίς εισπράξεις.",
+    actorId: agencyUser.id,
+  });
+
   revalidatePath(`/dashboard/policies/${installment.policy_id}`);
 }
 
@@ -1095,6 +1116,14 @@ export async function deleteMovement(movementId: string): Promise<{ error: strin
   const { error } = await supabase.from("policy_movements").delete().eq("id", movementId);
   if (error) return { error: "Δεν ήταν δυνατή η διαγραφή της κίνησης." };
 
+  await logActivity(supabase, {
+    entityType: "policy",
+    entityId: movement.policy_id,
+    action: "movement_deleted",
+    description: "Διαγράφηκε μια κίνηση (χωρίς εισπράξεις/αποδόσεις) μαζί με δόσεις/προμήθειές της.",
+    actorId: agencyUser.id,
+  });
+
   revalidatePath(`/dashboard/policies/${movement.policy_id}`);
 }
 
@@ -1161,7 +1190,32 @@ export async function createManualMovement(
 
   if (error || !movement) return { error: "Σφάλμα κατά τη δημιουργία κίνησης." };
 
-  if (isCancellation && policy) {
+  // A negative (πιστωτικό) endorsement gets NO δόση — it's a refund owed to
+  // the client, not a receivable, same treatment as Ακύρωση (migration 0101
+  // relaxed the premium check for exactly this case).
+  let installmentId: string | null = null;
+  if (!isCancellation && premiumGross >= 0) {
+    const { data: inst } = await supabase
+      .from("policy_installments")
+      .insert({
+        policy_id: policyId,
+        movement_id: movement.id,
+        installment_number: 1,
+        due_date: startDate,
+        amount: premiumGross,
+      })
+      .select("id")
+      .single();
+    installmentId = inst?.id ?? null;
+  }
+
+  // Ακύρωση and Πρόσθετη πράξη both earn/claw back commission at the
+  // standard resolved rates, off their own (possibly negative) net —
+  // anchored on the δόση when one exists, on the movement itself otherwise
+  // (migrations 0087, 0103/0104).
+  const isEndorsement = kind === "endorsement";
+  if ((isCancellation || isEndorsement) && policy) {
+    const commissionType = isCancellation ? "cancellation" : "endorsement";
     const baseAmount = premiumNet ?? premiumGross;
     const [referenceRatePercent, contractRatePercent] = await Promise.all([
       getCarrierDefaultRate(supabase, policy.carrier_id, policy.insurance_line_id),
@@ -1175,8 +1229,9 @@ export async function createManualMovement(
         policy_id: policyId,
         agent_id: policy.assigned_agent_id ?? agencyUser.id,
         carrier_id: policy.carrier_id,
-        policy_movement_id: movement.id,
-        commission_type: "cancellation",
+        policy_installment_id: installmentId,
+        policy_movement_id: installmentId ? null : movement.id,
+        commission_type: commissionType,
         direction: "incoming",
         base_amount: baseAmount,
         commission_rate_percent: appliedRate,
@@ -1197,8 +1252,9 @@ export async function createManualMovement(
             policy_id: policyId,
             agent_id: policy.assigned_agent_id,
             carrier_id: policy.carrier_id,
-            policy_movement_id: movement.id,
-            commission_type: "cancellation",
+            policy_installment_id: installmentId,
+            policy_movement_id: installmentId ? null : movement.id,
+            commission_type: commissionType,
             direction: "outgoing",
             payee_id: payeeId,
             base_amount: baseAmount,
@@ -1209,18 +1265,7 @@ export async function createManualMovement(
         }
       }
     }
-  } else if (premiumGross >= 0) {
-    await supabase.from("policy_installments").insert({
-      policy_id: policyId,
-      movement_id: movement.id,
-      installment_number: 1,
-      due_date: startDate,
-      amount: premiumGross,
-    });
   }
-  // A negative (πιστωτικό) endorsement gets NO δόση — it's a refund owed to
-  // the client, not a receivable, same treatment as Ακύρωση (migration 0101
-  // relaxed the premium check for exactly this case).
 
   if (kind === "cancellation") {
     await supabase.from("policies").update({ status: "cancelled", status_auto_managed: false }).eq("id", policyId);
