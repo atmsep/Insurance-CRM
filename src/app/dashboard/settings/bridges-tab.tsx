@@ -42,6 +42,7 @@ import {
   type ResolvedCodeGroup,
   type CodeTargets,
 } from "./bridge-actions";
+import { runImport, type ImportRunResult } from "./import-run-actions";
 
 export type Bridge = {
   id: string;
@@ -617,6 +618,7 @@ export function BridgesTab({
   const [editing, setEditing] = useState<Bridge | null>(null);
   const [creating, setCreating] = useState(false);
   const [mapping, setMapping] = useState<Bridge | null>(null);
+  const [running, setRunning] = useState<Bridge | null>(null);
   const [, startTransition] = useTransition();
 
   const ownerName = (b: Bridge) =>
@@ -674,6 +676,17 @@ export function BridgesTab({
                       </Badge>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
+                      {b.kind === "production" && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={b.field_count === 0}
+                          onClick={() => setRunning(b)}
+                        >
+                          Εισαγωγή
+                        </Button>
+                      )}
                       <Button type="button" size="sm" variant="ghost" onClick={() => setMapping(b)}>
                         Χαρτογράφηση
                       </Button>
@@ -741,6 +754,174 @@ export function BridgesTab({
           {mapping && <MappingEditor bridge={mapping} onClose={() => setMapping(null)} />}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={running !== null} onOpenChange={(o) => { if (!o) setRunning(null); }}>
+        <DialogContent className="max-h-[85vh] w-full overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Εισαγωγή δεδομένων — {running?.name}</DialogTitle>
+          </DialogHeader>
+          {running && <ImportRunner bridge={running} />}
+        </DialogContent>
+      </Dialog>
     </Card>
+  );
+}
+
+// Η εκτέλεση ενός import γίνεται ΠΑΝΤΑ σε δύο βήματα: πρώτα δοκιμή που δεν
+// γράφει τίποτα, μετά εφαρμογή. Το κουμπί εφαρμογής μένει κλειδωμένο μέχρι
+// να τρέξει η δοκιμή, ώστε κανείς να μη γράψει χωρίς να έχει δει τι θα γίνει.
+function ImportRunner({ bridge }: { bridge: Bridge }) {
+  const [result, setResult] = useState<ImportRunResult | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [clientsFile, setClientsFile] = useState<File | null>(null);
+  const [createMissing, setCreateMissing] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function run(apply: boolean) {
+    if (!file) { toast.error("Επίλεξε αρχείο."); return; }
+    const fd = new FormData();
+    fd.set("file", file);
+    if (clientsFile) fd.set("clients_file", clientsFile);
+    fd.set("create_missing", createMissing ? "1" : "");
+    fd.set("apply", apply ? "1" : "");
+    startTransition(async () => {
+      const r = await runImport(bridge.id, fd);
+      setResult(r);
+      if ("error" in r) toast.error(r.error);
+      else if (apply) toast.success("Η εισαγωγή ολοκληρώθηκε.");
+      else toast.success("Δοκιμή χωρίς εγγραφή — δες τι θα γίνει.");
+    });
+  }
+
+  const ok = result && !("error" in result) ? result : null;
+  const canApply = Boolean(ok && !ok.applied && ok.unknownCodes.length === 0 && ok.counts.ready > 0);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-md border bg-muted/40 p-3 text-sm">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Label htmlFor="run-file" className="w-44">Αρχείο παραγωγής</Label>
+            <Input
+              id="run-file"
+              type="file"
+              accept=".xlsx,.csv,.txt,.slk,.xls"
+              className="w-auto"
+              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label htmlFor="run-clients" className="w-44">Πελατολόγιο (προαιρετικό)</Label>
+            <Input
+              id="run-clients"
+              type="file"
+              accept=".xlsx,.csv,.txt,.slk,.xls"
+              className="w-auto"
+              onChange={(e) => { setClientsFile(e.target.files?.[0] ?? null); setResult(null); }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Χρειάζεται μόνο όταν το αρχείο παραγωγής γράφει κωδικό πελάτη αντί για όνομα. Τα
+            στοιχεία που έχει ήδη η καρτέλα δεν αλλάζουν ποτέ — ό,τι διαφέρει γράφεται στις σημειώσεις.
+          </p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={createMissing}
+              onChange={(e) => { setCreateMissing(e.target.checked); setResult(null); }}
+            />
+            Δημιουργία νέων συμβολαίων και πελατών όταν δεν βρεθεί αντιστοιχία
+          </label>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="secondary" disabled={pending || !file} onClick={() => run(false)}>
+            {pending ? "Έλεγχος..." : "Δοκιμή χωρίς εγγραφή"}
+          </Button>
+          <Button type="button" size="sm" disabled={pending || !canApply} onClick={() => run(true)}>
+            Εφαρμογή
+          </Button>
+        </div>
+      </div>
+
+      {result && "error" in result && (
+        <p className="rounded-md border border-destructive/50 p-3 text-sm text-destructive">{result.error}</p>
+      )}
+
+      {ok && (
+        <>
+          <div className="flex flex-wrap gap-2 text-sm">
+            <Badge variant={ok.applied ? "success" : "outline"}>
+              {ok.applied ? "Εφαρμόστηκε" : "Δοκιμή"}
+            </Badge>
+            <Badge variant="outline">{ok.totalRows} γραμμές</Badge>
+            <Badge variant="outline">{ok.counts.ready} έτοιμες</Badge>
+            {ok.counts.blocked > 0 && <Badge variant="destructive">{ok.counts.blocked} μπλοκαρισμένες</Badge>}
+            {ok.counts.ignored > 0 && <Badge variant="outline">{ok.counts.ignored} αγνοήθηκαν</Badge>}
+          </div>
+
+          {ok.unknownCodes.length > 0 && (
+            <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+              <p className="font-medium">
+                {ok.unknownCodes.length} κωδικοί δεν έχουν αντιστοιχιστεί — η εισαγωγή δεν μπορεί να προχωρήσει.
+              </p>
+              <p className="mt-1 text-xs">
+                Άνοιξε τη «Χαρτογράφηση» της γέφυρας, ανέβασε το ίδιο αρχείο και απόδωσέ τους. Αποθηκεύονται
+                και δεν θα ξαναρωτηθούν.
+              </p>
+              <ul className="mt-2 list-inside list-disc text-xs">
+                {ok.unknownCodes.slice(0, 20).map((u) => (
+                  <li key={`${u.dimension}-${u.code}`}>
+                    {DIMENSION_LABELS[u.dimension]}: «{u.code}» — {u.count} γραμμές
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+            <Stat label="Βρέθηκαν" value={ok.matched} />
+            <Stat label="Δεν βρέθηκαν" value={ok.unmatched} />
+            <Stat label="Κινήσεις" value={ok.movementsCreated} />
+            <Stat label="Ανανεώσεις" value={ok.policiesRenewed} />
+            <Stat label="Ακυρώσεις" value={ok.policiesCancelled} />
+            <Stat label="Νέα συμβόλαια" value={ok.policiesCreated} />
+            <Stat label="Νέοι πελάτες" value={ok.clientsCreated} />
+            <Stat label="Σημειώσεις πελατών" value={ok.clientNoteLines} />
+          </div>
+
+          {ok.issues.length > 0 && (
+            <div className="overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Γραμμή</TableHead>
+                    <TableHead>Τι συνέβη</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ok.issues.slice(0, 50).map((x, i) => (
+                    <TableRow key={`${x.rowNumber}-${i}`}>
+                      <TableCell className="text-muted-foreground">{x.rowNumber}</TableCell>
+                      <TableCell className={x.severity === "error" ? "text-destructive text-xs" : "text-amber-600 text-xs"}>
+                        {x.message}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border p-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-lg font-semibold tabular-nums">{value}</p>
+    </div>
   );
 }

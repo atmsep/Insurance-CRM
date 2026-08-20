@@ -4,13 +4,19 @@
 // πεδίο να μη χρειάζεται migration — αυτός ο κατάλογος είναι η αυθεντία για
 // το τι εμφανίζει το UI και τι καταλαβαίνει ο εισαγωγέας.
 
-export type BridgeKind = "production" | "commissions" | "payments" | "expirations";
+export type BridgeKind =
+  | "production"
+  | "commissions"
+  | "payments"
+  | "expirations"
+  | "clients";
 
 export const BRIDGE_KIND_LABELS: Record<BridgeKind, string> = {
   production: "Παραγωγή / Χαρτοφυλάκιο",
   commissions: "Εκκαθαρίσεις προμηθειών",
   payments: "Εισπράξεις ασφαλίστρων",
   expirations: "Ληξιάρια / Προς ανανέωση",
+  clients: "Πελατολόγιο (συνοδευτικό)",
 };
 
 export const BRIDGE_KIND_DESCRIPTIONS: Record<BridgeKind, string> = {
@@ -22,6 +28,8 @@ export const BRIDGE_KIND_DESCRIPTIONS: Record<BridgeKind, string> = {
     "Δόσεις που εισέπραξε απευθείας η εταιρεία — ώστε να μη φαίνονται ανείσπρακτες σε εσένα.",
   expirations:
     "Συμβόλαια που λήγουν — για προγραμματισμό ανανεώσεων.",
+  clients:
+    "Το αρχείο πελατών που συνοδεύει την παραγωγή, όταν εκείνη γράφει μόνο κωδικό πελάτη. Ανεβαίνει μαζί της και δίνει ονόματα και στοιχεία επικοινωνίας.",
 };
 
 export type FieldType = "text" | "number" | "date" | "amount";
@@ -58,6 +66,12 @@ export const TARGET_FIELDS: Record<BridgeKind, TargetField[]> = {
     CARRIER_CODE,
     { key: "application_number", label: "Αριθμός αίτησης", type: "text" },
     { key: "movement_kind", label: "Είδος κίνησης", type: "text", hint: "π.χ. Νέο / Ανανέωση / Ακύρωση — αντιστοιχίζεται αυτόματα." },
+    {
+      key: "client_code",
+      label: "Κωδικός πελάτη",
+      type: "text",
+      hint: "Όταν το αρχείο γράφει κωδικό αντί για όνομα — ενώνεται με τη γέφυρα πελατολογίου.",
+    },
     { key: "client_name", label: "Πελάτης (ονοματεπώνυμο)", type: "text" },
     { key: "client_afm", label: "ΑΦΜ πελάτη", type: "text", hint: "Αν υπάρχει, δίνει πολύ ασφαλέστερη ταύτιση από το όνομα." },
     { key: "client_phone", label: "Τηλέφωνο πελάτη", type: "text" },
@@ -100,6 +114,25 @@ export const TARGET_FIELDS: Record<BridgeKind, TargetField[]> = {
     { key: "insurance_line", label: "Κλάδος", type: "text" },
     { key: "risk_label", label: "Χαρακτηριστικό", type: "text" },
     { key: "premium_gross", label: "Μικτά ασφάλιστρα", type: "amount" },
+  ],
+  clients: [
+    {
+      key: "client_code",
+      label: "Κωδικός πελάτη",
+      type: "text",
+      required: true,
+      hint: "Ο κωδικός με τον οποίο τον αναφέρει το αρχείο παραγωγής.",
+    },
+    { key: "client_name", label: "Ονοματεπώνυμο / Επωνυμία", type: "text", required: true },
+    { key: "client_father_name", label: "Πατρώνυμο", type: "text" },
+    { key: "client_afm", label: "ΑΦΜ", type: "text" },
+    { key: "client_doy", label: "ΔΟΥ", type: "text" },
+    { key: "client_email", label: "Email", type: "text" },
+    { key: "client_phone", label: "Κινητό", type: "text" },
+    { key: "client_landline", label: "Σταθερό", type: "text" },
+    { key: "client_address", label: "Διεύθυνση", type: "text" },
+    { key: "client_city", label: "Πόλη", type: "text" },
+    { key: "client_postal_code", label: "Τ.Κ.", type: "text" },
   ],
 };
 
