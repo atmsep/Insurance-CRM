@@ -43,9 +43,19 @@ const POLICY_KEY: TargetField = {
   hint: "Το κλειδί με το οποίο ταιριάζει η γραμμή με το δικό σου συμβόλαιο.",
 };
 
+// Όταν η γέφυρα ανήκει σε συνεργαζόμενο γραφείο, το αρχείο φέρνει κινήσεις
+// από ΠΟΛΛΕΣ εταιρείες, οπότε η εταιρεία διαβάζεται ανά γραμμή.
+const CARRIER_CODE: TargetField = {
+  key: "carrier_code",
+  label: "Κωδικός εταιρείας",
+  type: "text",
+  hint: "Όταν το αρχείο περιέχει πολλές εταιρείες. Ο κωδικός αντιστοιχίζεται παρακάτω.",
+};
+
 export const TARGET_FIELDS: Record<BridgeKind, TargetField[]> = {
   production: [
     POLICY_KEY,
+    CARRIER_CODE,
     { key: "application_number", label: "Αριθμός αίτησης", type: "text" },
     { key: "movement_kind", label: "Είδος κίνησης", type: "text", hint: "π.χ. Νέο / Ανανέωση / Ακύρωση — αντιστοιχίζεται αυτόματα." },
     { key: "client_name", label: "Πελάτης (ονοματεπώνυμο)", type: "text" },
@@ -64,6 +74,7 @@ export const TARGET_FIELDS: Record<BridgeKind, TargetField[]> = {
   ],
   commissions: [
     POLICY_KEY,
+    CARRIER_CODE,
     { key: "document_number", label: "Παραστατικό", type: "text" },
     { key: "period", label: "Περίοδος", type: "date", hint: "Ο μήνας/η ημερομηνία στην οποία αφορά η προμήθεια." },
     { key: "base_amount", label: "Βάση υπολογισμού (καθαρά)", type: "amount" },
@@ -82,6 +93,7 @@ export const TARGET_FIELDS: Record<BridgeKind, TargetField[]> = {
   ],
   expirations: [
     POLICY_KEY,
+    CARRIER_CODE,
     { key: "end_date", label: "Ημ. λήξης", type: "date", required: true },
     { key: "client_name", label: "Πελάτης", type: "text" },
     { key: "client_phone", label: "Τηλέφωνο πελάτη", type: "text" },

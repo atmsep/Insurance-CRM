@@ -7,6 +7,11 @@ import { parseXlsx, parseCsv } from "@/lib/import-bridges/parse";
 import { parseSlk, isSlk, isLegacyBinaryXls } from "@/lib/import-bridges/slk";
 import { mapRows, suggestMappings, detectDecimalSeparator, type FieldMapping } from "@/lib/import-bridges/map";
 import { isBridgeKind, type BridgeKind } from "@/lib/import-bridges/fields";
+import {
+  collectCodes,
+  MOVEMENT_KIND_OPTIONS,
+  type CodeDimension,
+} from "@/lib/import-bridges/codes";
 
 export type BridgeActionState = { error: string } | { success: string } | undefined;
 
@@ -118,7 +123,26 @@ export type AnalyzeResult =
       rowsWithWarnings: number;
       /** Ασυμφωνίες ανάμεσα στις ρυθμίσεις της γέφυρας και το ίδιο το αρχείο. */
       settingsNotices: string[];
+      /** Οι κωδικοί που βρέθηκαν, με ό,τι έχει ήδη αντιστοιχιστεί. */
+      codeGroups: ResolvedCodeGroup[];
+      /** Οι διαθέσιμοι στόχοι ανά διάσταση, για τα dropdown του UI. */
+      codeTargets: CodeTargets;
     };
+
+export type ResolvedCodeGroup = {
+  dimension: CodeDimension;
+  sourceColumn: string;
+  codes: {
+    code: string;
+    count: number;
+    samples: string[];
+    /** Το id/η τιμή που έχει ήδη αποθηκευτεί, ή "" αν δεν έχει λυθεί. */
+    targetKey: string;
+    isIgnored: boolean;
+  }[];
+};
+
+export type CodeTargets = Record<CodeDimension, { value: string; label: string }[]>;
 
 // Διαβάζει ένα δείγμα αρχείου και επιστρέφει τι βρήκε: στήλες, προτεινόμενη
 // χαρτογράφηση και προεπισκόπηση με τα σφάλματα ανά γραμμή. ΔΕΝ γράφει
@@ -182,8 +206,23 @@ export async function analyzeSample(
     .select("target_field, source_column, source_index, transform, constant_value")
     .eq("bridge_id", bridgeId);
 
+  // Η φόρμα μπορεί να στείλει τις τρέχουσες (μη αποθηκευμένες ακόμα)
+  // επιλογές του χρήστη, ώστε το «Ανανέωση προεπισκόπησης» να δείχνει το
+  // αποτέλεσμα ΤΩΝ ΕΠΙΛΟΓΩΝ ΤΟΥ και όχι της παλιάς αποθηκευμένης εικόνας.
+  const overrideRaw = formData.get("mappings");
+  let override: FieldMapping[] | null = null;
+  if (typeof overrideRaw === "string" && overrideRaw.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(overrideRaw);
+      if (Array.isArray(parsed)) override = parsed as FieldMapping[];
+    } catch {
+      // Άκυρο JSON: αγνοείται σιωπηλά, πέφτουμε στην αποθηκευμένη εικόνα.
+    }
+  }
+
   const mappings: FieldMapping[] =
-    saved && saved.length
+    override ??
+    (saved && saved.length
       ? saved.map((s) => ({
           targetField: s.target_field,
           sourceColumn: s.source_column,
@@ -191,7 +230,7 @@ export async function analyzeSample(
           transform: s.transform,
           constantValue: s.constant_value,
         }))
-      : suggestMappings(sheet.headers, bridge.kind as BridgeKind);
+      : suggestMappings(sheet.headers, bridge.kind as BridgeKind));
 
   const mapped = mapRows(
     sheet.headers,
@@ -215,6 +254,11 @@ export async function analyzeSample(
     );
   }
 
+  const [codeGroups, codeTargets] = await Promise.all([
+    resolveCodeGroups(bridgeId, sheet.headers, sheet.rows, mappings),
+    loadCodeTargets(),
+  ]);
+
   return {
     headers: sheet.headers,
     sheetNames: sheet.sheetNames,
@@ -225,7 +269,134 @@ export async function analyzeSample(
     rowsWithErrors: mapped.filter((r) => r.errors.length > 0).length,
     rowsWithWarnings: mapped.filter((r) => r.warnings.length > 0).length,
     settingsNotices,
+    codeGroups,
+    codeTargets,
   };
+}
+
+// Το UI χειρίζεται κάθε στόχο ως ένα string "<είδος>:<id>" ώστε ένα και μόνο
+// <select> να καλύπτει και τους πέντε τύπους αντιστοίχισης.
+const IGNORE_KEY = "ignore";
+
+function targetKeyOf(row: {
+  carrier_id: string | null;
+  insurance_line_id: string | null;
+  agency_user_id: string | null;
+  payment_method_id: string | null;
+  target_value: string | null;
+  is_ignored: boolean;
+}): string {
+  if (row.is_ignored) return IGNORE_KEY;
+  if (row.carrier_id) return `carrier:${row.carrier_id}`;
+  if (row.insurance_line_id) return `line:${row.insurance_line_id}`;
+  if (row.agency_user_id) return `user:${row.agency_user_id}`;
+  if (row.payment_method_id) return `method:${row.payment_method_id}`;
+  if (row.target_value) return `value:${row.target_value}`;
+  return "";
+}
+
+async function resolveCodeGroups(
+  bridgeId: string,
+  headers: string[],
+  rows: string[][],
+  mappings: FieldMapping[],
+): Promise<ResolvedCodeGroup[]> {
+  const groups = collectCodes(headers, rows, mappings);
+  if (!groups.length) return [];
+
+  const supabase = await createSupabaseClient();
+  const { data: saved } = await supabase
+    .from("import_bridge_code_maps")
+    .select("dimension, source_code, carrier_id, insurance_line_id, agency_user_id, payment_method_id, target_value, is_ignored")
+    .eq("bridge_id", bridgeId);
+
+  const byKey = new Map((saved ?? []).map((s) => [`${s.dimension} ${s.source_code}`, s]));
+
+  return groups.map((g) => ({
+    dimension: g.dimension,
+    sourceColumn: g.sourceColumn,
+    codes: g.codes.map((c) => {
+      const hit = byKey.get(`${g.dimension} ${c.code}`);
+      return {
+        code: c.code,
+        count: c.count,
+        samples: c.samples,
+        targetKey: hit ? targetKeyOf(hit) : "",
+        isIgnored: hit?.is_ignored ?? false,
+      };
+    }),
+  }));
+}
+
+async function loadCodeTargets(): Promise<CodeTargets> {
+  const supabase = await createSupabaseClient();
+  const [{ data: carriers }, { data: lines }, { data: users }, { data: methods }] = await Promise.all([
+    supabase.from("carriers").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("insurance_lines").select("id, name_el").eq("is_active", true).order("sort_order"),
+    supabase.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
+    supabase.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
+  ]);
+
+  return {
+    carrier: (carriers ?? []).map((c) => ({ value: `carrier:${c.id}`, label: c.name })),
+    insurance_line: (lines ?? []).map((l) => ({ value: `line:${l.id}`, label: l.name_el })),
+    agent: (users ?? []).map((u) => ({ value: `user:${u.id}`, label: u.full_name })),
+    payment_method: (methods ?? []).map((m) => ({ value: `method:${m.id}`, label: m.name })),
+    movement_kind: MOVEMENT_KIND_OPTIONS.map((o) => ({ value: `value:${o.value}`, label: o.label })),
+  };
+}
+
+// Αποθηκεύει μία αντιστοίχιση κωδικού. Κενός στόχος = διαγραφή, ώστε ο
+// χρήστης να μπορεί να αναιρέσει μια λάθος επιλογή.
+export async function saveCodeMap(
+  bridgeId: string,
+  dimension: CodeDimension,
+  sourceCode: string,
+  targetKey: string,
+): Promise<{ error: string } | { success: string }> {
+  const agencyUser = await requireAdmin();
+  const supabase = await createSupabaseClient();
+
+  if (!targetKey) {
+    const { error } = await supabase
+      .from("import_bridge_code_maps")
+      .delete()
+      .eq("bridge_id", bridgeId)
+      .eq("dimension", dimension)
+      .eq("source_code", sourceCode);
+    if (error) return { error: "Σφάλμα κατά τη διαγραφή: " + error.message };
+    return { success: "Η αντιστοίχιση αφαιρέθηκε." };
+  }
+
+  const row = {
+    bridge_id: bridgeId,
+    dimension,
+    source_code: sourceCode,
+    carrier_id: null as string | null,
+    insurance_line_id: null as string | null,
+    agency_user_id: null as string | null,
+    payment_method_id: null as string | null,
+    target_value: null as string | null,
+    is_ignored: false,
+    created_by: agencyUser.id,
+  };
+
+  const [type, value] = targetKey.split(":");
+  if (targetKey === IGNORE_KEY) row.is_ignored = true;
+  else if (type === "carrier" && dimension === "carrier") row.carrier_id = value;
+  else if (type === "line" && dimension === "insurance_line") row.insurance_line_id = value;
+  else if (type === "user" && dimension === "agent") row.agency_user_id = value;
+  else if (type === "method" && dimension === "payment_method") row.payment_method_id = value;
+  else if (type === "value" && dimension === "movement_kind") row.target_value = value;
+  else return { error: "Ο στόχος δεν ταιριάζει με το είδος του κωδικού." };
+
+  const { error } = await supabase
+    .from("import_bridge_code_maps")
+    .upsert(row, { onConflict: "bridge_id,dimension,source_code" });
+  if (error) return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+
+  revalidatePath("/dashboard/settings");
+  return { success: "Αποθηκεύτηκε." };
 }
 
 // Αποθηκεύει τη χαρτογράφηση. Αντικαθιστά ολόκληρη τη λίστα (delete+insert)

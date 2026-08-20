@@ -29,14 +29,18 @@ import {
   type BridgeKind,
 } from "@/lib/import-bridges/fields";
 import type { FieldMapping } from "@/lib/import-bridges/map";
+import { DIMENSION_LABELS, DIMENSION_HINTS } from "@/lib/import-bridges/codes";
 import {
   saveBridge,
   toggleBridgeActive,
   deleteBridge,
   analyzeSample,
   saveBridgeMappings,
+  saveCodeMap,
   type BridgeActionState,
   type AnalyzeResult,
+  type ResolvedCodeGroup,
+  type CodeTargets,
 } from "./bridge-actions";
 
 export type Bridge = {
@@ -249,6 +253,8 @@ function MappingEditor({ bridge, onClose }: { bridge: Bridge; onClose: () => voi
   const targets = fieldsFor(bridge.kind);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [mappings, setMappings] = useState<Record<string, FieldMapping>>({});
+  // Κρατάμε το δείγμα για να ξανατρέχει η ανάλυση χωρίς νέο ανέβασμα.
+  const [sampleFile, setSampleFile] = useState<File | null>(null);
   const [pending, startTransition] = useTransition();
 
   function setField(key: string, patch: Partial<FieldMapping>) {
@@ -286,6 +292,8 @@ function MappingEditor({ bridge, onClose }: { bridge: Bridge; onClose: () => voi
           onSubmit={(e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
+            const file = fd.get("file");
+            if (file instanceof File) setSampleFile(file);
             startTransition(async () => {
               const r = await analyzeSample(bridge.id, fd);
               setResult(r);
@@ -421,18 +429,34 @@ function MappingEditor({ bridge, onClose }: { bridge: Bridge; onClose: () => voi
               type="button"
               size="sm"
               variant="outline"
-              disabled={pending}
+              disabled={pending || !sampleFile}
               onClick={() => {
+                if (!sampleFile) return;
+                // Ξανατρέχει την ανάλυση με τις ΤΡΕΧΟΥΣΕΣ επιλογές, χωρίς να
+                // χρειάζεται αποθήκευση ή νέο ανέβασμα: έτσι φαίνονται αμέσως
+                // και η προεπισκόπηση και οι κωδικοί που προκύπτουν.
                 const fd = new FormData();
-                // Επαναϋπολογισμός προεπισκόπησης με τις τρέχουσες επιλογές
-                // απαιτεί το αρχείο ξανά — απλούστερο να ξανα-ανεβάσει.
-                void fd;
-                toast.info("Ανέβασε ξανά το δείγμα για να δεις την προεπισκόπηση με τις νέες αντιστοιχίσεις.");
+                fd.set("file", sampleFile);
+                fd.set("mappings", JSON.stringify(Object.values(mappings)));
+                startTransition(async () => {
+                  const r = await analyzeSample(bridge.id, fd);
+                  setResult(r);
+                  if ("error" in r) toast.error(r.error);
+                  else toast.success("Η προεπισκόπηση ενημερώθηκε.");
+                });
               }}
             >
               Ανανέωση προεπισκόπησης
             </Button>
           </div>
+
+          {result.codeGroups.length > 0 && (
+            <CodeMaps
+              bridgeId={bridge.id}
+              groups={result.codeGroups}
+              targets={result.codeTargets}
+            />
+          )}
 
           <div>
             <p className="mb-2 text-sm font-medium">Προεπισκόπηση (πρώτες {result.preview.length} γραμμές)</p>
@@ -475,6 +499,108 @@ function MappingEditor({ bridge, onClose }: { bridge: Bridge; onClose: () => voi
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// Οι κωδικοί του αρχείου (Εταιρία=113, Κλάδος=001) δεν σημαίνουν τίποτα
+// μόνοι τους. Εδώ ο χρήστης τους αποδίδει μία φορά· κάθε επιλογή σώζεται
+// αμέσως, ώστε να μη χαθεί η δουλειά αν κλείσει το παράθυρο στη μέση.
+function CodeMaps({
+  bridgeId,
+  groups,
+  targets,
+}: {
+  bridgeId: string;
+  groups: ResolvedCodeGroup[];
+  targets: CodeTargets;
+}) {
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const g of groups) for (const c of g.codes) init[`${g.dimension} ${c.code}`] = c.targetKey;
+    return init;
+  });
+  const [saving, startSaving] = useTransition();
+
+  const unresolved = groups.reduce(
+    (n, g) => n + g.codes.filter((c) => !values[`${g.dimension} ${c.code}`]).length,
+    0,
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <p className="text-sm font-medium">Αντιστοιχίσεις κωδικών</p>
+        <p className="text-xs text-muted-foreground">
+          {unresolved > 0
+            ? `${unresolved} κωδικοί δεν έχουν αντιστοιχιστεί ακόμα. Οι γραμμές τους δεν θα περάσουν.`
+            : "Όλοι οι κωδικοί του δείγματος έχουν αντιστοιχιστεί."}
+        </p>
+      </div>
+
+      {groups.map((g) => (
+        <div key={g.dimension} className="rounded-md border">
+          <div className="border-b bg-muted/40 px-3 py-2">
+            <p className="text-sm font-medium">
+              {DIMENSION_LABELS[g.dimension]}{" "}
+              <span className="font-normal text-muted-foreground">— στήλη «{g.sourceColumn}»</span>
+            </p>
+            <p className="text-xs text-muted-foreground">{DIMENSION_HINTS[g.dimension]}</p>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Κωδικός</TableHead>
+                <TableHead>Γραμμές</TableHead>
+                <TableHead>Παραδείγματα</TableHead>
+                <TableHead>Αντιστοιχεί σε</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {g.codes.map((c) => {
+                const key = `${g.dimension} ${c.code}`;
+                const value = values[key] ?? "";
+                return (
+                  <TableRow key={key}>
+                    <TableCell className="font-medium">{c.code}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.count}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {c.samples.join(", ") || "—"}
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        value={value}
+                        disabled={saving}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          const previous = value;
+                          setValues((p) => ({ ...p, [key]: next }));
+                          startSaving(async () => {
+                            const r = await saveCodeMap(bridgeId, g.dimension, c.code, next);
+                            if ("error" in r) {
+                              toast.error(r.error);
+                              setValues((p) => ({ ...p, [key]: previous }));
+                            }
+                          });
+                        }}
+                        className={`h-8 w-full rounded-md border bg-transparent px-2 text-xs ${
+                          value ? "border-input" : "border-amber-500"
+                        }`}
+                      >
+                        <option value="">— δεν έχει αντιστοιχιστεί —</option>
+                        {targets[g.dimension].map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                        <option value="ignore">Αγνόησέ τον</option>
+                      </select>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      ))}
     </div>
   );
 }
