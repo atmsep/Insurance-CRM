@@ -186,26 +186,60 @@ export function mapRows(
   });
 }
 
+// Κοιτάζει τις πραγματικές τιμές των στηλών ποσών και λέει τι δεκαδικό
+// χωριστικό χρησιμοποιεί το αρχείο. Αναγκαίο γιατί λάθος ρύθμιση ΔΕΝ βγάζει
+// σφάλμα: το «67.62» με χωριστικό «,» διαβάζεται σαν 6.762 (η τελεία
+// θεωρείται χιλιάδων) και τα ποσά γίνονται σιωπηλά 100πλάσια.
+export function detectDecimalSeparator(
+  headers: string[],
+  rows: string[][],
+  mappings: FieldMapping[],
+  kind: BridgeKind,
+): "," | "." | null {
+  const targets = fieldsFor(kind);
+  const amountKeys = new Set(targets.filter((t) => t.type === "amount" || t.type === "number").map((t) => t.key));
+  const amountMappings = mappings.filter((m) => amountKeys.has(m.targetField));
+  if (!amountMappings.length) return null;
+
+  let dot = 0;
+  let comma = 0;
+  for (const row of rows.slice(0, 500)) {
+    for (const m of amountMappings) {
+      const raw = resolveRaw(row, headers, m).trim();
+      if (!raw) continue;
+      // Μόνο σαφείς περιπτώσεις: ακριβώς ένα χωριστικό με 1-2 δεκαδικά.
+      if (/^-?\(?\d+\.\d{1,2}\)?$/.test(raw)) dot++;
+      else if (/^-?\(?\d+,\d{1,2}\)?$/.test(raw)) comma++;
+    }
+  }
+  if (dot === 0 && comma === 0) return null;
+  if (dot > comma * 3) return ".";
+  if (comma > dot * 3) return ",";
+  return null;
+}
+
 // Προτείνει αυτόματα αντιστοιχίσεις συγκρίνοντας τους τίτλους του αρχείου με
 // τα ονόματα των πεδίων — γλιτώνει τον χρήστη από το να τα βάλει όλα με το
 // χέρι την πρώτη φορά.
 const SYNONYMS: Record<string, string[]> = {
   policy_number: ["αρ. συμβολαιου", "αριθμος συμβολαιου", "συμβολαιο", "policy", "policy no", "αρ συμβ", "συμβόλαιο"],
-  application_number: ["αιτηση", "αρ. αιτησης", "application"],
+  application_number: ["αιτηση", "αρ. αιτησης", "application", "προταση"],
   client_name: ["πελατης", "ονοματεπωνυμο", "επωνυμια", "ασφαλισμενος", "client", "name"],
   client_afm: ["αφμ", "α.φ.μ.", "vat", "tin"],
   client_phone: ["τηλεφωνο", "κινητο", "phone", "τηλ"],
   insurance_line: ["κλαδος", "line", "ειδος ασφαλισης"],
-  risk_label: ["πινακιδα", "αριθμος κυκλοφοριας", "διευθυνση", "χαρακτηριστικο", "plate"],
+  // «Χαρακτ/κό» είναι ο τίτλος που δίνουν οι εξαγωγές τύπου W2W — μετά την
+  // κανονικοποίηση η κάθετος γίνεται κενό, οπότε χρειάζεται δική του εγγραφή.
+  risk_label: ["πινακιδα", "αριθμος κυκλοφοριας", "διευθυνση", "χαρακτηριστικο", "χαρακτ κο", "plate"],
   issue_date: ["ημ. εκδοσης", "ημερομηνια εκδοσης", "εκδοση", "issue date"],
   start_date: ["εναρξη", "ημ. εναρξης", "απο", "start", "from"],
   end_date: ["ληξη", "ημ. ληξης", "εως", "end", "to", "expiry"],
   premium_gross: ["μικτα", "μικτο ασφαλιστρο", "συνολο ασφαλιστρων", "gross", "total premium", "πληρωτεο"],
   premium_net: ["καθαρα", "καθαρο ασφαλιστρο", "net"],
   commission_rate: ["ποσοστο", "ποσοστο προμηθειας", "rate", "%"],
-  commission_amount: ["προμηθεια", "ποσο προμηθειας", "commission", "αμοιβη"],
+  commission_amount: ["προμηθεια", "ποσο προμηθειας", "commission", "αμοιβη", "προμσυνεργατη"],
   agent_name: ["συνεργατης", "πρακτορας", "agent", "διαμεσολαβητης"],
-  movement_kind: ["ειδος", "ειδος κινησης", "τυπος", "kind", "type"],
+  movement_kind: ["ειδος", "ειδος κινησης", "τυπος", "kind", "type", "κατηγορια"],
   document_number: ["παραστατικο", "αρ. παραστατικου", "document"],
   period: ["περιοδος", "μηνας", "period"],
   base_amount: ["βαση", "βαση υπολογισμου", "base"],

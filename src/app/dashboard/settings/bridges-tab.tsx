@@ -152,7 +152,12 @@ function BridgeForm({
           >
             <option value="xlsx">Excel (.xlsx)</option>
             <option value="csv">CSV / TXT</option>
+            <option value="slk">SYLK (παλιά προγράμματα, .slk/.xls)</option>
           </select>
+          <p className="text-xs text-muted-foreground">
+            Η μορφή αναγνωρίζεται και αυτόματα από το ίδιο το αρχείο — αυτή η
+            επιλογή είναι απλώς η προεπιλογή.
+          </p>
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="bridge-header-row">Γραμμή τίτλων</Label>
@@ -167,7 +172,14 @@ function BridgeForm({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        {format === "xlsx" ? (
+        {format === "slk" ? (
+          <div className="flex flex-col gap-2">
+            <Label>Φύλλο εργασίας</Label>
+            <p className="text-xs text-muted-foreground pt-2">
+              Τα SYLK αρχεία έχουν πάντα ένα φύλλο.
+            </p>
+          </div>
+        ) : format === "xlsx" ? (
           <div className="flex flex-col gap-2">
             <Label htmlFor="bridge-sheet">Φύλλο εργασίας</Label>
             <Input
@@ -288,7 +300,7 @@ function MappingEditor({ bridge, onClose }: { bridge: Bridge; onClose: () => voi
             });
           }}
         >
-          <Input type="file" name="file" accept=".xlsx,.csv,.txt" required className="w-auto" />
+          <Input type="file" name="file" accept=".xlsx,.csv,.txt,.slk,.xls" required className="w-auto" />
           <Button type="submit" size="sm" variant="secondary" disabled={pending}>
             {pending ? "Ανάλυση..." : "Ανάλυση δείγματος"}
           </Button>
@@ -317,6 +329,15 @@ function MappingEditor({ bridge, onClose }: { bridge: Bridge; onClose: () => voi
               <span className="text-muted-foreground">Φύλλα: {result.sheetNames.join(", ")}</span>
             )}
           </div>
+
+          {result.settingsNotices.map((notice) => (
+            <p
+              key={notice}
+              className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm"
+            >
+              {notice}
+            </p>
+          ))}
 
           <div className="rounded-md border">
             <Table>

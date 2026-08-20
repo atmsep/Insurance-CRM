@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAdmin } from "./actions";
 import { parseXlsx, parseCsv } from "@/lib/import-bridges/parse";
-import { mapRows, suggestMappings, type FieldMapping } from "@/lib/import-bridges/map";
+import { parseSlk, isSlk, isLegacyBinaryXls } from "@/lib/import-bridges/slk";
+import { mapRows, suggestMappings, detectDecimalSeparator, type FieldMapping } from "@/lib/import-bridges/map";
 import { isBridgeKind, type BridgeKind } from "@/lib/import-bridges/fields";
 
 export type BridgeActionState = { error: string } | { success: string } | undefined;
@@ -115,6 +116,8 @@ export type AnalyzeResult =
       }[];
       rowsWithErrors: number;
       rowsWithWarnings: number;
+      /** Ασυμφωνίες ανάμεσα στις ρυθμίσεις της γέφυρας και το ίδιο το αρχείο. */
+      settingsNotices: string[];
     };
 
 // Διαβάζει ένα δείγμα αρχείου και επιστρέφει τι βρήκε: στήλες, προτεινόμενη
@@ -141,20 +144,25 @@ export async function analyzeSample(
   if (!bridge) return { error: "Δεν βρέθηκε η γέφυρα." };
 
   const lower = file.name.toLowerCase();
-  if (lower.endsWith(".xls") && !lower.endsWith(".xlsx")) {
+  // Η κατάληξη ΔΕΝ είναι αξιόπιστη: πολλά ελληνικά ασφαλιστικά προγράμματα
+  // βγάζουν SYLK με όνομα .xls. Αποφασίζουμε από τα πρώτα bytes.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (isLegacyBinaryXls(bytes)) {
     return {
       error:
-        "Τα παλιά αρχεία .xls δεν υποστηρίζονται. Άνοιξέ το στο Excel και αποθήκευσέ το ως .xlsx ή .csv.",
+        "Το αρχείο είναι παλιό δυαδικό Excel (.xls) και δεν υποστηρίζεται. Άνοιξέ το στο Excel και αποθήκευσέ το ως .xlsx ή .csv.",
     };
   }
 
   let sheet;
   try {
-    if (bridge.file_format === "csv" || lower.endsWith(".csv") || lower.endsWith(".txt")) {
+    if (isSlk(bytes)) {
+      sheet = parseSlk(bytes.buffer as ArrayBuffer, { headerRow: bridge.header_row });
+    } else if (bridge.file_format === "csv" || lower.endsWith(".csv") || lower.endsWith(".txt")) {
       const text = await file.text();
       sheet = parseCsv(text, { delimiter: bridge.csv_delimiter, headerRow: bridge.header_row });
     } else {
-      sheet = await parseXlsx(await file.arrayBuffer(), {
+      sheet = await parseXlsx(bytes.buffer as ArrayBuffer, {
         sheetName: bridge.sheet_name,
         headerRow: bridge.header_row,
       });
@@ -197,6 +205,16 @@ export async function analyzeSample(
     bridge.header_row + 1,
   );
 
+  // Λάθος δεκαδικό χωριστικό δεν βγάζει σφάλμα — απλά κάνει τα ποσά
+  // 100πλάσια. Το λέμε ρητά αντί να το αφήσουμε να φανεί έμμεσα.
+  const settingsNotices: string[] = [];
+  const detected = detectDecimalSeparator(sheet.headers, sheet.rows, mappings, bridge.kind as BridgeKind);
+  if (detected && detected !== bridge.decimal_separator) {
+    settingsNotices.push(
+      `Το αρχείο γράφει τα ποσά με «${detected}» ως δεκαδικό, ενώ η γέφυρα είναι ρυθμισμένη σε «${bridge.decimal_separator}». Άλλαξέ το στις ρυθμίσεις της γέφυρας, αλλιώς τα ποσά θα διαβαστούν λάθος.`,
+    );
+  }
+
   return {
     headers: sheet.headers,
     sheetNames: sheet.sheetNames,
@@ -206,6 +224,7 @@ export async function analyzeSample(
     preview: mapped.slice(0, PREVIEW_ROWS),
     rowsWithErrors: mapped.filter((r) => r.errors.length > 0).length,
     rowsWithWarnings: mapped.filter((r) => r.warnings.length > 0).length,
+    settingsNotices,
   };
 }
 
