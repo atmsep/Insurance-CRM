@@ -46,20 +46,54 @@ export type ClientMergePlan = {
   conflicts: ClientFieldKey[];
 };
 
-// Σύγκριση ανά είδος πεδίου, ώστε να μη θεωρηθεί «διαφορά» κάτι που είναι
-// το ίδιο γραμμένο αλλιώς (+30 μπροστά, κεφαλαία, διπλά κενά).
-function comparable(field: ClientFieldKey, value: string): string {
-  const trimmed = value.trim();
-  if (field === "phone_mobile" || field === "phone_landline") {
-    return normalizeGreekPhone(trimmed);
-  }
-  if (field === "email") return trimmed.toLowerCase();
-  if (field === "afm" || field === "address_postal_code") return trimmed.replace(/\D/g, "");
-  return trimmed
+function plainText(value: string): string {
+  return value
+    .trim()
     .toLocaleUpperCase("el-GR")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/\s+/g, " ");
+}
+
+// Σύγκριση ανά είδος πεδίου, ώστε να μη θεωρηθεί «διαφορά» κάτι που είναι
+// το ίδιο γραμμένο αλλιώς. Χωρίς αυτό, μία εισαγωγή γεμίζει τις καρτέλες με
+// δεκάδες σημειώσεις που δεν λένε τίποτα, και οι πραγματικές διαφορές —
+// αυτές που θέλει να δει άνθρωπος — χάνονται μέσα στον θόρυβο.
+function comparable(field: ClientFieldKey, value: string): string {
+  const trimmed = value.trim();
+  if (field === "phone_mobile" || field === "phone_landline") {
+    // «+30», «0030», κενά και παύλες.
+    return normalizeGreekPhone(trimmed);
+  }
+  if (field === "email") return trimmed.toLowerCase();
+  // «176 72» = «17672».
+  if (field === "afm" || field === "address_postal_code") return trimmed.replace(/\D/g, "");
+  if (field === "address_street") {
+    // Τα αρχεία γράφουν οδό ΚΑΙ αριθμό μαζί («ΠΕΤΡΑΣ 104»), ενώ η καρτέλα
+    // κρατά τον αριθμό σε δικό της πεδίο. Χωρίς αυτό, σχεδόν κάθε πελάτης
+    // θα έβγαζε ψεύτικη διαφορά διεύθυνσης.
+    return plainText(trimmed).replace(/\s+\d+[Α-ΩA-Z]?$/u, "");
+  }
+  if (field === "doy") {
+    // «Α ΑΘΗΝΩΝ» και «ΑΘΗΝΩΝ Α» είναι η ίδια ΔΟΥ.
+    return plainText(trimmed).split(" ").sort().join(" ");
+  }
+  return plainText(trimmed);
+}
+
+// Ειδικά για την πόλη: το αρχείο συχνά προσθέτει νομό ή περιοχή
+// («ΚΑΛΛΙΘΕΑ ΑΤΤΙΚΗ» έναντι «ΚΑΛΛΙΘΕΑ»). Όταν το ένα περιέχει ολόκληρο το
+// άλλο, πρόκειται για την ίδια πόλη γραμμένη πιο αναλυτικά.
+function sameValue(field: ClientFieldKey, existing: string, incoming: string): boolean {
+  const a = comparable(field, existing);
+  const b = comparable(field, incoming);
+  if (a === b) return true;
+  if (field === "address_city" && a && b) {
+    const wordsA = a.split(" ");
+    const wordsB = b.split(" ");
+    return wordsA.every((w) => wordsB.includes(w)) || wordsB.every((w) => wordsA.includes(w));
+  }
+  return false;
 }
 
 function formatDate(iso: string): string {
@@ -87,7 +121,7 @@ export function planClientMerge(
       continue;
     }
 
-    if (comparable(key, existingRaw) === comparable(key, incomingRaw)) continue;
+    if (sameValue(key, existingRaw, incomingRaw)) continue;
 
     conflicts.push(key);
     noteLines.push(
