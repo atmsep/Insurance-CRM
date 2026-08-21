@@ -50,12 +50,19 @@ export async function getOutgoingCommissionsByMovement(
   // no installments at all — cancellations — simply never appear here).
   const firstInstallmentByMovement = new Map<string, string>();
   const installmentToMovement = new Map<string, string>();
-  for (const idChunk of chunk(realIds, CHUNK_SIZE)) {
-    const { data } = await supabase
-      .from("policy_installments")
-      .select("id, movement_id, installment_number")
-      .in("movement_id", idChunk)
-      .order("installment_number", { ascending: true });
+  // Παράλληλα, όπως και τα δύο batches παρακάτω: σειριακά, με το πλήρες
+  // ιστορικό του Profia μέσα, αυτό γινόταν δεκάδες διαδοχικά ερωτήματα και
+  // κρατούσε τη σελίδα Αποδόσεων δεκάδες δευτερόλεπτα.
+  const firstInstallmentBatches = await Promise.all(
+    chunk(realIds, CHUNK_SIZE).map((idChunk) =>
+      supabase
+        .from("policy_installments")
+        .select("id, movement_id, installment_number")
+        .in("movement_id", idChunk)
+        .order("installment_number", { ascending: true }),
+    ),
+  );
+  for (const { data } of firstInstallmentBatches) {
     for (const row of (data ?? []) as { id: string; movement_id: string | null }[]) {
       if (!row.movement_id) continue;
       if (!firstInstallmentByMovement.has(row.movement_id)) {

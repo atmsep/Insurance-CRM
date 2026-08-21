@@ -172,12 +172,18 @@ export default async function RemittancesPage({
     // Απόδοση ασφαλίστρων που δεν έχουν καν εισπραχθεί είναι σχεδόν πάντα
     // λάθος στιγμή — flag each pending movement's still-uncollected balance
     // so the worklist shows it next to the amount instead of hiding it.
+    // Παράλληλα: με μεγάλο ιστορικό αυτά είναι δεκάδες ερωτήματα, και
+    // σειριακά πρόσθεταν δεκάδες δευτερόλεπτα στη σελίδα.
+    const idChunks: string[][] = [];
     for (let start = 0; start < premiumRows.length; start += 200) {
-      const idsChunk = premiumRows.slice(start, start + 200).map((m) => m.id);
-      const { data: insts } = await admin
-        .from("policy_installments")
-        .select("movement_id, amount, paid_amount")
-        .in("movement_id", idsChunk);
+      idChunks.push(premiumRows.slice(start, start + 200).map((m) => m.id));
+    }
+    const instBatches = await Promise.all(
+      idChunks.map((ids) =>
+        admin.from("policy_installments").select("movement_id, amount, paid_amount").in("movement_id", ids),
+      ),
+    );
+    for (const { data: insts } of instBatches) {
       for (const i of insts ?? []) {
         if (!i.movement_id) continue;
         const remaining = Math.max(i.amount - (i.paid_amount ?? 0), 0);
