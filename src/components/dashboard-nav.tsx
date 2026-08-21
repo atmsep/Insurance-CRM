@@ -14,6 +14,7 @@ import {
   Settings,
   Wallet,
   HandCoins,
+  ReceiptText,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ const navItems: NavItem[] = [
     ],
   },
   { href: "/dashboard/cash-register", label: "Ταμείο", icon: Wallet },
+  { href: "/dashboard/uncollected", label: "Ανείσπρακτα", icon: ReceiptText },
   {
     group: "Εξυπηρέτηση",
     links: [

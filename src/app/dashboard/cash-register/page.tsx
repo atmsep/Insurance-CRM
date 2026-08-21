@@ -12,9 +12,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
-import { installmentRemaining, isBillablePolicyStatus } from "../policies/balance";
+import { installmentRemaining } from "../policies/balance";
 import { formatDate, athensDayStartUtc, athensNextDayStartUtc } from "@/lib/date";
 import { CollectFromCashRegister } from "./_components/collect-from-cash-register";
 import { ReversePaymentButton } from "./_components/reverse-payment-button";
@@ -101,25 +100,6 @@ type MovementRow = {
   }>;
 };
 
-type OutstandingInstallmentRow = {
-  id: string;
-  policy_id: string;
-  installment_number: number;
-  due_date: string;
-  amount: number;
-  paid_amount: number | null;
-  status: string;
-  policies: SingleOrMany<{
-    policy_number: string;
-    risk_label: string | null;
-    status: string;
-    clients: SingleOrMany<{ display_name: string | null }>;
-    agency_users: SingleOrMany<{ full_name: string }>;
-    carriers: SingleOrMany<{ name: string }>;
-    insurance_lines: SingleOrMany<{ name_el: string }>;
-  }>;
-};
-
 // This page existed before (commit 068c310 removed it, data untouched, as
 // part of the Profia-rebuild cleanup) — this is a restoration, not a new
 // design. See the plan for why it reads via the admin client instead of the
@@ -190,35 +170,9 @@ export default async function CashRegisterPage({
     .order("created_at", { ascending: true });
   if (scopeAgentId) movementsQuery = movementsQuery.eq("policies.assigned_agent_id", scopeAgentId);
 
-  // "Ανείσπρακτα" tab: every currently-owed δόση, not just ones tied to a
-  // movement issued on the selected date — this is a standing balance view,
-  // independent of the Ημερομηνία filter above. Chunked because PostgREST
-  // silently caps a response at 1000 rows and this list only grows (~666
-  // agency-wide today, and the planned Profia reimport will multiply it).
-  const fetchAllOutstanding = async () => {
-    const CHUNK = 1000;
-    const MAX_ROWS = 10000;
-    const rows: unknown[] = [];
-    for (let from = 0; from < MAX_ROWS; from += CHUNK) {
-      let q = admin
-        .from("policy_installments")
-        .select(
-          "id, policy_id, installment_number, due_date, amount, paid_amount, status, " +
-            "policies!inner(policy_number, risk_label, status, assigned_agent_id, clients(display_name), " +
-            "agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))",
-        )
-        .in("status", ["pending", "overdue", "partially_paid"])
-        .order("due_date", { ascending: true })
-        .order("id", { ascending: true })
-        .range(from, from + CHUNK - 1);
-      if (scopeAgentId) q = q.eq("policies.assigned_agent_id", scopeAgentId);
-      const { data } = await q;
-      const batch = data ?? [];
-      rows.push(...batch);
-      if (batch.length < CHUNK) break;
-    }
-    return { data: rows };
-  };
+  // Τα μόνιμα ανείσπρακτα έφυγαν σε δική τους σελίδα (/dashboard/uncollected):
+  // δεν είναι δουλειά της ημέρας και φόρτωναν έως 10.000 γραμμές σε κάθε
+  // άνοιγμα του Ταμείου. Εδώ μένει μόνο ό,τι αφορά την επιλεγμένη ημέρα.
 
   const [
     { data: rawCollections, error },
@@ -226,7 +180,6 @@ export default async function CashRegisterPage({
     { data: agents },
     { data: rawMovements },
     { data: paymentMethods },
-    { data: rawAllOutstanding },
   ] = await Promise.all([
     collectionsQuery,
     reversalsQuery,
@@ -235,19 +188,10 @@ export default async function CashRegisterPage({
       : Promise.resolve({ data: [] }),
     movementsQuery,
     admin.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
-    fetchAllOutstanding(),
   ]);
   const collections = (rawCollections ?? []) as unknown as CollectionRow[];
   const reversals = (rawReversals ?? []) as unknown as ReversalRow[];
   const movements = (rawMovements ?? []) as unknown as MovementRow[];
-
-  // A cancelled/draft policy's leftover pending δόση isn't a real
-  // receivable anymore — same rule getOutstandingByPolicy already applies.
-  const allOutstanding = ((rawAllOutstanding ?? []) as unknown as OutstandingInstallmentRow[]).filter((inst) => {
-    const policy = one(inst.policies);
-    return policy ? isBillablePolicyStatus(policy.status) && installmentRemaining(inst) > 0 : false;
-  });
-  const allOutstandingTotal = allOutstanding.reduce((sum, inst) => sum + installmentRemaining(inst), 0);
 
   // A movement's receivable lives on its installments (amount/paid_amount/
   // status, kept in sync by installment_payments_recompute) — "ανείσπρακτο"
@@ -393,13 +337,9 @@ export default async function CashRegisterPage({
         </Button>
       </form>
 
-      <Tabs defaultValue="day">
-        <TabsList className="no-print">
-          <TabsTrigger value="day">Ημέρα</TabsTrigger>
-          <TabsTrigger value="uncollected">Ανείσπρακτα</TabsTrigger>
-        </TabsList>
+      <div className="flex flex-col gap-6">
 
-        <TabsContent value="day" className="flex flex-col gap-6 pt-4">
+        <div className="flex flex-col gap-6">
           {error ? (
             <div className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
               Σφάλμα κατά τη φόρτωση του ταμείου. Δοκίμασε ξανά.
@@ -671,90 +611,9 @@ export default async function CashRegisterPage({
               </div>
             </>
           )}
-        </TabsContent>
+        </div>
 
-        <TabsContent value="uncollected" className="flex flex-col gap-6 pt-4">
-          <div className="w-fit rounded-md border bg-muted px-4 py-2">
-            <p className="text-xs text-muted-foreground">Σύνολο ανείσπρακτων</p>
-            <p className="text-lg font-semibold">{allOutstandingTotal.toFixed(2)} €</p>
-          </div>
-
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ημ. λήξης</TableHead>
-                  <TableHead>Συμβόλαιο</TableHead>
-                  <TableHead>Χαρακτηριστικό</TableHead>
-                  <TableHead>Κλάδος</TableHead>
-                  <TableHead>Εταιρεία</TableHead>
-                  <TableHead>Πελάτης</TableHead>
-                  <TableHead>Ποσό δόσης</TableHead>
-                  <TableHead>Ανείσπρακτο</TableHead>
-                  {isAdmin && <TableHead>Συνεργάτης</TableHead>}
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {allOutstanding.length ? (
-                  allOutstanding.map((inst) => {
-                    const policy = one(inst.policies);
-                    const client = one(policy?.clients ?? null);
-                    const agent = one(policy?.agency_users ?? null);
-                    const carrier = one(policy?.carriers ?? null);
-                    const line = one(policy?.insurance_lines ?? null);
-                    const remaining = installmentRemaining(inst);
-                    return (
-                      <TableRow key={inst.id}>
-                        <TableCell>{formatDate(inst.due_date)}</TableCell>
-                        <TableCell>
-                          <Link href={`/dashboard/policies/${inst.policy_id}`} className="hover:underline">
-                            {policy?.policy_number ?? "—"}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{policy?.risk_label ?? "—"}</TableCell>
-                        <TableCell>{line?.name_el ?? "—"}</TableCell>
-                        <TableCell>{carrier?.name ?? "—"}</TableCell>
-                        <TableCell>{client?.display_name ?? "—"}</TableCell>
-                        <TableCell>{inst.amount.toFixed(2)} €</TableCell>
-                        <TableCell>
-                          <Badge variant="warning">{remaining.toFixed(2)} €</Badge>
-                        </TableCell>
-                        {isAdmin && <TableCell>{agent?.full_name ?? "—"}</TableCell>}
-                        <TableCell className="no-print">
-                          <CollectFromCashRegister
-                            policyId={inst.policy_id}
-                            documentLabel={policy?.policy_number ?? "—"}
-                            kindLabel={null}
-                            installments={[
-                              {
-                                id: inst.id,
-                                installmentNumber: inst.installment_number,
-                                dueDate: inst.due_date,
-                                paidDate: null,
-                                amount: inst.amount,
-                                paidAmount: inst.paid_amount,
-                                status: inst.status,
-                              },
-                            ]}
-                            paymentMethods={paymentMethods ?? []}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={isAdmin ? 10 : 9} className="text-center text-muted-foreground">
-                      Δεν υπάρχουν ανείσπρακτες δόσεις.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>
-      </Tabs>
+      </div>
     </div>
   );
 }
