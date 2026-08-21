@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/activity-log";
-import { installmentRemaining } from "../../policies/balance";
+import { installmentRemaining } from "../policies/balance";
 
 export type BulkCollectResult =
   | { error: string }
@@ -100,6 +100,7 @@ export async function bulkCollectInstallments(
     actorId: agencyUser.id,
   });
 
+  revalidatePath("/dashboard/uncollected");
   revalidatePath("/dashboard/reports/receivables");
   revalidatePath("/dashboard/cash-register");
   return { collected: toPay.length, closed: toClose.length, amount, skipped };

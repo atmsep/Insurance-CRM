@@ -18,7 +18,6 @@ import { PrintButton } from "@/components/print-button";
 import { ListPageHeader } from "@/components/list-page-header";
 import { ReportPrintHeader } from "../_components/report-print-header";
 import { isBillablePolicyStatus, installmentRemaining } from "../../policies/balance";
-import { OpenInstallments, type OpenInstallment } from "./_components/open-installments";
 
 const FORM_ID = "receivables-filters";
 
@@ -34,16 +33,11 @@ type OpenInstallmentRow = {
   paid_amount: number | null;
   policies: SingleOrMany<{
     id: string;
-    policy_number: string;
     status: string;
     assigned_agent_id: string | null;
     clients: SingleOrMany<{ id: string; display_name: string | null; phone_mobile: string | null }>;
   }>;
 };
-
-// Πόσες γραμμές δείχνει η λίστα επιλογής. Πάνω από αυτό δεν επιλέγεις με
-// το χέρι ούτως ή άλλως — στενεύεις τα κριτήρια.
-const WORKLIST_LIMIT = 500;
 
 type ClientBucketRow = {
   clientId: string;
@@ -64,7 +58,7 @@ type ClientBucketRow = {
 export default async function ReceivablesReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ agent?: string; maxAmount?: string; until?: string }>;
+  searchParams: Promise<{ agent?: string }>;
 }) {
   const agencyUser = await requireAgencyUser();
   if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
@@ -73,15 +67,13 @@ export default async function ReceivablesReportPage({
 
   const sp = await searchParams;
   const agentId = sp.agent || "";
-  const maxAmountRaw = sp.maxAmount ?? "";
-  const untilDate = sp.until ?? "";
-  const maxAmount = maxAmountRaw ? Number(maxAmountRaw) : null;
   const admin = createAdminClient();
 
-  const [{ data: agents }, { data: paymentMethods }] = await Promise.all([
-    admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
-    admin.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
-  ]);
+  const { data: agents } = await admin
+    .from("agency_users")
+    .select("id, full_name")
+    .eq("is_active", true)
+    .order("full_name");
 
   // Chunked past PostgREST's silent 1000-row cap (666 open δόσεις today,
   // and the reimport will multiply that).
@@ -94,14 +86,13 @@ export default async function ReceivablesReportPage({
       .from("policy_installments")
       .select(
         "id, due_date, amount, paid_amount, " +
-          "policies!inner(id, policy_number, status, assigned_agent_id, clients!inner(id, display_name, phone_mobile))",
+          "policies!inner(id, status, assigned_agent_id, clients!inner(id, display_name, phone_mobile))",
       )
       .in("status", ["pending", "overdue", "partially_paid"])
       .order("due_date", { ascending: true })
       .order("id", { ascending: true })
       .range(start, start + CHUNK - 1);
     if (agentId) q = q.eq("policies.assigned_agent_id", agentId);
-    if (untilDate) q = q.lte("due_date", untilDate);
     const { data, error } = await q;
     if (error) {
       loadError = true;
@@ -117,9 +108,6 @@ export default async function ReceivablesReportPage({
   const todayMs = new Date(`${today}T00:00:00Z`).getTime();
 
   const byClient = new Map<string, ClientBucketRow>();
-  const worklist: OpenInstallment[] = [];
-  let worklistTotal = 0;
-
   for (const inst of open) {
     const policy = one(inst.policies);
     if (!policy || !isBillablePolicyStatus(policy.status)) continue;
@@ -127,27 +115,6 @@ export default async function ReceivablesReportPage({
     if (remaining <= 0) continue;
     const client = one(policy.clients);
     if (!client) continue;
-
-    // Το φίλτρο ποσού εφαρμόζεται στο ΥΠΟΛΟΙΠΟ, όχι στο αρχικό ποσό της
-    // δόσης — αυτό είναι που μένει να εισπραχθεί.
-    if (maxAmount === null || remaining <= maxAmount) {
-      worklistTotal++;
-      if (worklist.length < WORKLIST_LIMIT) {
-        const overdueDays = Math.floor(
-          (todayMs - new Date(`${inst.due_date}T00:00:00Z`).getTime()) / msPerDay,
-        );
-        worklist.push({
-          id: inst.id,
-          policyId: policy.id,
-          policyNumber: policy.policy_number,
-          clientId: client.id,
-          clientName: client.display_name ?? "—",
-          dueDate: inst.due_date,
-          remaining,
-          overdueDays,
-        });
-      }
-    }
 
     const row = byClient.get(client.id) ?? {
       clientId: client.id,
@@ -206,31 +173,6 @@ export default async function ReceivablesReportPage({
                   allLabel="Όλοι οι συνεργάτες"
                   options={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
                   className="h-9 w-full text-sm"
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="maxAmount">Υπόλοιπο έως</Label>
-                <input
-                  id="maxAmount"
-                  form={FORM_ID}
-                  name="maxAmount"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  defaultValue={maxAmountRaw}
-                  placeholder="π.χ. 10"
-                  className="h-9 rounded-md border border-input bg-transparent px-2.5 text-sm"
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="until">Λήξη δόσης έως</Label>
-                <input
-                  id="until"
-                  form={FORM_ID}
-                  name="until"
-                  type="date"
-                  defaultValue={untilDate}
-                  className="h-9 rounded-md border border-input bg-transparent px-2.5 text-sm"
                 />
               </div>
               <Button type="submit" form={FORM_ID} variant="secondary" size="sm">
@@ -318,14 +260,6 @@ export default async function ReceivablesReportPage({
                 </Table>
               </div>
 
-              <div className="no-print">
-                <OpenInstallments
-                  rows={worklist}
-                  paymentMethods={paymentMethods ?? []}
-                  today={today}
-                  truncated={worklistTotal > worklist.length}
-                />
-              </div>
             </>
           )}
 
