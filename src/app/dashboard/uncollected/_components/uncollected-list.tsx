@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CollectBulkBar } from "./collect-bulk-bar";
+import { CollectFromCashRegister } from "../../cash-register/_components/collect-from-cash-register";
 
 export type UncollectedRow = {
   id: string;
@@ -29,6 +30,9 @@ export type UncollectedRow = {
   startDate: string | null;
   dueDate: string;
   amount: number;
+  paidAmount: number | null;
+  status: string;
+  installmentNumber: number;
   remaining: number;
   agentId: string | null;
   agentName: string;
@@ -47,7 +51,15 @@ function fmt(d: string | null) {
   return `${day}/${m}/${y}`;
 }
 
-function Rows({ rows, showAgent }: { rows: UncollectedRow[]; showAgent: boolean }) {
+function Rows({
+  rows,
+  showAgent,
+  paymentMethods,
+}: {
+  rows: UncollectedRow[];
+  showAgent: boolean;
+  paymentMethods: { id: string; name: string }[];
+}) {
   return (
     <Table>
       <TableHeader>
@@ -66,6 +78,7 @@ function Rows({ rows, showAgent }: { rows: UncollectedRow[]; showAgent: boolean 
           <TableHead className="text-right">Ποσό δόσης</TableHead>
           <TableHead className="text-right">Ανείσπρακτο</TableHead>
           {showAgent && <TableHead>Συνεργάτης</TableHead>}
+          <TableHead className="no-print" />
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -91,6 +104,28 @@ function Rows({ rows, showAgent }: { rows: UncollectedRow[]; showAgent: boolean 
               <Badge variant="warning">{r.remaining.toFixed(2)} €</Badge>
             </TableCell>
             {showAgent && <TableCell>{r.agentName}</TableCell>}
+            {/* Η είσπραξη ανά γραμμή μένει δίπλα στη μαζική: η μαζική κλείνει
+                ολόκληρο το υπόλοιπο, ενώ αυτή δέχεται μερικό ποσό, επιταγή
+                και δικό της αριθμό απόδειξης. */}
+            <TableCell className="no-print">
+              <CollectFromCashRegister
+                policyId={r.policyId}
+                documentLabel={r.policyNumber}
+                kindLabel={null}
+                installments={[
+                  {
+                    id: r.id,
+                    installmentNumber: r.installmentNumber,
+                    dueDate: r.dueDate,
+                    paidDate: null,
+                    amount: r.amount,
+                    paidAmount: r.paidAmount,
+                    status: r.status,
+                  },
+                ]}
+                paymentMethods={paymentMethods}
+              />
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -139,13 +174,13 @@ export function UncollectedList({
                 </p>
               </div>
               <div className="overflow-x-auto">
-                <Rows rows={g.rows} showAgent={false} />
+                <Rows rows={g.rows} showAgent={false} paymentMethods={paymentMethods} />
               </div>
             </div>
           ))
         ) : (
           <div className="overflow-x-auto rounded-md border">
-            <Rows rows={allRows} showAgent={false} />
+            <Rows rows={allRows} showAgent={false} paymentMethods={paymentMethods} />
           </div>
         )}
 

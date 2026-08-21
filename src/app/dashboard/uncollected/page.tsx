@@ -19,6 +19,7 @@ function one<T>(v: SingleOrMany<T>): T | null {
 type Row = {
   id: string;
   policy_id: string;
+  installment_number: number;
   due_date: string;
   amount: number;
   paid_amount: number | null;
@@ -68,7 +69,7 @@ export default async function UncollectedPage({
     let q = admin
       .from("policy_installments")
       .select(
-        "id, policy_id, due_date, amount, paid_amount, status, " +
+        "id, policy_id, installment_number, due_date, amount, paid_amount, status, " +
           "policy_movements(issue_date, start_date), " +
           "policies!inner(policy_number, risk_label, status, issue_date, start_date, assigned_agent_id, " +
           "clients(display_name), agency_users!policies_assigned_agent_id_fkey(full_name), " +
@@ -125,6 +126,9 @@ export default async function UncollectedPage({
       startDate: movement?.start_date ?? policy.start_date,
       dueDate: r.due_date,
       amount: r.amount,
+      paidAmount: r.paid_amount,
+      status: r.status,
+      installmentNumber: r.installment_number,
       remaining,
       agentId: policy.assigned_agent_id,
       agentName: one(policy.agency_users)?.full_name ?? "Χωρίς συνεργάτη",
