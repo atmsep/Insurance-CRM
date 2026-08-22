@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Noto_Sans, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
-// Geist has no Greek glyphs in any subset it offers — almost all of this
-// app's text is Greek, so it silently fell back to the browser's default
-// serif font. Inter covers Greek properly and reads as a modern UI font.
-const sans = Inter({
+// Geist has no Greek glyphs at all — almost all of this app's text is
+// Greek, so it silently fell back to the browser's default serif font.
+// Inter replaced it, but Inter's Greek is drawn by a Latin-first eye: its
+// ω has flat tops and a very high middle joint, so it reads as a Latin
+// "w" to a Greek reader. Noto Sans is designed script-by-script, its ω has
+// the proper rounded bowls — and it renders Greek ~5% NARROWER than Inter,
+// so the dense tables didn't lose any room.
+const sans = Noto_Sans({
   variable: "--font-geist-sans",
   subsets: ["latin", "greek"],
 });
