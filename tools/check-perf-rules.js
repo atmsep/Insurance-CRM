@@ -61,10 +61,7 @@ const ALLOWED = {
 // περιμένει να καθαρίσουν όλες πρώτα. Κάθε γραμμή που φεύγει από εδώ είναι
 // μια σελίδα λιγότερο που θα κολλήσει καθώς μεγαλώνουν τα δεδομένα.
 const KNOWN_DEBT = new Set([
-  "app/dashboard/remittances/_components/remittances-view.tsx:serial-query-loop",
-  "app/dashboard/reports/commission-statement/page.tsx:serial-query-loop",
-  "app/dashboard/reports/retention/page.tsx:serial-query-loop",
-  "app/dashboard/uncollected/page.tsx:serial-query-loop",
+  // Άδειο: και οι πέντε σελίδες μεταφέρθηκαν (migrations 0113-0117).
 ]);
 
 function walk(dir, out = []) {

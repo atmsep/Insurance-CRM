@@ -1,7 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgencyUser } from "@/lib/dal";
 import { Button } from "@/components/ui/button";
-import { installmentRemaining, isBillablePolicyStatus } from "../policies/balance";
 import { PrintButton } from "@/components/print-button";
 import { ListPageHeader } from "@/components/list-page-header";
 import { ReportPrintHeader } from "../reports/_components/report-print-header";
@@ -13,32 +12,32 @@ import { UncollectedList, type UncollectedRow, type AgentGroup } from "./_compon
 // δεν είναι δουλειά της ημέρας: το Ταμείο κλείνει μια συγκεκριμένη μέρα,
 // ενώ αυτό είναι μόνιμο υπόλοιπο ανεξάρτητο από ημερομηνία.
 
-type SingleOrMany<T> = T | T[] | null;
-function one<T>(v: SingleOrMany<T>): T | null {
-  return Array.isArray(v) ? (v[0] ?? null) : v;
-}
-
+// Ό,τι επιστρέφει η uncollected_installments (migration 0114). Τα numeric
+// της Postgres φτάνουν ως string μέσω PostgREST, γι' αυτό περνούν από
+// Number(). Τα τρία τελευταία είναι ΤΑ ΙΔΙΑ σε κάθε γραμμή: υπολογίζονται
+// με window functions πάνω στο ΠΛΗΡΕΣ φιλτραρισμένο σύνολο, πριν μπει το
+// όριο εμφάνισης — γι' αυτό το σύνολο δεν ακολουθεί τις 800 γραμμές.
 type Row = {
   id: string;
   policy_id: string;
-  installment_number: number;
+  policy_number: string;
+  risk_label: string | null;
+  line_name: string | null;
+  carrier_name: string | null;
+  client_name: string | null;
+  issue_date: string | null;
+  start_date: string | null;
   due_date: string;
-  amount: number;
-  paid_amount: number | null;
+  amount: string;
+  paid_amount: string | null;
   status: string;
-  policy_movements: SingleOrMany<{ issue_date: string | null; start_date: string | null }>;
-  policies: SingleOrMany<{
-    policy_number: string;
-    risk_label: string | null;
-    status: string;
-    issue_date: string | null;
-    start_date: string | null;
-    assigned_agent_id: string | null;
-    clients: SingleOrMany<{ display_name: string | null }>;
-    agency_users: SingleOrMany<{ full_name: string }>;
-    carriers: SingleOrMany<{ name: string }>;
-    insurance_lines: SingleOrMany<{ name_el: string }>;
-  }>;
+  installment_number: number;
+  remaining: string;
+  agent_id: string | null;
+  agent_name: string;
+  agent_total: string;
+  grand_total: string;
+  matched_count: string;
 };
 
 // Πόσες γραμμές δείχνει η λίστα. Πάνω από αυτό δεν επιλέγεις με το χέρι —
@@ -63,92 +62,68 @@ export default async function UncollectedPage({
   const scopeAgentId = isAdmin ? sp.agent || null : agencyUser.id;
   const admin = createAdminClient();
 
-  // Το PostgREST κόβει σιωπηλά στις 1000 γραμμές, οπότε διαβάζεται σε κομμάτια.
-  const CHUNK = 1000;
-  const MAX_ROWS = 10000;
-  const raw: unknown[] = [];
-  for (let from = 0; from < MAX_ROWS; from += CHUNK) {
-    let q = admin
-      .from("policy_installments")
-      .select(
-        "id, policy_id, installment_number, due_date, amount, paid_amount, status, " +
-          "policy_movements(issue_date, start_date), " +
-          "policies!inner(policy_number, risk_label, status, issue_date, start_date, assigned_agent_id, " +
-          "clients(display_name), agency_users!policies_assigned_agent_id_fkey(full_name), " +
-          "carriers(name), insurance_lines(name_el))",
-      )
-      .in("status", ["pending", "overdue", "partially_paid"])
-      .order("due_date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, from + CHUNK - 1);
-    if (scopeAgentId) q = q.eq("policies.assigned_agent_id", scopeAgentId);
-    if (untilDate) q = q.lte("due_date", untilDate);
-    const { data } = await q;
-    const batch = data ?? [];
-    raw.push(...batch);
-    if (batch.length < CHUNK) break;
-  }
-
-  // Ρυθμίσεις γραφείου, όχι δεδομένα: cached (lib/cached-queries/lookups.ts).
-  const [agents, paymentMethods] = await Promise.all([
+  // Φιλτράρισμα, υπόλοιπα, ομαδοποίηση και σύνολα γίνονται ΣΤΗ ΒΑΣΗ
+  // (migration 0114). Πριν, η σελίδα κατέβαζε έως 10.000 δόσεις σε σειριακό
+  // βρόχο — μία διαδρομή ανά 1.000 γραμμές — και τα έκανε όλα σε JavaScript.
+  const [agents, paymentMethods, { data: rpcData, error: rpcError }] = await Promise.all([
     isAdmin ? getActiveAgentsCached() : Promise.resolve([]),
     getPaymentMethodsCached(),
+    admin.rpc("uncollected_installments", {
+      p_agent_id: scopeAgentId,
+      p_max_amount: maxAmount,
+      p_until: untilDate || null,
+      p_limit: LIST_LIMIT,
+    }),
   ]);
 
-  // Εκκρεμής δόση ακυρωμένου ή πρόχειρου συμβολαίου δεν είναι πια οφειλή —
-  // ίδιος κανόνας με το getOutstandingByPolicy.
-  const rows: UncollectedRow[] = [];
-  let total = 0;
-  let matched = 0;
-  for (const r of raw as Row[]) {
-    const policy = one(r.policies);
-    if (!policy || !isBillablePolicyStatus(policy.status)) continue;
-    const remaining = installmentRemaining(r);
-    if (remaining <= 0) continue;
-    // Το φίλτρο ποσού εφαρμόζεται στο ΥΠΟΛΟΙΠΟ, όχι στο αρχικό ποσό.
-    if (maxAmount !== null && remaining > maxAmount) continue;
+  const raw = (rpcData ?? []) as unknown as Row[];
+  const rows: UncollectedRow[] = raw.map((r) => ({
+    id: r.id,
+    policyId: r.policy_id,
+    policyNumber: r.policy_number,
+    riskLabel: r.risk_label,
+    line: r.line_name,
+    carrier: r.carrier_name,
+    client: r.client_name,
+    // Οι ημερομηνίες της ΚΙΝΗΣΗΣ περιγράφουν τη συγκεκριμένη περίοδο· το
+    // συμβόλαιο κρατά μόνο την τρέχουσα, που για παλιά δόση είναι λάθος.
+    // Το coalesce γίνεται πλέον μέσα στη συνάρτηση.
+    issueDate: r.issue_date,
+    startDate: r.start_date,
+    dueDate: r.due_date,
+    amount: Number(r.amount),
+    paidAmount: r.paid_amount === null ? null : Number(r.paid_amount),
+    status: r.status,
+    installmentNumber: r.installment_number,
+    remaining: Number(r.remaining),
+    agentId: r.agent_id,
+    agentName: r.agent_name,
+  }));
 
-    total += remaining;
-    matched++;
-    if (rows.length >= LIST_LIMIT) continue;
+  // Τα σύνολα αφορούν ΟΛΕΣ τις δόσεις που ταιριάζουν, όχι μόνο τις 800 που
+  // εμφανίζονται — η βάση τα υπολογίζει με window functions πριν το όριο.
+  const total = raw.length ? Number(raw[0].grand_total) : 0;
+  const matched = raw.length ? Number(raw[0].matched_count) : 0;
 
-    const movement = one(r.policy_movements);
-    rows.push({
-      id: r.id,
-      policyId: r.policy_id,
-      policyNumber: policy.policy_number,
-      riskLabel: policy.risk_label,
-      line: one(policy.insurance_lines)?.name_el ?? null,
-      carrier: one(policy.carriers)?.name ?? null,
-      client: one(policy.clients)?.display_name ?? null,
-      // Οι ημερομηνίες της ΚΙΝΗΣΗΣ περιγράφουν τη συγκεκριμένη περίοδο· το
-      // συμβόλαιο κρατά μόνο την τρέχουσα, που για παλιά δόση είναι λάθος.
-      issueDate: movement?.issue_date ?? policy.issue_date,
-      startDate: movement?.start_date ?? policy.start_date,
-      dueDate: r.due_date,
-      amount: r.amount,
-      paidAmount: r.paid_amount,
-      status: r.status,
-      installmentNumber: r.installment_number,
-      remaining,
-      agentId: policy.assigned_agent_id,
-      agentName: one(policy.agency_users)?.full_name ?? "Χωρίς συνεργάτη",
-    });
-  }
-
-  // Σε προβολή «όλοι οι συνεργάτες» σπάει σε ενότητες ανά συνεργάτη, με
-  // δικό της υποσύνολο η καθεμία.
+  // Σε προβολή «όλοι οι συνεργάτες» σπάει σε ενότητες ανά συνεργάτη. Οι
+  // γραμμές έρχονται ήδη ταξινομημένες κατά φθίνον υποσύνολο, και το
+  // υποσύνολο έρχεται από τη βάση — άρα παραμένει σωστό ακόμα κι όταν το
+  // όριο εμφάνισης κόψει γραμμές του συνεργάτη.
   const grouped = isAdmin && !scopeAgentId;
   const byAgent = new Map<string, AgentGroup>();
-  for (const r of rows) {
-    const key = r.agentId ?? NO_AGENT;
-    const g = byAgent.get(key) ?? { agentId: key, agentName: r.agentName, rows: [], total: 0 };
-    g.rows.push(r);
-    g.total += r.remaining;
+  raw.forEach((r, i) => {
+    const key = r.agent_id ?? NO_AGENT;
+    const g = byAgent.get(key) ?? {
+      agentId: key,
+      agentName: r.agent_name,
+      rows: [],
+      total: Number(r.agent_total),
+    };
+    g.rows.push(rows[i]);
     byAgent.set(key, g);
-  }
+  });
   const groups = grouped
-    ? [...byAgent.values()].sort((a, b) => b.total - a.total)
+    ? [...byAgent.values()]
     : [{ agentId: "all", agentName: "", rows, total }];
 
   const today = athensToday();
@@ -214,14 +189,22 @@ export default async function UncollectedPage({
         </div>
       </form>
 
-      <UncollectedList
-        groups={groups}
-        grouped={grouped}
-        paymentMethods={paymentMethods}
-        today={today}
-        truncated={matched > rows.length}
-        shownCount={rows.length}
-      />
+      {/* Σφάλμα ποτέ σιωπηλό: χωρίς αυτό μια αποτυχία θα εμφανιζόταν ως
+          «δεν υπάρχουν ανείσπρακτα», που είναι χειρότερο από μήνυμα λάθους. */}
+      {rpcError ? (
+        <div className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
+          Δεν ήταν δυνατή η φόρτωση των ανείσπρακτων. Δοκίμασε ξανά ή στένεψε τα κριτήρια.
+        </div>
+      ) : (
+        <UncollectedList
+          groups={groups}
+          grouped={grouped}
+          paymentMethods={paymentMethods}
+          today={today}
+          truncated={matched > rows.length}
+          shownCount={rows.length}
+        />
+      )}
     </div>
   );
 }

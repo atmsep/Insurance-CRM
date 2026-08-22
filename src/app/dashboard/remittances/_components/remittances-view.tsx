@@ -32,6 +32,7 @@ import { RemittanceBulkBar } from "./remittance-bulk-bar";
 import { RemitRowButton } from "./remit-row-button";
 import { ReceiptPrintLink } from "./receipt-print-link";
 import { getActiveAgentsCached, getCarriersCached, getInsuranceLinesCached } from "@/lib/cached-queries/lookups";
+import { resolveWindow, describeWindow } from "@/lib/list-page/window";
 
 type SingleOrMany<T> = T | T[] | null;
 function one<T>(v: SingleOrMany<T>): T | null {
@@ -113,6 +114,58 @@ export type RemittanceKind = "premium" | "commission";
 
 const RECEIPT_PATH = "/remittance-receipt";
 
+// Πάνω από αυτό δεν επιλέγεις με το χέρι — στενεύεις το διάστημα. Τα σύνολα
+// ΔΕΝ ακολουθούν αυτό το όριο: η βάση τα υπολογίζει πριν το limit (0117).
+const WORKLIST_LIMIT = 1000;
+
+// Ό,τι επιστρέφει η remittance_worklist. Τα numeric της Postgres φτάνουν ως
+// string μέσω PostgREST.
+type WorklistRow = {
+  id: string;
+  policy_id: string;
+  kind: string;
+  document_number: string | null;
+  issue_date: string;
+  start_date: string;
+  premium_net: string | null;
+  premium_gross: string;
+  policy_number: string;
+  risk_label: string | null;
+  client_name: string | null;
+  agent_name: string | null;
+  carrier_name: string | null;
+  line_name: string | null;
+  commission: string;
+  uncollected: string;
+  total_amount: string;
+  matched_count: string;
+};
+
+// Η επίπεδη γραμμή της συνάρτησης ξαναγίνεται το ένθετο σχήμα που περιμένει
+// ο πίνακας, ώστε να μη χρειαστεί να ξαναγραφτεί ολόκληρο το renderTable
+// (το οποίο εξυπηρετεί ΚΑΙ την προβολή «Αποδοθέντα», που παραμένει
+// σελιδοποιημένο ερώτημα πάνω στον πίνακα).
+function toMovementRow(w: WorklistRow): RemittanceMovementRow {
+  return {
+    id: w.id,
+    kind: w.kind,
+    document_number: w.document_number,
+    issue_date: w.issue_date,
+    start_date: w.start_date,
+    premium_net: w.premium_net === null ? null : Number(w.premium_net),
+    premium_gross: Number(w.premium_gross),
+    policy_id: w.policy_id,
+    policies: {
+      policy_number: w.policy_number,
+      risk_label: w.risk_label,
+      clients: { display_name: w.client_name },
+      agency_users: w.agent_name ? { full_name: w.agent_name } : null,
+      carriers: w.carrier_name ? { name: w.carrier_name } : null,
+      insurance_lines: w.line_name ? { name_el: w.line_name } : null,
+    },
+  };
+}
+
 export async function RemittancesView({
   kind,
   searchParams,
@@ -132,11 +185,18 @@ export async function RemittancesView({
   const basePath = isPremium ? "/dashboard/remittances/premiums" : "/dashboard/remittances/commissions";
   const title = isPremium ? "Αποδόσεις Ασφαλίστρων" : "Αποδόσεις Προμηθειών";
 
-  // Χωρίς διάστημα δεν φορτώνεται τίποτα: με 43.500 κινήσεις στη βάση, μια
-  // αφιλτράριστη σελίδα κατέβαζε χιλιάδες γραμμές σε κάθε άνοιγμα.
-  const hasRange = Boolean(
+  // Προεπιλεγμένο παράθυρο αντί για κενή οθόνη (lib/list-page/window.ts):
+  // η σελίδα ζητούσε από τον χρήστη να διαλέξει διάστημα πριν δείξει
+  // οτιδήποτε, που είναι αδιέξοδο στο πρώτο άνοιγμα. Ανοίγει στον τρέχοντα
+  // μήνα και το δηλώνει· αφιλτράριστη δεν τρέχει ποτέ.
+  const hasOwnRange = Boolean(
     filters.issueFrom || filters.issueTo || filters.startFrom || filters.startTo,
   );
+  const dateWindow = resolveWindow(filters.issueFrom, filters.issueTo, "month");
+  if (!hasOwnRange) {
+    filters.issueFrom = dateWindow.from;
+    filters.issueTo = dateWindow.to;
+  }
   const remitStatus = sp.remit_status === "done" ? "done" : "pending";
   const page = Math.max(1, Number(sp.page) || 1);
   const perPage = parsePerPage(sp.per_page);
@@ -157,74 +217,45 @@ export async function RemittancesView({
   let premiumTotalCount = 0;
   let commissionTotalCount = 0;
   const uncollectedByMovement = new Map<string, number>();
+  let pendingError = false;
 
-  if (hasRange && remitStatus === "pending") {
-    // PostgREST silently caps a response at 1000 rows — an unchunked fetch
-    // here would quietly truncate the worklist (and its totals) once the
-    // backlog grows past that, so page through explicitly. The id tiebreak
-    // keeps the paging stable across equal issue_dates.
-    const CHUNK = 1000;
-    const MAX_WORKLIST_ROWS = 10000;
-    const fetchAllPending = async (column: "premium_remitted_at" | "outgoing_commission_remitted_at") => {
-      const rows: RemittanceMovementRow[] = [];
-      for (let from = 0; from < MAX_WORKLIST_ROWS; from += CHUNK) {
-        const { data } = await applyRemittanceFilters(
-          admin.from("policy_movements").select(MOVEMENT_SELECT).is(column, null),
-          filters,
-        )
-          .order("issue_date", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, from + CHUNK - 1);
-        const batch = (data ?? []) as unknown as RemittanceMovementRow[];
-        rows.push(...batch);
-        if (batch.length < CHUNK) break;
-      }
-      return rows;
-    };
+  if (remitStatus === "pending") {
+    // Ένα ερώτημα αντί για τρεις σαρώσεις (migration 0117). Πριν: σειριακός
+    // βρόχος έως 10.000 κινήσεις για τα ασφάλιστρα, δεύτερος ίδιος για τις
+    // προμήθειες, και δεκάδες chunked ερωτήματα στις δόσεις για το
+    // ανείσπρακτο υπόλοιπο. Η συνάρτηση λύνει και τα τρία μαζί, και
+    // επιστρέφει το σύνολο ΟΛΟΥ του φιλτραρισμένου συνόλου.
+    const { data: worklistData, error: worklistError } = await admin.rpc("remittance_worklist", {
+      p_kind: kind,
+      p_policy_number: filters.policyNumber ?? null,
+      p_risk: filters.risk ?? null,
+      p_client_name: filters.clientName ?? null,
+      p_agent_ids: filters.agentIds ?? null,
+      p_carrier_id: filters.carrierId ?? null,
+      p_line_id: filters.lineId ?? null,
+      p_kinds: filters.kinds ?? null,
+      p_status: filters.status ?? null,
+      p_issue_from: filters.issueFrom ?? null,
+      p_issue_to: filters.issueTo ?? null,
+      p_start_from: filters.startFrom ?? null,
+      p_start_to: filters.startTo ?? null,
+      p_limit: WORKLIST_LIMIT,
+    });
+    pendingError = Boolean(worklistError);
 
-    const [rawPremiumPending, commissionCandidates] = await Promise.all([
-      fetchAllPending("premium_remitted_at"),
-      fetchAllPending("outgoing_commission_remitted_at"),
-    ]);
-
-    premiumRows = rawPremiumPending;
-
-    // Απόδοση ασφαλίστρων που δεν έχουν καν εισπραχθεί είναι σχεδόν πάντα
-    // λάθος στιγμή — flag each pending movement's still-uncollected balance
-    // so the worklist shows it next to the amount instead of hiding it.
-    // Παράλληλα: με μεγάλο ιστορικό αυτά είναι δεκάδες ερωτήματα, και
-    // σειριακά πρόσθεταν δεκάδες δευτερόλεπτα στη σελίδα.
-    const idChunks: string[][] = [];
-    for (let start = 0; start < premiumRows.length; start += 200) {
-      idChunks.push(premiumRows.slice(start, start + 200).map((m) => m.id));
+    const worklist = (worklistData ?? []) as unknown as WorklistRow[];
+    const mapped = worklist.map(toMovementRow);
+    if (isPremium) {
+      premiumRows = mapped;
+      premiumTotalCount = worklist.length ? Number(worklist[0].matched_count) : 0;
+      // Απόδοση ασφαλίστρων που δεν έχουν καν εισπραχθεί είναι σχεδόν πάντα
+      // λάθος στιγμή — το υπόλοιπο φαίνεται δίπλα στο ποσό.
+      for (const w of worklist) uncollectedByMovement.set(w.id, Number(w.uncollected));
+    } else {
+      commissionRows = mapped.map((m, i) => ({ ...m, commission: Number(worklist[i].commission) }));
+      commissionTotalCount = worklist.length ? Number(worklist[0].matched_count) : 0;
     }
-    const instBatches = await Promise.all(
-      idChunks.map((ids) =>
-        admin.from("policy_installments").select("movement_id, amount, paid_amount").in("movement_id", ids),
-      ),
-    );
-    for (const { data: insts } of instBatches) {
-      for (const i of insts ?? []) {
-        if (!i.movement_id) continue;
-        const remaining = Math.max(i.amount - (i.paid_amount ?? 0), 0);
-        uncollectedByMovement.set(i.movement_id, (uncollectedByMovement.get(i.movement_id) ?? 0) + remaining);
-      }
-    }
-
-    // Only movements that actually carry a nonzero outgoing commission are
-    // worth listing — matches the production report's own precedent for
-    // resolving "Προμήθεια Συνεργάτη" (first-installment path for every kind
-    // but cancellation, which attaches via policy_movement_id instead).
-    const commissionByMovement = await getOutgoingCommissionsByMovement(
-      admin,
-      commissionCandidates.map((m) => ({ id: m.id, isReal: true })),
-    );
-    commissionRows = commissionCandidates
-      .map((m) => ({ ...m, commission: commissionByMovement.get(m.id) ?? 0 }))
-      .filter((m) => m.commission !== 0);
-    premiumTotalCount = premiumRows.length;
-    commissionTotalCount = commissionRows.length;
-  } else if (hasRange) {
+  } else {
     // "Αποδοθέντα" — an audit trail of everything already marked remitted,
     // newest first. Unlike the pending worklist (always small — a remit
     // action removes the row) this only ever grows, so it's paginated;
@@ -583,13 +614,15 @@ export async function RemittancesView({
         />
 
         <div className="flex flex-col gap-4">
-          {!hasRange ? (
-            <div className="rounded-md border border-dashed p-8 text-center">
-              <p className="text-sm font-medium">Διάλεξε διάστημα για να φορτώσουν οι αποδόσεις</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Συμπλήρωσε ημερομηνία έκδοσης ή έναρξης στα κριτήρια και πάτα «Εφαρμογή φίλτρων».
-                Χωρίς διάστημα η σελίδα θα κατέβαζε ολόκληρο το χαρτοφυλάκιο.
-              </p>
+          {!hasOwnRange && (
+            <p className="text-sm text-muted-foreground">
+              Εμφανίζονται οι αποδόσεις <span className="font-medium">{describeWindow(dateWindow)}</span>. Άλλαξε τις
+              ημερομηνίες στα κριτήρια για άλλο διάστημα.
+            </p>
+          )}
+          {pendingError ? (
+            <div className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
+              Δεν ήταν δυνατή η φόρτωση των αποδόσεων. Δοκίμασε ξανά ή στένεψε το διάστημα.
             </div>
           ) : (
             <>

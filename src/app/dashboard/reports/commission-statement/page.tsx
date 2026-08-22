@@ -30,40 +30,28 @@ const COMMISSION_TYPE_LABELS: Record<string, string> = {
   endorsement: "Πρόσθετη πράξη",
 };
 
-type SingleOrMany<T> = T | T[] | null;
-function one<T>(v: SingleOrMany<T>): T | null {
-  return Array.isArray(v) ? (v[0] ?? null) : v;
-}
-
-type MovementEmbed = SingleOrMany<{
-  document_number: string | null;
-  issue_date: string;
-  outgoing_commission_remitted_at: string | null;
-}>;
-
+// Ό,τι επιστρέφει η commission_statement (migration 0116). Το ποια κίνηση
+// αντιστοιχεί σε κάθε προμήθεια — δόση για τις κανονικές, απευθείας κίνηση
+// για τις ακυρώσεις (0084/0087) — λύνεται πλέον μέσα στη συνάρτηση, οπότε
+// έφυγαν τα τρία επίπεδα ένθετων embeds και η movementOf().
 type StatementRow = {
   id: string;
   period: string | null;
   commission_type: string;
-  base_amount: number | null;
-  commission_rate_percent: number | null;
-  commission_amount: number;
-  policies: SingleOrMany<{
-    policy_number: string;
-    risk_label: string | null;
-    clients: SingleOrMany<{ display_name: string | null }>;
-  }>;
-  carriers: SingleOrMany<{ name: string }>;
-  // Normal commissions hang off a δόση whose movement carries the remit
-  // stamp; cancellation clawbacks hang off the movement directly (0087).
-  policy_installments: SingleOrMany<{ policy_movements: MovementEmbed }>;
-  policy_movements: MovementEmbed;
+  base_amount: string | null;
+  commission_rate_percent: string | null;
+  commission_amount: string;
+  policy_number: string;
+  risk_label: string | null;
+  client_name: string | null;
+  carrier_name: string | null;
+  document_number: string | null;
+  issue_date: string | null;
+  remitted_at: string | null;
+  total_commission: string;
+  total_base: string;
+  total_remitted: string;
 };
-
-function movementOf(row: StatementRow) {
-  const viaInstallment = one(one(row.policy_installments)?.policy_movements ?? null);
-  return viaInstallment ?? one(row.policy_movements);
-}
 
 // Athens calendar date, for the default period bounds.
 // Εκκαθάριση προμηθειών συνεργάτη — the printable per-agent statement of
@@ -95,43 +83,26 @@ export default async function CommissionStatementPage({
     .order("full_name");
   const selectedAgent = (agents ?? []).find((a) => a.id === agentId) ?? null;
 
-  const rows: StatementRow[] = [];
-  let loadError = false;
-  if (selectedAgent) {
-    // Chunked past PostgREST's silent 1000-row cap — a whole year's
-    // statement for a productive agent can exceed it.
-    const CHUNK = 1000;
-    const MAX_ROWS = 10000;
-    for (let start = 0; start < MAX_ROWS; start += CHUNK) {
-      const { data, error } = await admin
-        .from("commissions")
-        .select(
-          "id, period, commission_type, base_amount, commission_rate_percent, commission_amount, " +
-            "policies!inner(policy_number, risk_label, clients!inner(display_name)), carriers(name), " +
-            "policy_installments(policy_movements(document_number, issue_date, outgoing_commission_remitted_at)), " +
-            "policy_movements(document_number, issue_date, outgoing_commission_remitted_at)",
-        )
-        .eq("direction", "outgoing")
-        .eq("agent_id", selectedAgent.id)
-        .gte("period", from)
-        .lte("period", to)
-        .order("period", { ascending: true })
-        .order("id", { ascending: true })
-        .range(start, start + CHUNK - 1);
-      if (error) {
-        loadError = true;
-        break;
-      }
-      const batch = (data ?? []) as unknown as StatementRow[];
-      rows.push(...batch);
-      if (batch.length < CHUNK) break;
-    }
-  }
+  // Γραμμές ΚΑΙ σύνολα σε ένα ερώτημα (migration 0116). Πριν, η σελίδα
+  // κατέβαζε έως 10.000 προμήθειες σε σειριακό βρόχο, με τρία επίπεδα
+  // ένθετων embeds για να βρει την κίνηση κάθε προμήθειας, και άθροιζε σε
+  // JavaScript.
+  const { data: rpcData, error: rpcError } = selectedAgent
+    ? await admin.rpc("commission_statement", {
+        p_agent_id: selectedAgent.id,
+        p_from: from,
+        p_to: to,
+      })
+    : { data: null, error: null };
+  const loadError = Boolean(rpcError);
+  const rows = (rpcData ?? []) as unknown as StatementRow[];
 
-  const totalCommission = rows.reduce((sum, r) => sum + r.commission_amount, 0);
-  const totalBase = rows.reduce((sum, r) => sum + (r.base_amount ?? 0), 0);
-  const remitted = rows.filter((r) => movementOf(r)?.outgoing_commission_remitted_at);
-  const remittedTotal = remitted.reduce((sum, r) => sum + r.commission_amount, 0);
+  // Τα σύνολα έρχονται από window functions πάνω σε ΟΛΟ το φιλτραρισμένο
+  // σύνολο — ίδια σε κάθε γραμμή, οπότε διαβάζονται από την πρώτη.
+  const first = rows[0];
+  const totalCommission = first ? Number(first.total_commission) : 0;
+  const totalBase = first ? Number(first.total_base) : 0;
+  const remittedTotal = first ? Number(first.total_remitted) : 0;
   const pendingTotal = totalCommission - remittedTotal;
 
   const title = selectedAgent
@@ -226,27 +197,23 @@ export default async function CommissionStatementPage({
                   <TableBody>
                     {rows.length ? (
                       rows.map((r) => {
-                        const policy = one(r.policies);
-                        const client = one(policy?.clients ?? null);
-                        const carrier = one(r.carriers);
-                        const movement = movementOf(r);
                         return (
                           <TableRow key={r.id}>
-                            <TableCell>{formatDate(movement?.issue_date ?? r.period ?? "")}</TableCell>
-                            <TableCell>{movement?.document_number ?? policy?.policy_number ?? "—"}</TableCell>
-                            <TableCell>{client?.display_name ?? "—"}</TableCell>
-                            <TableCell>{carrier?.name ?? "—"}</TableCell>
+                            <TableCell>{formatDate(r.issue_date ?? r.period ?? "")}</TableCell>
+                            <TableCell>{r.document_number ?? r.policy_number ?? "—"}</TableCell>
+                            <TableCell>{r.client_name ?? "—"}</TableCell>
+                            <TableCell>{r.carrier_name ?? "—"}</TableCell>
                             <TableCell>{COMMISSION_TYPE_LABELS[r.commission_type] ?? r.commission_type}</TableCell>
-                            <TableCell className="text-right">{(r.base_amount ?? 0).toFixed(2)} €</TableCell>
+                            <TableCell className="text-right">{Number(r.base_amount ?? 0).toFixed(2)} €</TableCell>
                             <TableCell className="text-right">
-                              {r.commission_rate_percent != null ? `${r.commission_rate_percent}%` : "—"}
+                              {r.commission_rate_percent != null ? `${Number(r.commission_rate_percent)}%` : "—"}
                             </TableCell>
                             <TableCell className="text-right font-medium">
-                              {r.commission_amount.toFixed(2)} €
+                              {Number(r.commission_amount).toFixed(2)} €
                             </TableCell>
                             <TableCell>
-                              {movement?.outgoing_commission_remitted_at ? (
-                                <Badge variant="success">{formatDate(movement.outgoing_commission_remitted_at)}</Badge>
+                              {r.remitted_at ? (
+                                <Badge variant="success">{formatDate(r.remitted_at)}</Badge>
                               ) : (
                                 <Badge variant="warning">Εκκρεμεί</Badge>
                               )}

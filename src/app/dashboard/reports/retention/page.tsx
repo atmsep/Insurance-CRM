@@ -27,31 +27,16 @@ const GROUP_BY_OPTIONS = [
   { id: "agent", label: "Ανά συνεργάτη" },
 ];
 
-type SingleOrMany<T> = T | T[] | null;
-function one<T>(v: SingleOrMany<T>): T | null {
-  return Array.isArray(v) ? (v[0] ?? null) : v;
-}
-
-type RawPolicyRow = {
-  id: string;
-  status: string;
-  renewal_number: number;
-  end_date: string;
-  premium_gross: number;
-  carriers: SingleOrMany<{ name: string }>;
-  insurance_lines: SingleOrMany<{ name_el: string }>;
-  agency_users: SingleOrMany<{ full_name: string }>;
-};
-
-type ExpiringRow = {
-  id: string;
-  status: string;
-  renewal_number: number;
-  end_date: string;
-  premium_gross: number;
-  carrier_name: string | null;
-  line_name: string | null;
-  agent_name: string | null;
+// Ό,τι επιστρέφει η retention_summary (migration 0115). Τα count/numeric της
+// Postgres φτάνουν ως string μέσω PostgREST.
+type RetentionRow = {
+  group_key: string;
+  expiring: string;
+  renewed: string;
+  cancelled: string;
+  lapsed: string;
+  premium_renewed: string;
+  premium_lost: string;
 };
 
 type GroupStats = {
@@ -90,76 +75,29 @@ export default async function RetentionReportPage({
   const groupBy = ["carrier", "line", "agent"].includes(sp.group_by ?? "") ? sp.group_by! : "carrier";
   const admin = createAdminClient();
 
-  // Chunked past PostgREST's 1000-row cap — a year's expirations across
-  // 20k policies runs into the thousands.
-  const CHUNK = 1000;
-  const MAX_ROWS = 30000;
-  const rows: ExpiringRow[] = [];
-  let loadError = false;
-  for (let start = 0; start < MAX_ROWS; start += CHUNK) {
-    const { data, error } = await admin
-      .from("policies")
-      .select(
-        "id, status, renewal_number, end_date, premium_gross, " +
-          "carriers(name), insurance_lines(name_el), agency_users!policies_assigned_agent_id_fkey(full_name)",
-      )
-      .gte("end_date", from)
-      .lte("end_date", to)
-      .neq("status", "draft")
-      .order("end_date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(start, start + CHUNK - 1);
-    if (error) {
-      loadError = true;
-      break;
-    }
-    const batch = ((data ?? []) as unknown as RawPolicyRow[]).map((p) => ({
-      id: p.id,
-      status: p.status,
-      renewal_number: p.renewal_number,
-      end_date: p.end_date,
-      premium_gross: p.premium_gross,
-      carrier_name: one(p.carriers)?.name ?? null,
-      line_name: one(p.insurance_lines)?.name_el ?? null,
-      agent_name: one(p.agency_users)?.full_name ?? null,
-    }));
-    rows.push(...batch);
-    if (batch.length < CHUNK) break;
-  }
+  // Η ομαδοποίηση γίνεται ΣΤΗ ΒΑΣΗ (migration 0115). Πριν, η σελίδα
+  // κατέβαζε έως 30.000 συμβόλαια σε σειριακό βρόχο και τα μετρούσε σε
+  // JavaScript· ένα έτος λήξεων είναι ήδη 2.397 συμβόλαια.
+  const { data: rpcData, error: rpcError } = await admin.rpc("retention_summary", {
+    p_from: from,
+    p_to: to,
+    p_group_by: groupBy,
+  });
+  const loadError = Boolean(rpcError);
 
-  const groups = new Map<string, GroupStats>();
-  for (const r of rows) {
-    const label =
-      (groupBy === "carrier" ? r.carrier_name : groupBy === "line" ? r.line_name : r.agent_name) ?? "—";
-    const g = groups.get(label) ?? {
-      key: label,
-      label,
-      expiring: 0,
-      renewed: 0,
-      cancelled: 0,
-      lapsed: 0,
-      premiumRenewed: 0,
-      premiumLost: 0,
-    };
-    g.expiring += 1;
-    // A term whose end_date is in the window but whose policy is still
-    // active/pending today means the row moved on to a new term (or hasn't
-    // been touched yet but is still alive) — retained. cancelled/lapsed
-    // are the two explicit loss states.
-    if (r.status === "cancelled") {
-      g.cancelled += 1;
-      g.premiumLost += r.premium_gross;
-    } else if (r.status === "lapsed") {
-      g.lapsed += 1;
-      g.premiumLost += r.premium_gross;
-    } else if (r.status === "active" || r.status === "pending_renewal") {
-      g.renewed += 1;
-      g.premiumRenewed += r.premium_gross;
-    }
-    groups.set(label, g);
-  }
-
-  const list = [...groups.values()].sort((a, b) => b.expiring - a.expiring);
+  // Η συνάρτηση επιστρέφει ήδη ταξινομημένα κατά φθίνοντα λήγοντα, και το
+  // σκεπτικό των κατηγοριών (τι μετράει ως διατήρηση, τι ως απώλεια) ζει
+  // πλέον μέσα στο migration 0115 ώστε να μη διχάζεται σε δύο σημεία.
+  const list: GroupStats[] = ((rpcData ?? []) as unknown as RetentionRow[]).map((r) => ({
+    key: r.group_key,
+    label: r.group_key,
+    expiring: Number(r.expiring),
+    renewed: Number(r.renewed),
+    cancelled: Number(r.cancelled),
+    lapsed: Number(r.lapsed),
+    premiumRenewed: Number(r.premium_renewed),
+    premiumLost: Number(r.premium_lost),
+  }));
   const totals = list.reduce(
     (acc, g) => ({
       expiring: acc.expiring + g.expiring,
