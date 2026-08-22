@@ -52,7 +52,22 @@ const ALLOWED = {
   "app/remittance-receipt/page.tsx": ["serial-query-loop"],
   // next_receipt_number: η αποτυχία έχει ΤΕΚΜΗΡΙΩΜΕΝΗ εναλλακτική στη
   // γραμμή από πάνω (η απόδειξη μένει χωρίς αριθμό), δεν είναι σιωπηλή.
-  "app/dashboard/policies/movements-actions.ts": ["unchecked-rpc"],
+  //
+  // recomputed-rollup: εξετάστηκαν ένα προς ένα και ΔΕΝ είναι το ίδιο νούμερο
+  // με το uncollected_amount της 0118:
+  //  * getPolicyMovements — υπολογίζει `σύνολο μείον εισπραχθέντα`, δηλαδή
+  //    ΣΥΜΨΗΦΙΖΕΙ τυχόν φιλοδώρημα μιας δόσης με το υπόλοιπο άλλης, και
+  //    πέφτει πίσω στο premium_gross όταν δεν υπάρχουν δόσεις. Η στήλη
+  //    κόβει στο μηδέν ΑΝΑ ΔΟΣΗ. Διαφορετικό νούμερο — δεν αλλάζει σιωπηλά.
+  //  * collectInstallmentPayment — διαβάζει δόσεις για να σπάσει μια μερική
+  //    πληρωμή, δεν αθροίζει τίποτα.
+  "app/dashboard/policies/movements-actions.ts": ["unchecked-rpc", "recomputed-rollup"],
+  // Υπόλοιπο ανά ΣΥΜΒΟΛΑΙΟ (τελευταία κίνηση ή legacy διαδρομή), όχι ανά
+  // κίνηση. Άλλο ερώτημα, άλλη απάντηση.
+  "app/dashboard/policies/balance.ts": ["recomputed-rollup"],
+  // Το Ταμείο χρειάζεται τις ΓΡΑΜΜΕΣ των δόσεων, μία-μία, για να δώσει σε
+  // καθεμία δικό της κουμπί είσπραξης. Δεν υπολογίζει άθροισμα.
+  "app/dashboard/cash-register/page.tsx": ["recomputed-rollup"],
 };
 
 // ΓΝΩΣΤΟ ΧΡΕΟΣ — σελίδες που παραβαίνουν τον κανόνα και ΠΡΕΠΕΙ να
@@ -133,6 +148,36 @@ for (const file of walk(ROOT)) {
           line: i + 1,
           text: lines[i].trim(),
           why: "Το .rpc() χωρίς έλεγχο error εμφανίζει ένα timeout ως 0,00 €.",
+        });
+      }
+    }
+  }
+
+  // --- Κανόνας 3: μην ξαναϋπολογίζεις ό,τι είναι ήδη στήλη.
+  //
+  // Το «πόση προμήθεια έχει αυτή η κίνηση» και το «πόσο ανείσπρακτο έχει»
+  // απαντιόνταν σε οκτώ σημεία με αντιγραμμένη λογική. Πλέον είναι στήλες
+  // (migration 0118), συντηρούμενες από ΕΝΑ trigger. Αν ξαναεμφανιστεί ο
+  // υπολογισμός, το build κόβει — αλλιώς σε έναν χρόνο θα υπάρχουν πάλι
+  // οκτώ εκδοχές που διαφωνούν.
+  if (!isAllowed(file, "recomputed-rollup")) {
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      // Άθροιση προμηθειών ανά κίνηση/δόση στον κώδικα της εφαρμογής.
+      const resolvesCommission =
+        /commission_amount/.test(l) && /\.(select|from)\(/.test(l) && /commissions/.test(l);
+      // Άθροιση υπολοίπων δόσεων για να βγει «ανείσπρακτο ανά κίνηση».
+      const resolvesUncollected =
+        /movement_id/.test(l) && /paid_amount/.test(l) && /\.select\(/.test(l);
+      if (resolvesCommission || resolvesUncollected) {
+        violations.push({
+          rule: "recomputed-rollup",
+          file: relOf(file),
+          line: i + 1,
+          text: l.trim(),
+          why:
+            "Ήδη στήλη: policy_movements.outgoing_commission_amount / .uncollected_amount (0118). " +
+            "Διάβασέ την — μην ξαναγράφεις τη λογική.",
         });
       }
     }
