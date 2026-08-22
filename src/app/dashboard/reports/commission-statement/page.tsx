@@ -18,7 +18,7 @@ import {
 import { PrintButton } from "@/components/print-button";
 import { ListPageHeader } from "@/components/list-page-header";
 import { ReportPrintHeader } from "../_components/report-print-header";
-import { formatDate } from "@/lib/date";
+import { formatDate, athensToday } from "@/lib/date";
 
 const FORM_ID = "commission-statement-filters";
 
@@ -66,10 +66,6 @@ function movementOf(row: StatementRow) {
 }
 
 // Athens calendar date, for the default period bounds.
-function athensToday(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
-}
-
 // Εκκαθάριση προμηθειών συνεργάτη — the printable per-agent statement of
 // every outgoing commission earned in a period, with its remit status and
 // totals. Admin client for the same statement-timeout reason as every

@@ -7,6 +7,7 @@ import { ListPageHeader } from "@/components/list-page-header";
 import { ProductionFiltersPanel } from "../production/_components/production-filters-panel";
 import { ReportPrintHeader } from "../_components/report-print-header";
 import { parseProductionFilters, parseGroupBy, GROUP_BY_OPTIONS, GROUP_BY_LABELS } from "./filters";
+import { resolveWindow, describeWindow } from "@/lib/list-page/window";
 import { GroupedTable, type GroupedRow } from "./_components/grouped-table";
 
 const FORM_ID = "production-summary-filters";
@@ -39,6 +40,16 @@ export default async function ProductionSummaryReportPage({
   const sp = await searchParams;
   const filters = parseProductionFilters(sp);
   const groupBy = parseGroupBy(sp.group_by);
+
+  // Προεπιλεγμένο παράθυρο (lib/list-page/window.ts). Το
+  // production_entries_grouped αφιλτράριστο σκάει σε statement timeout στα
+  // ~8s· με έναν μήνα κάνει 384 ms.
+  const hasOwnRange = Boolean(filters.issueFrom || filters.issueTo || filters.startFrom || filters.startTo);
+  const dateWindow = resolveWindow(filters.issueFrom, filters.issueTo, "month");
+  if (!hasOwnRange) {
+    filters.issueFrom = dateWindow.from;
+    filters.issueTo = dateWindow.to;
+  }
   const admin = createAdminClient();
 
   const [{ data: agents }, { data: carriers }, { data: insuranceLines }] = await Promise.all([
@@ -125,6 +136,12 @@ export default async function ProductionSummaryReportPage({
         </div>
 
         <div className="flex flex-col gap-4">
+          {!hasOwnRange && (
+            <p className="text-sm text-muted-foreground">
+              Εμφανίζεται η παραγωγή <span className="font-medium">{describeWindow(dateWindow)}</span>. Άλλαξε τις
+              ημερομηνίες έκδοσης στα κριτήρια για άλλο διάστημα.
+            </p>
+          )}
           {error ? (
             <div className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
               Σφάλμα κατά τη φόρτωση της παραγωγής. Δοκίμασε ξανά ή στένεψε τα φίλτρα.

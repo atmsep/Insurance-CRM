@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { athensToday } from "@/lib/date";
 import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Button } from "@/components/ui/button";
@@ -63,10 +64,6 @@ type GroupStats = {
   premiumRenewed: number;
   premiumLost: number;
 };
-
-function athensToday(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
-}
 
 // Ανανεωσιμότητα / Ακυρωσιμότητα — of the terms that ENDED inside the
 // chosen window, how many carried on (the policy row lives on with a

@@ -22,6 +22,21 @@ export function athensNextDayStartUtc(dateStr: string): string {
   return athensDayStartUtc(d.toISOString().slice(0, 10));
 }
 
+// Σημερινή ημερομηνία ΣΤΗΝ ΕΛΛΑΔΑ, ως YYYY-MM-DD. Το toISOString() δίνει
+// UTC, που μέχρι τις 02:00-03:00 τοπική ώρα είναι ακόμα η χθεσινή μέρα.
+// Ήταν αντιγραμμένο σε τέσσερα σημεία πριν μαζευτεί εδώ.
+export function athensToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
+}
+
+// Ίδιο, μετατοπισμένο κατά μήνες — για προεπιλεγμένα διαστήματα.
+export function athensMonthsAgo(months: number): string {
+  const today = athensToday();
+  const d = new Date(`${today}T12:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - months);
+  return d.toISOString().slice(0, 10);
+}
+
 export function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("el-GR", { timeZone: "Europe/Athens" });
 }

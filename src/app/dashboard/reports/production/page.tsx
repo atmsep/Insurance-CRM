@@ -17,6 +17,7 @@ import {
 import { formatDate } from "@/lib/date";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../../policies/movement-labels";
 import { parseProductionFilters, applyProductionFilters, parsePerPage } from "./filters";
+import { resolveWindow, describeWindow } from "@/lib/list-page/window";
 import { getOutgoingCommissionsByMovement } from "./commissions";
 import { ProductionFiltersPanel } from "./_components/production-filters-panel";
 import { PageSizeSelect } from "../../policies/_components/page-size-select";
@@ -97,6 +98,16 @@ export default async function ProductionReportPage({
   const sp = await searchParams;
   const filters = parseProductionFilters(sp);
   if (!isAdmin) filters.agentIds = [agencyUser.id];
+
+  // Προεπιλεγμένο παράθυρο (βλ. lib/list-page/window.ts): χωρίς αυτό το
+  // production_entries_totals σκάει σε statement timeout στα ~8s και η
+  // σελίδα εμφάνιζε «Σύνολα: 0,00 €» πάνω από 43.685 γραμμές.
+  const hasOwnRange = Boolean(filters.issueFrom || filters.issueTo || filters.startFrom || filters.startTo);
+  const dateWindow = resolveWindow(filters.issueFrom, filters.issueTo, "month");
+  if (!hasOwnRange) {
+    filters.issueFrom = dateWindow.from;
+    filters.issueTo = dateWindow.to;
+  }
   const admin = createAdminClient();
   const page = Math.max(1, Number(sp.page) || 1);
   const perPage = parsePerPage(sp.per_page);
@@ -112,7 +123,7 @@ export default async function ProductionReportPage({
   // aggregate RPC, not a sum of the current page's rows, since the table
   // paginates at up to 100 rows while the filtered list can run into the
   // thousands.
-  const { data: totalsData } = await admin
+  const { data: totalsData, error: totalsError } = await admin
     .rpc("production_entries_totals", {
       p_document: filters.document ?? null,
       p_policy_number: filters.policyNumber ?? null,
@@ -129,11 +140,17 @@ export default async function ProductionReportPage({
       p_status: filters.status ?? null,
     })
     .single();
-  const totals = totalsData as unknown as {
-    premium_gross_sum: number;
-    premium_net_sum: number;
-    commission_sum: number;
-  } | null;
+  // Σφάλμα ΠΟΤΕ σιωπηλό: το σκέτο `const { data }` χωρίς έλεγχο ήταν ο
+  // λόγος που ένα timeout εμφανιζόταν ως 0,00 €. Σύνολο που δεν
+  // υπολογίστηκε γράφεται «—», δεν προσποιείται μηδέν.
+  const totals = totalsError
+    ? null
+    : (totalsData as unknown as {
+        premium_gross_sum: number;
+        premium_net_sum: number;
+        commission_sum: number;
+      } | null);
+  const money = (n: number | undefined) => (totalsError ? "—" : `${(n ?? 0).toFixed(2)} €`);
 
   let query = admin.from("production_entries").select(PRODUCTION_SELECT, { count: "exact" });
 
@@ -218,6 +235,12 @@ export default async function ProductionReportPage({
         />
 
         <div className="flex flex-col gap-4">
+          {!hasOwnRange && (
+            <p className="text-sm text-muted-foreground">
+              Εμφανίζεται η παραγωγή <span className="font-medium">{describeWindow(dateWindow)}</span>. Άλλαξε τις
+              ημερομηνίες έκδοσης στα κριτήρια για άλλο διάστημα.
+            </p>
+          )}
           {error ? (
             <div className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
               Σφάλμα κατά τη φόρτωση της παραγωγής. Δοκίμασε ξανά ή στένεψε τα φίλτρα.
@@ -228,13 +251,11 @@ export default async function ProductionReportPage({
                 <TableHeader>
                   <TableRow className="bg-muted/30 hover:bg-muted/30">
                     <TableHead colSpan={12} className="text-right text-xs font-medium text-muted-foreground">
-                      Σύνολα (όλης της λίστας):
+                      {totalsError ? "Τα σύνολα δεν υπολογίστηκαν — στένεψε τα φίλτρα:" : "Σύνολα (όλης της λίστας):"}
                     </TableHead>
-                    <TableHead className="font-semibold">
-                      {(totals?.premium_gross_sum ?? 0).toFixed(2)} €
-                    </TableHead>
-                    <TableHead className="font-semibold">{(totals?.premium_net_sum ?? 0).toFixed(2)} €</TableHead>
-                    <TableHead className="font-semibold">{(totals?.commission_sum ?? 0).toFixed(2)} €</TableHead>
+                    <TableHead className="font-semibold">{money(totals?.premium_gross_sum)}</TableHead>
+                    <TableHead className="font-semibold">{money(totals?.premium_net_sum)}</TableHead>
+                    <TableHead className="font-semibold">{money(totals?.commission_sum)}</TableHead>
                   </TableRow>
                   <TableRow>
                     <TableHead>
