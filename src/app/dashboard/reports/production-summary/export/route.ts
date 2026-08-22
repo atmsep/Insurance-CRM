@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const groupBy = parseGroupBy(sp.get("group_by") ?? undefined);
   const labels = GROUP_BY_LABELS[groupBy];
 
-  const { data } = await admin.rpc("production_entries_grouped", {
+  const { data, error } = await admin.rpc("production_entries_grouped", {
     p_group_by: groupBy,
     p_document: filters.document ?? null,
     p_policy_number: filters.policyNumber ?? null,
@@ -33,6 +33,11 @@ export async function GET(request: Request) {
     p_start_to: filters.startTo ?? null,
     p_status: filters.status ?? null,
   });
+  // Σφάλμα ποτέ σιωπηλό: χωρίς αυτό ένα timeout κατέβαζε ΑΔΕΙΟ αρχείο
+  // που έμοιαζε με έγκυρη εξαγωγή «καμίας παραγωγής».
+  if (error) {
+    return new Response("Η εξαγωγή απέτυχε — στένεψε τα φίλτρα και δοκίμασε ξανά.", { status: 503 });
+  }
   const rows = (data ?? []) as unknown as GroupedRow[];
 
   const csvRows = rows.map((r) => ({

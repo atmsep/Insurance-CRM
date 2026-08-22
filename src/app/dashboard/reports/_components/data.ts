@@ -26,9 +26,14 @@ export const getPoliciesByStatus = cache(
   unstable_cache(
     async (): Promise<PoliciesByStatusRow[]> => {
       const admin = createAdminClient();
-      const { data } = (await admin.rpc("report_policies_by_status")) as unknown as {
+      const { data, error } = (await admin.rpc("report_policies_by_status")) as unknown as {
         data: PoliciesByStatusRow[] | null;
+        error: { message: string } | null;
       };
+      // Σφάλμα ποτέ σιωπηλό: χωρίς αυτό ένα timeout θα αποθηκευόταν στην
+      // cache ως άδειο αποτέλεσμα για 60 δευτ. και η κάρτα θα έδειχνε
+      // «καμία εγγραφή» αντί για πρόβλημα.
+      if (error) throw new Error("report_policies_by_status: " + error.message);
       return data ?? [];
     },
     ["report-policies-by-status"],
@@ -40,9 +45,14 @@ export const getPoliciesByLine = cache(
   unstable_cache(
     async (): Promise<PoliciesByLineRow[]> => {
       const admin = createAdminClient();
-      const { data } = (await admin.rpc("report_policies_by_line")) as unknown as {
+      const { data, error } = (await admin.rpc("report_policies_by_line")) as unknown as {
         data: PoliciesByLineRow[] | null;
+        error: { message: string } | null;
       };
+      // Σφάλμα ποτέ σιωπηλό: χωρίς αυτό ένα timeout θα αποθηκευόταν στην
+      // cache ως άδειο αποτέλεσμα για 60 δευτ. και η κάρτα θα έδειχνε
+      // «καμία εγγραφή» αντί για πρόβλημα.
+      if (error) throw new Error("report_policies_by_line: " + error.message);
       return data ?? [];
     },
     ["report-policies-by-line"],
@@ -54,9 +64,14 @@ export const getClaimsByStatus = cache(
   unstable_cache(
     async (): Promise<ClaimsByStatusRow[]> => {
       const admin = createAdminClient();
-      const { data } = (await admin.rpc("report_claims_by_status")) as unknown as {
+      const { data, error } = (await admin.rpc("report_claims_by_status")) as unknown as {
         data: ClaimsByStatusRow[] | null;
+        error: { message: string } | null;
       };
+      // Σφάλμα ποτέ σιωπηλό: χωρίς αυτό ένα timeout θα αποθηκευόταν στην
+      // cache ως άδειο αποτέλεσμα για 60 δευτ. και η κάρτα θα έδειχνε
+      // «καμία εγγραφή» αντί για πρόβλημα.
+      if (error) throw new Error("report_claims_by_status: " + error.message);
       return data ?? [];
     },
     ["report-claims-by-status"],
@@ -68,9 +83,14 @@ export const getReferralBreakdown = cache(
   unstable_cache(
     async (): Promise<ReferralBreakdownRow[]> => {
       const admin = createAdminClient();
-      const { data } = (await admin.rpc("report_referral_breakdown")) as unknown as {
+      const { data, error } = (await admin.rpc("report_referral_breakdown")) as unknown as {
         data: ReferralBreakdownRow[] | null;
+        error: { message: string } | null;
       };
+      // Σφάλμα ποτέ σιωπηλό: χωρίς αυτό ένα timeout θα αποθηκευόταν στην
+      // cache ως άδειο αποτέλεσμα για 60 δευτ. και η κάρτα θα έδειχνε
+      // «καμία εγγραφή» αντί για πρόβλημα.
+      if (error) throw new Error("report_referral_breakdown: " + error.message);
       return data ?? [];
     },
     ["report-referral-breakdown"],
