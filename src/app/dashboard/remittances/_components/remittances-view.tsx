@@ -23,7 +23,6 @@ import {
   bulkRemitPremiums,
   bulkRemitOutgoingCommissions,
 } from "../../policies/movements-actions";
-import { getOutgoingCommissionsByMovement } from "../../reports/production/commissions";
 import { ProductionFiltersPanel } from "../../reports/production/_components/production-filters-panel";
 import { parsePerPage } from "../../policies/filters";
 import { parseRemittanceFilters, applyRemittanceFilters } from "../filters";
@@ -48,6 +47,7 @@ type RemittanceMovementRow = {
   premium_net: number | null;
   premium_gross: number;
   policy_id: string;
+  outgoing_commission_amount?: number | null;
   policies: SingleOrMany<{
     policy_number: string;
     risk_label: string | null;
@@ -62,7 +62,7 @@ type RemittanceMovementRow = {
 // anywhere on this page — they're here purely so applyRemittanceFilters'
 // dot-path filters have something to join against.
 const MOVEMENT_SELECT =
-  "id, kind, document_number, issue_date, start_date, premium_net, premium_gross, policy_id, " +
+  "id, kind, document_number, issue_date, start_date, premium_net, premium_gross, policy_id, outgoing_commission_amount, " +
   "policies!inner(policy_number, risk_label, assigned_agent_id, carrier_id, insurance_line_id, status, " +
   "clients!inner(display_name), agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))";
 
@@ -155,6 +155,7 @@ function toMovementRow(w: WorklistRow): RemittanceMovementRow {
     premium_net: w.premium_net === null ? null : Number(w.premium_net),
     premium_gross: Number(w.premium_gross),
     policy_id: w.policy_id,
+    outgoing_commission_amount: Number(w.commission),
     policies: {
       policy_number: w.policy_number,
       risk_label: w.risk_label,
@@ -320,11 +321,8 @@ export async function RemittancesView({
     const commissionDone = (rawCommissionDone ?? []) as unknown as (RemittanceMovementRow & {
       outgoing_commission_remitted_at: string;
     })[];
-    const commissionByMovement = await getOutgoingCommissionsByMovement(
-      admin,
-      commissionDone.map((m) => ({ id: m.id, isReal: true })),
-    );
-    commissionRows = commissionDone.map((m) => ({ ...m, commission: commissionByMovement.get(m.id) ?? 0 }));
+    // Έτοιμη στήλη (0118): έφυγαν τρεις γύροι chunked ερωτημάτων ανά σελίδα.
+    commissionRows = commissionDone.map((m) => ({ ...m, commission: Number(m.outgoing_commission_amount ?? 0) }));
 
     premiumTotalCount = premiumCount ?? 0;
     commissionTotalCount = commissionCount ?? 0;

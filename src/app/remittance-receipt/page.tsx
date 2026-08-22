@@ -13,7 +13,6 @@ import {
 import { formatDate } from "@/lib/date";
 import { getAgencyProfileCached } from "@/lib/cached-queries/lookups";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../dashboard/policies/movement-labels";
-import { getOutgoingCommissionsByMovement } from "../dashboard/reports/production/commissions";
 
 // Έντυπο απόδειξης απόδοσης — το χαρτί που συνοδεύει την πραγματική
 // πληρωμή προς την εταιρεία (ασφάλιστρα) ή προς τον συνεργάτη
@@ -43,6 +42,7 @@ type ReceiptRow = {
   start_date: string;
   premium_net: number | null;
   premium_gross: number;
+  outgoing_commission_amount: number | null;
   policies: SingleOrMany<{
     policy_number: string;
     risk_label: string | null;
@@ -105,7 +105,7 @@ export default async function RemittanceReceiptPage({
     const { data } = await admin
       .from("policy_movements")
       .select(
-        "id, kind, issue_date, start_date, premium_net, premium_gross, " +
+        "id, kind, issue_date, start_date, premium_net, premium_gross, outgoing_commission_amount, " +
           "policies!inner(policy_number, risk_label, clients!inner(display_name), " +
           "agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))",
       )
@@ -114,14 +114,10 @@ export default async function RemittanceReceiptPage({
     rows.push(...((data ?? []) as unknown as ReceiptRow[]));
   }
 
-  const commissionByMovement = isPremium
-    ? new Map<string, number>()
-    : await getOutgoingCommissionsByMovement(
-        admin,
-        rows.map((m) => ({ id: m.id, isReal: true })),
-      );
-
-  const amountOf = (m: ReceiptRow) => (isPremium ? m.premium_gross : (commissionByMovement.get(m.id) ?? 0));
+  // Έτοιμη στήλη (0118): η προμήθεια της κίνησης έρχεται μαζί με τη γραμμή,
+  // χωρίς τρεις γύρους ερωτημάτων.
+  const commissionOf = (m: ReceiptRow) => Number(m.outgoing_commission_amount ?? 0);
+  const amountOf = (m: ReceiptRow) => (isPremium ? m.premium_gross : commissionOf(m));
 
   // Ασφάλιστρα → ανά εταιρεία· προμήθειες → ανά συνεργάτη.
   const groups = new Map<string, { label: string; rows: ReceiptRow[]; total: number; net: number; gross: number }>();
@@ -246,7 +242,7 @@ export default async function RemittanceReceiptPage({
                       <TableCell className="text-right tabular-nums">{money(m.premium_gross)}</TableCell>
                       {!isPremium && (
                         <TableCell className="text-right tabular-nums font-medium">
-                          {money(commissionByMovement.get(m.id) ?? 0)}
+                          {money(commissionOf(m))}
                         </TableCell>
                       )}
                     </TableRow>

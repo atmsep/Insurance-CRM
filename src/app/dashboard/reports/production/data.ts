@@ -8,11 +8,14 @@ import { parseProductionFilters, applyProductionFilters } from "./filters";
 // embedded-order risk to design around.
 export const PRODUCTION_EXPORT_SELECT =
   "id, is_real, kind, document_number, issue_date, start_date, end_date, premium_net, premium_gross, " +
-  "agent_name, policy_number, risk_label, carrier_name, line_name, client_name, phone_mobile, phone_landline";
+  "agent_name, policy_number, risk_label, carrier_name, line_name, client_name, phone_mobile, phone_landline, " +
+  "outgoing_commission_amount";
 
 export type ProductionExportRow = {
   id: string;
   is_real: boolean;
+  // Έτοιμη στήλη (0118). null στις συνθετικές γραμμές, όπως και πριν.
+  outgoing_commission_amount: string | null;
   kind: string;
   document_number: string | null;
   issue_date: string;

@@ -14,7 +14,6 @@ import { formatDate } from "@/lib/date";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../../../policies/movement-labels";
 import { parseProductionFilters, applyProductionFilters } from "../filters";
 import { fetchAllProductionEntries } from "../data";
-import { getOutgoingCommissionsByMovement } from "../commissions";
 import { ReportPrintHeader } from "../../_components/report-print-header";
 
 // A print job is a person waiting on a browser tab, not a background
@@ -87,11 +86,6 @@ export default async function ProductionPrintPage({
     commission_sum: number;
   } | null;
 
-  const commissionByMovement = await getOutgoingCommissionsByMovement(
-    admin,
-    rows.map((r) => ({ id: r.id, isReal: r.is_real })),
-  );
-
   return (
     <div className="flex flex-col gap-4">
       <AutoPrint />
@@ -125,7 +119,8 @@ export default async function ProductionPrintPage({
             {rows.length ? (
               rows.map((row) => {
                 const phone = [row.phone_mobile, row.phone_landline].filter(Boolean).join(" / ");
-                const commission = commissionByMovement.get(row.id);
+                const commission =
+                  row.outgoing_commission_amount === null ? undefined : Number(row.outgoing_commission_amount);
                 return (
                   <TableRow key={row.id}>
                     <TableCell>{row.agent_name ?? "—"}</TableCell>

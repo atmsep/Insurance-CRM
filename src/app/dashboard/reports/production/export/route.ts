@@ -3,7 +3,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../../../policies/movement-labels";
 import { parseProductionFilters } from "../filters";
-import { getOutgoingCommissionsByMovement } from "../commissions";
 import { fetchAllProductionEntries } from "../data";
 
 export async function GET(request: Request) {
@@ -18,11 +17,6 @@ export async function GET(request: Request) {
   if (!isAdmin) filters.agentIds = [agencyUser.id];
 
   const rows = await fetchAllProductionEntries(admin, filters);
-
-  const commissionByMovement = await getOutgoingCommissionsByMovement(
-    admin,
-    rows.map((r) => ({ id: r.id, isReal: r.is_real })),
-  );
 
   const csvRows = rows.map((r) => ({
     agent: r.agent_name ?? "",
@@ -39,7 +33,7 @@ export async function GET(request: Request) {
     phone: [r.phone_mobile, r.phone_landline].filter(Boolean).join(" / "),
     premium_gross: r.premium_gross,
     premium_net: r.premium_net ?? "",
-    commission: commissionByMovement.get(r.id) ?? "",
+    commission: r.outgoing_commission_amount ?? "",
   }));
 
   const csv = toCsv(csvRows, [

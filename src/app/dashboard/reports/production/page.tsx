@@ -19,7 +19,6 @@ import { POLICY_MOVEMENT_KIND_LABELS } from "../../policies/movement-labels";
 import { parseProductionFilters, applyProductionFilters, parsePerPage } from "./filters";
 import { resolveWindow, describeWindow } from "@/lib/list-page/window";
 import { getActiveAgentsCached, getCarriersCached, getInsuranceLinesCached } from "@/lib/cached-queries/lookups";
-import { getOutgoingCommissionsByMovement } from "./commissions";
 import { ProductionFiltersPanel } from "./_components/production-filters-panel";
 import { PageSizeSelect } from "../../policies/_components/page-size-select";
 
@@ -36,6 +35,7 @@ type ProductionRow = {
   premium_gross: number;
   outgoing_agent_id: string | null;
   agent_name: string | null;
+  outgoing_commission_amount: string | null;
   policy_number: string;
   risk_label: string | null;
   carrier_name: string | null;
@@ -53,7 +53,7 @@ type ProductionRow = {
 const PRODUCTION_SELECT =
   "id, policy_id, is_real, kind, document_number, issue_date, start_date, end_date, " +
   "premium_net, premium_gross, outgoing_agent_id, agent_name, policy_number, risk_label, " +
-  "carrier_name, line_name, client_name, phone_mobile, phone_landline";
+  "carrier_name, line_name, client_name, phone_mobile, phone_landline, outgoing_commission_amount";
 
 const SORTABLE_COLUMNS: Record<string, { column: string }> = {
   agent: { column: "agent_name" },
@@ -174,11 +174,6 @@ export default async function ProductionReportPage({
   const { data, count, error } = await query;
   const rows = (data ?? []) as unknown as ProductionRow[];
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / perPage));
-
-  const commissionByMovement = await getOutgoingCommissionsByMovement(
-    admin,
-    rows.map((r) => ({ id: r.id, isReal: r.is_real })),
-  );
 
   const exportParams = new URLSearchParams();
   if (filters.document) exportParams.set("document", filters.document);
@@ -350,7 +345,9 @@ export default async function ProductionReportPage({
                   {rows.length ? (
                     rows.map((row) => {
                       const phone = [row.phone_mobile, row.phone_landline].filter(Boolean).join(" / ");
-                      const commission = commissionByMovement.get(row.id);
+                      // Έτοιμη στήλη (0118) — καμία επιπλέον διαδρομή στη βάση.
+                      const commission =
+                        row.outgoing_commission_amount === null ? undefined : Number(row.outgoing_commission_amount);
                       return (
                         <ClickableRow
                           key={row.id}
