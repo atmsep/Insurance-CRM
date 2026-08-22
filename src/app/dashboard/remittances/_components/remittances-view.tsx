@@ -31,6 +31,7 @@ import { BulkSelectionProvider, BulkSelectCheckbox, BulkSelectAllCheckbox } from
 import { RemittanceBulkBar } from "./remittance-bulk-bar";
 import { RemitRowButton } from "./remit-row-button";
 import { ReceiptPrintLink } from "./receipt-print-link";
+import { getActiveAgentsCached, getCarriersCached, getInsuranceLinesCached } from "@/lib/cached-queries/lookups";
 
 type SingleOrMany<T> = T | T[] | null;
 function one<T>(v: SingleOrMany<T>): T | null {
@@ -141,10 +142,11 @@ export async function RemittancesView({
   const perPage = parsePerPage(sp.per_page);
   const admin = createAdminClient();
 
-  const [{ data: agents }, { data: carriers }, { data: insuranceLines }] = await Promise.all([
-    admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
-    admin.from("carriers").select("id, name").order("name"),
-    admin.from("insurance_lines").select("id, name_el").order("sort_order"),
+  // Ρυθμίσεις γραφείου, όχι δεδομένα: cached (lib/cached-queries/lookups.ts).
+  const [agents, carriers, insuranceLines] = await Promise.all([
+    getActiveAgentsCached(),
+    getCarriersCached(),
+    getInsuranceLinesCached(),
   ]);
 
   let premiumRows: (RemittanceMovementRow & { premium_remitted_at?: string })[] = [];
@@ -561,9 +563,9 @@ export async function RemittancesView({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
         <ProductionFiltersPanel
           form="remittances-filters"
-          agents={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
-          carriers={(carriers ?? []).map((c) => ({ id: c.id, label: c.name }))}
-          insuranceLines={(insuranceLines ?? []).map((l) => ({ id: l.id, label: l.name_el }))}
+          agents={agents}
+          carriers={carriers}
+          insuranceLines={insuranceLines}
           agentIds={filters.agentIds}
           carrierId={filters.carrierId}
           lineId={filters.lineId}

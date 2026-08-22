@@ -5,6 +5,8 @@ import { installmentRemaining, isBillablePolicyStatus } from "../policies/balanc
 import { PrintButton } from "@/components/print-button";
 import { ListPageHeader } from "@/components/list-page-header";
 import { ReportPrintHeader } from "../reports/_components/report-print-header";
+import { getActiveAgentsCached, getPaymentMethodsCached } from "@/lib/cached-queries/lookups";
+import { athensToday } from "@/lib/date";
 import { UncollectedList, type UncollectedRow, type AgentGroup } from "./_components/uncollected-list";
 
 // Τα ανείσπρακτα ήταν καρτέλα μέσα στο Ταμείο. Είναι δική τους σελίδα γιατί
@@ -87,11 +89,10 @@ export default async function UncollectedPage({
     if (batch.length < CHUNK) break;
   }
 
-  const [{ data: agents }, { data: paymentMethods }] = await Promise.all([
-    isAdmin
-      ? admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name")
-      : Promise.resolve({ data: [] }),
-    admin.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
+  // Ρυθμίσεις γραφείου, όχι δεδομένα: cached (lib/cached-queries/lookups.ts).
+  const [agents, paymentMethods] = await Promise.all([
+    isAdmin ? getActiveAgentsCached() : Promise.resolve([]),
+    getPaymentMethodsCached(),
   ]);
 
   // Εκκρεμής δόση ακυρωμένου ή πρόχειρου συμβολαίου δεν είναι πια οφειλή —
@@ -150,7 +151,7 @@ export default async function UncollectedPage({
     ? [...byAgent.values()].sort((a, b) => b.total - a.total)
     : [{ agentId: "all", agentName: "", rows, total }];
 
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
+  const today = athensToday();
 
   return (
     <div className="flex flex-col gap-6">
@@ -170,8 +171,8 @@ export default async function UncollectedPage({
               className="h-9 rounded-md border border-input bg-transparent px-2.5 text-sm"
             >
               <option value="">Όλοι οι συνεργάτες</option>
-              {(agents ?? []).map((a) => (
-                <option key={a.id} value={a.id}>{a.full_name}</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.label}</option>
               ))}
             </select>
           </div>
@@ -216,7 +217,7 @@ export default async function UncollectedPage({
       <UncollectedList
         groups={groups}
         grouped={grouped}
-        paymentMethods={paymentMethods ?? []}
+        paymentMethods={paymentMethods}
         today={today}
         truncated={matched > rows.length}
         shownCount={rows.length}

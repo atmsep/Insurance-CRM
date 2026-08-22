@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { CACHE_TAGS } from "@/lib/cache-tags";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { requireAdmin } from "./actions";
 
@@ -215,6 +216,7 @@ export async function createInsuranceLine(formData: FormData) {
     requires_property_details: formData.get("requires_property_details") === "on",
     requires_life_health_details: formData.get("requires_life_health_details") === "on",
   });
+  updateTag(CACHE_TAGS.insuranceLines);
   revalidatePath("/dashboard/settings");
 }
 
@@ -233,6 +235,7 @@ export async function updateInsuranceLine(id: string, formData: FormData): Promi
     })
     .eq("id", id);
   if (error) return { error: "Σφάλμα αποθήκευσης." };
+  updateTag(CACHE_TAGS.insuranceLines);
   revalidatePath("/dashboard/settings");
   return {};
 }
@@ -241,6 +244,7 @@ export async function toggleInsuranceLineActive(id: string, isActive: boolean) {
   await requireAdmin();
   const supabase = await createSupabaseClient();
   await supabase.from("insurance_lines").update({ is_active: isActive }).eq("id", id);
+  updateTag(CACHE_TAGS.insuranceLines);
   revalidatePath("/dashboard/settings");
 }
 
@@ -256,6 +260,7 @@ export async function deleteInsuranceLine(id: string): Promise<{ error?: string 
           : "Σφάλμα διαγραφής.",
     };
   }
+  updateTag(CACHE_TAGS.insuranceLines);
   revalidatePath("/dashboard/settings");
   return {};
 }

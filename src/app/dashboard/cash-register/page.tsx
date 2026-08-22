@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getActiveAgentsCached, getPaymentMethodsCached } from "@/lib/cached-queries/lookups";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgencyUser } from "@/lib/dal";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../policies/movement-labels";
 import { installmentRemaining } from "../policies/balance";
-import { formatDate, athensDayStartUtc, athensNextDayStartUtc } from "@/lib/date";
+import { formatDate, athensToday, athensDayStartUtc, athensNextDayStartUtc } from "@/lib/date";
 import { CollectFromCashRegister } from "./_components/collect-from-cash-register";
 import { ReversePaymentButton } from "./_components/reverse-payment-button";
 import { PrintButton } from "@/components/print-button";
@@ -116,8 +117,7 @@ export default async function CashRegisterPage({
   const { date, agent_id } = await searchParams;
   const agencyUser = await requireAgencyUser();
   const isAdmin = agencyUser.role === "owner" || agencyUser.role === "admin";
-  const selectedDate =
-    date || new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
+  const selectedDate = date || athensToday();
   const admin = createAdminClient();
 
   const dayStart = athensDayStartUtc(selectedDate);
@@ -177,17 +177,16 @@ export default async function CashRegisterPage({
   const [
     { data: rawCollections, error },
     { data: rawReversals },
-    { data: agents },
+    agents,
     { data: rawMovements },
-    { data: paymentMethods },
+    paymentMethods,
   ] = await Promise.all([
     collectionsQuery,
     reversalsQuery,
-    isAdmin
-      ? admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name")
-      : Promise.resolve({ data: [] }),
+    // Ρυθμίσεις γραφείου, όχι δεδομένα: cached (lib/cached-queries/lookups.ts).
+    isAdmin ? getActiveAgentsCached() : Promise.resolve([]),
     movementsQuery,
-    admin.from("payment_methods").select("id, name").eq("is_active", true).order("sort_order"),
+    getPaymentMethodsCached(),
   ]);
   const collections = (rawCollections ?? []) as unknown as CollectionRow[];
   const reversals = (rawReversals ?? []) as unknown as ReversalRow[];
@@ -285,7 +284,7 @@ export default async function CashRegisterPage({
     tipsTotal += tipByPaymentId.get(c.id) ?? 0;
   }
 
-  const selectedAgentName = agent_id ? ((agents ?? []).find((a) => a.id === agent_id)?.full_name ?? null) : null;
+  const selectedAgentName = agent_id ? (agents.find((a) => a.id === agent_id)?.label ?? null) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -324,9 +323,9 @@ export default async function CashRegisterPage({
               className="h-8 rounded-md border border-input bg-transparent px-2.5 text-sm"
             >
               <option value="">Όλοι</option>
-              {(agents ?? []).map((a) => (
+              {agents.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.full_name}
+                  {a.label}
                 </option>
               ))}
             </select>
@@ -496,7 +495,7 @@ export default async function CashRegisterPage({
                                   documentLabel={policy?.policy_number ?? "—"}
                                   kindLabel={POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}
                                   installments={m.installments}
-                                  paymentMethods={paymentMethods ?? []}
+                                  paymentMethods={paymentMethods}
                                 />
                               </TableCell>
                             </TableRow>

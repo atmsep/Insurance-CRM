@@ -135,6 +135,7 @@ export async function createCarrier(formData: FormData) {
     contact_email: (formData.get("contact_email") as string) || null,
   });
 
+  updateTag(CACHE_TAGS.carriers);
   revalidatePath("/dashboard/settings");
 }
 
@@ -142,6 +143,7 @@ export async function toggleCarrierActive(carrierId: string, isActive: boolean) 
   await requireAdmin();
   const supabase = await createSupabaseClient();
   await supabase.from("carriers").update({ is_active: isActive }).eq("id", carrierId);
+  updateTag(CACHE_TAGS.carriers);
   revalidatePath("/dashboard/settings");
 }
 
@@ -165,6 +167,7 @@ export async function updateCarrier(carrierId: string, formData: FormData) {
     })
     .eq("id", carrierId);
 
+  updateTag(CACHE_TAGS.carriers);
   revalidatePath("/dashboard/settings");
   revalidatePath("/dashboard/policies", "layout");
 }

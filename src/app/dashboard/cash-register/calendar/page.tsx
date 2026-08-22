@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getActiveAgentsCached } from "@/lib/cached-queries/lookups";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAgencyUser } from "@/lib/dal";
 import { Button } from "@/components/ui/button";
@@ -37,11 +38,10 @@ export default async function CashRegisterCalendarPage({
     .eq("is_reversed", false);
   if (scopeAgentId) dayQuery = dayQuery.eq("paid_by", scopeAgentId);
 
-  const [{ data: rows }, { data: agents }] = await Promise.all([
+  const [{ data: rows }, agents] = await Promise.all([
     dayQuery,
-    isAdmin
-      ? admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name")
-      : Promise.resolve({ data: [] }),
+    // Ρυθμίσεις γραφείου, όχι δεδομένα: cached (lib/cached-queries/lookups.ts).
+    isAdmin ? getActiveAgentsCached() : Promise.resolve([]),
   ]);
 
   const summaryByDay = new Map<number, { total: number; count: number }>();
@@ -94,9 +94,9 @@ export default async function CashRegisterCalendarPage({
               className="h-8 rounded-md border border-input bg-transparent px-2.5 text-sm"
             >
               <option value="">Όλοι</option>
-              {(agents ?? []).map((a) => (
+              {agents.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.full_name}
+                  {a.label}
                 </option>
               ))}
             </select>

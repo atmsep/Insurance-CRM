@@ -18,6 +18,7 @@ import { formatDate } from "@/lib/date";
 import { POLICY_MOVEMENT_KIND_LABELS } from "../../policies/movement-labels";
 import { parseProductionFilters, applyProductionFilters, parsePerPage } from "./filters";
 import { resolveWindow, describeWindow } from "@/lib/list-page/window";
+import { getActiveAgentsCached, getCarriersCached, getInsuranceLinesCached } from "@/lib/cached-queries/lookups";
 import { getOutgoingCommissionsByMovement } from "./commissions";
 import { ProductionFiltersPanel } from "./_components/production-filters-panel";
 import { PageSizeSelect } from "../../policies/_components/page-size-select";
@@ -112,12 +113,13 @@ export default async function ProductionReportPage({
   const page = Math.max(1, Number(sp.page) || 1);
   const perPage = parsePerPage(sp.per_page);
 
-  const [{ data: allAgents }, { data: carriers }, { data: insuranceLines }] = await Promise.all([
-    admin.from("agency_users").select("id, full_name").eq("is_active", true).order("full_name"),
-    admin.from("carriers").select("id, name").order("name"),
-    admin.from("insurance_lines").select("id, name_el").order("sort_order"),
+  // Ρυθμίσεις γραφείου, όχι δεδομένα: cached (lib/cached-queries/lookups.ts).
+  const [allAgents, carriers, insuranceLines] = await Promise.all([
+    getActiveAgentsCached(),
+    getCarriersCached(),
+    getInsuranceLinesCached(),
   ]);
-  const agents = isAdmin ? allAgents : (allAgents ?? []).filter((a) => a.id === agencyUser.id);
+  const agents = isAdmin ? allAgents : allAgents.filter((a) => a.id === agencyUser.id);
 
   // Σύνολα for the whole filtered list (migration 0090) — a dedicated
   // aggregate RPC, not a sum of the current page's rows, since the table
@@ -220,9 +222,9 @@ export default async function ProductionReportPage({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
         <ProductionFiltersPanel
           form="production-filters"
-          agents={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
-          carriers={(carriers ?? []).map((c) => ({ id: c.id, label: c.name }))}
-          insuranceLines={(insuranceLines ?? []).map((l) => ({ id: l.id, label: l.name_el }))}
+          agents={agents}
+          carriers={carriers}
+          insuranceLines={insuranceLines}
           agentIds={filters.agentIds}
           carrierId={filters.carrierId}
           lineId={filters.lineId}

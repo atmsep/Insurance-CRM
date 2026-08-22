@@ -6,4 +6,10 @@ export const CACHE_TAGS = {
   celebrationTemplates: "celebration-templates",
   agencyUsers: "agency-users",
   agencyProfile: "agency-profile",
+  // Πίνακες αναφοράς που διαβάζονται από ΚΑΘΕ σελίδα λίστας για να γεμίσουν
+  // τα φίλτρα, αλλά αλλάζουν ελάχιστες φορές τον χρόνο. Χωρίς cache ήταν
+  // τρεις διαδρομές προς τη βάση σε κάθε άνοιγμα σελίδας.
+  carriers: "carriers",
+  insuranceLines: "insurance-lines",
+  paymentMethods: "payment-methods",
 } as const;
