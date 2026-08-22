@@ -105,6 +105,7 @@ export function MovementsTab({ policyId, isAdmin }: { policyId: string; isAdmin:
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Ημ. έκδοσης</TableHead>
                     <TableHead>Ημ. παραγωγής</TableHead>
                     <TableHead>Είδος</TableHead>
                     <TableHead>Παραστατικό</TableHead>
@@ -125,6 +126,7 @@ export function MovementsTab({ policyId, isAdmin }: { policyId: string; isAdmin:
                         className={m.isReal ? "cursor-pointer hover:bg-muted/50" : "text-muted-foreground"}
                         title={m.isReal ? undefined : "Ιστορική περίοδος πριν την αναβάθμιση — μόνο για προβολή."}
                       >
+                        <TableCell>{m.issueDate ? formatDate(m.issueDate) : "—"}</TableCell>
                         <TableCell>{formatDate(m.producedAt)}</TableCell>
                         <TableCell>{m.kindLabel}</TableCell>
                         <TableCell className="font-medium">{m.documentNumber ?? "—"}</TableCell>
@@ -138,7 +140,7 @@ export function MovementsTab({ policyId, isAdmin }: { policyId: string; isAdmin:
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center text-muted-foreground">
                         Δεν υπάρχουν κινήσεις.
                       </TableCell>
                     </TableRow>

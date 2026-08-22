@@ -34,6 +34,7 @@ export type MovementSpan = {
 
 const EMPTY_VALUES = {
   document_number: "",
+  issue_date: "",
   start_date: "",
   end_date: "",
   premium_net: "",
@@ -43,7 +44,9 @@ const EMPTY_VALUES = {
 };
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Europe/Athens, όχι UTC: μετά τις 02:00 τοπική ώρα η UTC μέρα είναι ακόμα
+  // η χθεσινή και η κίνηση θα έπαιρνε λάθος ημ. έκδοσης.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
 }
 
 function daysBetween(fromIso: string, toIso: string): number {
@@ -92,6 +95,8 @@ export function NewMovementDialog({
   // open (key prop), so this initializer re-evaluates each time.
   const { field, values, setValue } = useFormValues({
     ...EMPTY_VALUES,
+    // Η κίνηση εκδίδεται σήμερα· η Έναρξη μπορεί να είναι αναδρομική.
+    issue_date: todayIso(),
     end_date: findTermForDate(termMovements, todayIso())?.endDate ?? "",
   });
 
@@ -176,6 +181,11 @@ export function NewMovementDialog({
           <div className="flex flex-col gap-2">
             <Label htmlFor="new-movement-document">Παραστατικό</Label>
             <Input id="new-movement-document" name="document_number" {...field("document_number")} />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="new-movement-issue">Ημ. έκδοσης</Label>
+            <Input id="new-movement-issue" name="issue_date" type="date" required {...field("issue_date")} />
           </div>
 
           <div className="flex gap-3">

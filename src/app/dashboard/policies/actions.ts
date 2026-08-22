@@ -263,6 +263,9 @@ export async function createPolicy(
   const premiumGross = num(formData, "premium_gross") ?? 0;
   const paymentFrequency = (str(formData, "payment_frequency") ?? "annual") as PaymentFrequency;
   const startDate = str(formData, "start_date") ?? "";
+  // Παλιές φόρμες/κλήσεις χωρίς το πεδίο πέφτουν στην έναρξη, όπως γινόταν
+  // πάντα σιωπηλά μέχρι τώρα.
+  const issueDate = str(formData, "issue_date") ?? startDate;
   const endDate = str(formData, "end_date") ?? "";
   const policyNumber = str(formData, "policy_number") ?? "";
 
@@ -273,7 +276,7 @@ export async function createPolicy(
     const { data: source } = await supabase
       .from("policies")
       .select(
-        "id, policy_number, renewal_number, status, status_auto_managed, start_date, end_date, premium_net, premium_gross, assigned_agent_id, created_by",
+        "id, policy_number, renewal_number, status, status_auto_managed, issue_date, start_date, end_date, premium_net, premium_gross, assigned_agent_id, created_by",
       )
       .eq("id", renewFromPolicyId)
       .single();
@@ -303,7 +306,7 @@ export async function createPolicy(
           policy_id: source.id,
           kind: source.renewal_number > 1 ? "renewal" : "policy",
           document_number: `${source.policy_number}/${source.renewal_number}`,
-          issue_date: source.start_date,
+          issue_date: source.issue_date ?? source.start_date,
           start_date: source.start_date,
           end_date: source.end_date,
           premium_net: source.premium_net,
@@ -341,6 +344,7 @@ export async function createPolicy(
         insurance_line_id: insuranceLineId,
         assigned_agent_id: assignedAgentId,
         broker_office_id: brokerOfficeId,
+        issue_date: issueDate,
         start_date: startDate,
         end_date: endDate,
         premium_gross: premiumGross,
@@ -372,6 +376,7 @@ export async function createPolicy(
         insurance_line_id: insuranceLineId,
         assigned_agent_id: assignedAgentId,
         broker_office_id: brokerOfficeId,
+        issue_date: issueDate,
         start_date: startDate,
         end_date: endDate,
         premium_gross: premiumGross,
@@ -434,6 +439,7 @@ export async function createPolicy(
   await createMovementForPolicy(supabase, {
     policyId,
     kind: renewFromPolicyId ? "renewal" : "policy",
+    issueDate,
     startDate,
     endDate,
     premiumNet,
@@ -663,6 +669,7 @@ export async function updatePolicyDetails(
   const { error: policyError } = await supabase
     .from("policies")
     .update({
+      issue_date: str(formData, "issue_date") ?? undefined,
       start_date: str(formData, "start_date") ?? undefined,
       end_date: str(formData, "end_date") ?? undefined,
       premium_gross: num(formData, "premium_gross") ?? undefined,

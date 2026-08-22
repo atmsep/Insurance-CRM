@@ -84,6 +84,7 @@ type LifeHealth = {
 type Policy = {
   id: string;
   previous_policy_id: string | null;
+  issue_date: string | null;
   start_date: string;
   end_date: string;
   premium_gross: number;
@@ -125,6 +126,7 @@ export function DetailsTab({
   const brokerOfficeLabel = brokerOffices.find((b) => b.id === policy.broker_office_id)?.name;
 
   const { field, checkboxField } = useFormValues({
+    issue_date: policy.issue_date ?? "",
     start_date: policy.start_date,
     end_date: policy.end_date,
     plate_number: vehicle?.plate_number ?? "",
@@ -223,6 +225,10 @@ export function DetailsTab({
             className="flex flex-col gap-4"
           >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="issue_date">Ημ. έκδοσης</Label>
+                <Input id="issue_date" name="issue_date" type="date" {...field("issue_date")} />
+              </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="start_date">Έναρξη</Label>
                 <Input id="start_date" name="start_date" type="date" {...field("start_date")} />
@@ -583,6 +589,7 @@ export function DetailsTab({
         ) : (
           <div className="flex flex-col gap-6">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <ViewField label="Ημ. έκδοσης" value={policy.issue_date ? formatDate(policy.issue_date) : null} />
               <ViewField label="Έναρξη" value={formatDate(policy.start_date)} />
               <ViewField label="Λήξη" value={formatDate(policy.end_date)} />
               <ViewField label="Μικτό ασφάλιστρο" value={`${policy.premium_gross.toFixed(2)} €`} />

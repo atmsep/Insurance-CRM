@@ -114,6 +114,12 @@ const PAYMENT_FREQUENCIES: { value: PaymentFrequency; label: string }[] = [
 // +1 year) instead of always assuming a full year — same rule for a brand
 // new policy and a renewal, since both go through this one form. UTC
 // arithmetic so the result never shifts a day from the browser's zone.
+function todayIso(): string {
+  // Europe/Athens: η ημ. έκδοσης είναι ό,τι θα έγραφε ο χρήστης στο χαρτί
+  // σήμερα, όχι η UTC μέρα του server.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
+}
+
 function computeEndDate(startDate: string, frequency: PaymentFrequency): string {
   if (!startDate) return "";
   const d = new Date(`${startDate}T00:00:00Z`);
@@ -176,6 +182,9 @@ export function PolicyForm({
   const renewProperty = renewFrom?.property;
   const { field, checkboxField, values, setValue } = useFormValues({
     policy_number: renewFrom?.policyNumber ?? "",
+    // Ημ. έκδοσης = σήμερα, ΚΑΙ στην ανανέωση: το νέο συμβόλαιο εκδίδεται
+    // τώρα, δεν κληρονομεί την έκδοση της προηγούμενης περιόδου.
+    issue_date: todayIso(),
     start_date: renewFrom?.startDate ?? "",
     end_date:
       computeEndDate(renewFrom?.startDate ?? "", frequency) || (renewFrom?.endDate ?? ""),
@@ -361,6 +370,7 @@ export function PolicyForm({
           </Select>
           <input type="hidden" name="payment_frequency" value={frequency} />
         </div>
+        <Field label="Ημ. έκδοσης" name="issue_date" type="date" required field={field} />
         <Field label="Έναρξη" name="start_date" type="date" required field={field} />
         <div className="flex flex-col gap-2">
           <Label htmlFor="end_date">Λήξη</Label>

@@ -25,6 +25,7 @@ export type MovementRow = {
   kindLabel: string;
   documentNumber: string | null;
   agentName: string | null;
+  issueDate: string | null;
   startDate: string;
   endDate: string;
   premiumNet: number | null;
@@ -38,6 +39,7 @@ type LegacyTermRow = {
   policy_number: string;
   renewal_number: number;
   status: string;
+  issue_date: string | null;
   start_date: string;
   end_date: string;
   premium_net: number | null;
@@ -68,7 +70,7 @@ async function synthesizeTermMovement(
   const termResult = await supabase
     .from("policies")
     .select(
-      "id, policy_number, renewal_number, status, start_date, end_date, premium_net, premium_gross, previous_policy_id, created_at, agency_users!policies_assigned_agent_id_fkey(full_name)",
+      "id, policy_number, renewal_number, status, issue_date, start_date, end_date, premium_net, premium_gross, previous_policy_id, created_at, agency_users!policies_assigned_agent_id_fkey(full_name)",
     )
     .eq("id", termId)
     .maybeSingle();
@@ -98,6 +100,7 @@ async function synthesizeTermMovement(
       kindLabel: POLICY_MOVEMENT_KIND_LABELS[kind],
       documentNumber: `${term.policy_number}/${term.renewal_number}`,
       agentName: (term.agency_users as unknown as { full_name: string } | null)?.full_name ?? null,
+      issueDate: term.issue_date,
       startDate: term.start_date,
       endDate: term.end_date,
       premiumNet: term.premium_net,
@@ -142,7 +145,7 @@ export async function getPolicyMovements(policyId: string): Promise<MovementRow[
   const { data: movements } = await supabase
     .from("policy_movements")
     .select(
-      "id, kind, document_number, start_date, end_date, premium_net, premium_gross, created_at, outgoing_agent_id, agency_users!policy_movements_outgoing_agent_id_fkey(full_name)",
+      "id, kind, document_number, issue_date, start_date, end_date, premium_net, premium_gross, created_at, outgoing_agent_id, agency_users!policy_movements_outgoing_agent_id_fkey(full_name)",
     )
     .eq("policy_id", policyId)
     .order("created_at", { ascending: true });
@@ -178,6 +181,7 @@ export async function getPolicyMovements(policyId: string): Promise<MovementRow[
       kindLabel: POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind,
       documentNumber: m.document_number,
       agentName: (m.agency_users as unknown as { full_name: string } | null)?.full_name ?? null,
+      issueDate: m.issue_date,
       startDate: m.start_date,
       endDate: m.end_date,
       premiumNet: m.premium_net,
@@ -907,6 +911,41 @@ export async function updateInstallment(
   revalidatePath(`/dashboard/policies/${installment.policy_id}`);
 }
 
+// Διόρθωση ημ. έκδοσης σε ήδη καταχωρημένη κίνηση. Χρειάζεται γιατί μέχρι
+// τώρα καμία φόρμα δεν έγραφε το πεδίο: οι κινήσεις που φτιάχτηκαν από την
+// εφαρμογή πήραν είτε την ημ. έναρξης είτε το current_date του server. Οι
+// Αποδόσεις και τα Ανείσπρακτα φιλτράρουν πάνω σε αυτό, οπότε πρέπει να
+// διορθώνεται. Αγγίζει ΜΟΝΟ την κίνηση — οι δόσεις κρατούν τη δική τους
+// ημ. λήξης, που είναι άλλο πράγμα.
+export async function updateMovementIssueDate(
+  movementId: string,
+  formData: FormData,
+): Promise<{ error: string } | undefined> {
+  const agencyUser = await requireAgencyUser();
+  if (agencyUser.role !== "owner" && agencyUser.role !== "admin") {
+    return { error: "Δεν έχεις δικαίωμα για αυτή την ενέργεια." };
+  }
+  const supabase = await createSupabaseClient();
+
+  const issueDate = str(formData, "issue_date");
+  if (!issueDate) return { error: "Συμπλήρωσε ημερομηνία έκδοσης." };
+
+  const { data: movement } = await supabase
+    .from("policy_movements")
+    .select("policy_id")
+    .eq("id", movementId)
+    .single();
+  if (!movement) return { error: "Δεν βρέθηκε η κίνηση." };
+
+  const { error } = await supabase
+    .from("policy_movements")
+    .update({ issue_date: issueDate })
+    .eq("id", movementId);
+  if (error) return { error: "Σφάλμα κατά την αποθήκευση: " + error.message };
+
+  revalidatePath(`/dashboard/policies/${movement.policy_id}`);
+}
+
 // Deleting a δόση is only allowed while nothing has been collected against
 // it yet (a wrongly created/split row) — once real money is attached, the
 // permanent installment_payments ledger (migration 0045) shouldn't be
@@ -1176,6 +1215,9 @@ export async function createManualMovement(
       policy_id: policyId,
       kind,
       document_number: str(formData, "document_number"),
+      // Χωρίς το πεδίο η στήλη έπαιρνε το current_date του server (default
+      // της 0078) — σωστό μόνο κατά τύχη, λάθος σε κάθε αναδρομική εγγραφή.
+      issue_date: str(formData, "issue_date") ?? startDate,
       start_date: startDate,
       end_date: endDate,
       premium_net: premiumNet,

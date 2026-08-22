@@ -452,6 +452,7 @@ export async function runImport(bridgeId: string, formData: FormData): Promise<I
       await supabase
         .from("policies")
         .update({
+          issue_date: str(row.values.issue_date) || startDate,
           start_date: startDate,
           end_date: endDate,
           premium_gross: premiumGross,
@@ -552,6 +553,7 @@ export async function runImport(bridgeId: string, formData: FormData): Promise<I
         insurance_line_id: row.insuranceLineId,
         assigned_agent_id: agentId,
         broker_office_id: typedBridge.broker_office_id,
+        issue_date: str(row.values.issue_date) || startDate,
         start_date: startDate,
         end_date: endDate,
         premium_gross: premiumGross,

@@ -36,6 +36,7 @@ import {
   updateIncomingCommission,
   updateOutgoingCommission,
   updateInstallment,
+  updateMovementIssueDate,
   deleteInstallment,
   deleteMovement,
   type MovementReceiptData,
@@ -148,6 +149,71 @@ function CommissionEditForm({
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
+  );
+}
+
+// Η ημ. έκδοσης διορθώνεται επιτόπου: μέχρι να μπει το πεδίο στις φόρμες,
+// οι κινήσεις της εφαρμογής την πήραν από την έναρξη ή από το current_date,
+// και πάνω σε αυτήν φιλτράρουν Αποδόσεις/Ανείσπρακτα.
+function IssueDateEditForm({
+  movementId,
+  issueDate,
+  onSaved,
+}: {
+  movementId: string;
+  issueDate: string;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(issueDate.slice(0, 10));
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="underline decoration-dotted underline-offset-2"
+        title="Αλλαγή ημ. έκδοσης"
+      >
+        {formatDate(issueDate)}
+      </button>
+    );
+  }
+
+  return (
+    <form
+      action={async (formData: FormData) => {
+        setPending(true);
+        setError(null);
+        const result = await updateMovementIssueDate(movementId, formData);
+        setPending(false);
+        if (result?.error) {
+          setError(result.error);
+          return;
+        }
+        setEditing(false);
+        onSaved();
+      }}
+      className="flex items-center gap-1"
+    >
+      <Input
+        name="issue_date"
+        type="date"
+        required
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="h-7 w-36 text-xs"
+      />
+      <Button type="submit" size="xs" disabled={pending}>
+        OK
+      </Button>
+      <Button type="button" size="xs" variant="ghost" onClick={() => setEditing(false)}>
+        Άκυρο
+      </Button>
+      {error && <span className="text-xs text-destructive">{error}</span>}
+    </form>
   );
 }
 
@@ -301,7 +367,15 @@ export function MovementReceiptDialog({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Ημ.Έκδοσης</span>
-                      <span>{formatDate(data.movement.issueDate)}</span>
+                      {isAdmin && movementId ? (
+                        <IssueDateEditForm
+                          movementId={movementId}
+                          issueDate={data.movement.issueDate}
+                          onSaved={refetch}
+                        />
+                      ) : (
+                        <span>{formatDate(data.movement.issueDate)}</span>
+                      )}
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Ημ.Έναρξης</span>
