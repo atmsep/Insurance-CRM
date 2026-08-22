@@ -63,7 +63,6 @@ const ALLOWED = {
 const KNOWN_DEBT = new Set([
   "app/dashboard/remittances/_components/remittances-view.tsx:serial-query-loop",
   "app/dashboard/reports/commission-statement/page.tsx:serial-query-loop",
-  "app/dashboard/reports/receivables/page.tsx:serial-query-loop",
   "app/dashboard/reports/retention/page.tsx:serial-query-loop",
   "app/dashboard/uncollected/page.tsx:serial-query-loop",
 ]);

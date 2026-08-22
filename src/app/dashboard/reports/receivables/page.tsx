@@ -17,26 +17,22 @@ import {
 import { PrintButton } from "@/components/print-button";
 import { ListPageHeader } from "@/components/list-page-header";
 import { ReportPrintHeader } from "../_components/report-print-header";
-import { isBillablePolicyStatus, installmentRemaining } from "../../policies/balance";
+import { getActiveAgentsCached } from "@/lib/cached-queries/lookups";
 
 const FORM_ID = "receivables-filters";
 
-type SingleOrMany<T> = T | T[] | null;
-function one<T>(v: SingleOrMany<T>): T | null {
-  return Array.isArray(v) ? (v[0] ?? null) : v;
-}
-
-type OpenInstallmentRow = {
-  id: string;
-  due_date: string;
-  amount: number;
-  paid_amount: number | null;
-  policies: SingleOrMany<{
-    id: string;
-    status: string;
-    assigned_agent_id: string | null;
-    clients: SingleOrMany<{ id: string; display_name: string | null; phone_mobile: string | null }>;
-  }>;
+// Ό,τι επιστρέφει η receivables_aging (migration 0113). Τα numeric της
+// Postgres φτάνουν ως string μέσω PostgREST, γι' αυτό περνούν από Number().
+type AgingRow = {
+  client_id: string | null;
+  client_name: string | null;
+  phone_mobile: string | null;
+  bucket_current: string;
+  bucket_30: string;
+  bucket_60: string;
+  bucket_90: string;
+  bucket_90_plus: string;
+  total: string;
 };
 
 type ClientBucketRow = {
@@ -69,86 +65,41 @@ export default async function ReceivablesReportPage({
   const agentId = sp.agent || "";
   const admin = createAdminClient();
 
-  const { data: agents } = await admin
-    .from("agency_users")
-    .select("id, full_name")
-    .eq("is_active", true)
-    .order("full_name");
+  // Η ενηλικίωση γίνεται ΣΤΗ ΒΑΣΗ (migration 0113). Πριν, η σελίδα κατέβαζε
+  // έως 20.000 ανοιχτές δόσεις σε σειριακό βρόχο — μία διαδρομή ανά 1.000
+  // γραμμές — και τις μοίραζε σε κάδους με JavaScript, δηλαδή ο χρόνος
+  // μεγάλωνε γραμμικά με τα δεδομένα.
+  const [agents, { data: agingData, error: agingError }] = await Promise.all([
+    getActiveAgentsCached(),
+    admin.rpc("receivables_aging", { p_agent_id: agentId || null }),
+  ]);
+  const loadError = Boolean(agingError);
 
-  // Chunked past PostgREST's silent 1000-row cap (666 open δόσεις today,
-  // and the reimport will multiply that).
-  const CHUNK = 1000;
-  const MAX_ROWS = 20000;
-  const open: OpenInstallmentRow[] = [];
-  let loadError = false;
-  for (let start = 0; start < MAX_ROWS; start += CHUNK) {
-    let q = admin
-      .from("policy_installments")
-      .select(
-        "id, due_date, amount, paid_amount, " +
-          "policies!inner(id, status, assigned_agent_id, clients!inner(id, display_name, phone_mobile))",
-      )
-      .in("status", ["pending", "overdue", "partially_paid"])
-      .order("due_date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(start, start + CHUNK - 1);
-    if (agentId) q = q.eq("policies.assigned_agent_id", agentId);
-    const { data, error } = await q;
-    if (error) {
-      loadError = true;
-      break;
-    }
-    const batch = (data ?? []) as unknown as OpenInstallmentRow[];
-    open.push(...batch);
-    if (batch.length < CHUNK) break;
-  }
-
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date());
-  const msPerDay = 24 * 60 * 60 * 1000;
-  const todayMs = new Date(`${today}T00:00:00Z`).getTime();
-
-  const byClient = new Map<string, ClientBucketRow>();
-  for (const inst of open) {
-    const policy = one(inst.policies);
-    if (!policy || !isBillablePolicyStatus(policy.status)) continue;
-    const remaining = installmentRemaining(inst);
-    if (remaining <= 0) continue;
-    const client = one(policy.clients);
-    if (!client) continue;
-
-    const row = byClient.get(client.id) ?? {
-      clientId: client.id,
-      name: client.display_name ?? "—",
-      phone: client.phone_mobile,
-      current: 0,
-      b30: 0,
-      b60: 0,
-      b90: 0,
-      b90plus: 0,
-      total: 0,
-    };
-    const overdueDays = Math.floor((todayMs - new Date(`${inst.due_date}T00:00:00Z`).getTime()) / msPerDay);
-    if (overdueDays <= 0) row.current += remaining;
-    else if (overdueDays <= 30) row.b30 += remaining;
-    else if (overdueDays <= 60) row.b60 += remaining;
-    else if (overdueDays <= 90) row.b90 += remaining;
-    else row.b90plus += remaining;
-    row.total += remaining;
-    byClient.set(client.id, row);
-  }
-
-  const rows = [...byClient.values()].sort((a, b) => b.total - a.total);
-  const totals = rows.reduce(
-    (acc, r) => ({
-      current: acc.current + r.current,
-      b30: acc.b30 + r.b30,
-      b60: acc.b60 + r.b60,
-      b90: acc.b90 + r.b90,
-      b90plus: acc.b90plus + r.b90plus,
-      total: acc.total + r.total,
-    }),
-    { current: 0, b30: 0, b60: 0, b90: 0, b90plus: 0, total: 0 },
-  );
+  // Η συνάρτηση επιστρέφει και τη γραμμή συνόλων μαζί με τις γραμμές πελατών
+  // (client_id null), ώστε να μη χρειάζεται δεύτερο ερώτημα ούτε νέο άθροισμα.
+  const aging = (agingData ?? []) as unknown as AgingRow[];
+  const totalsRow = aging.find((r) => r.client_id === null) ?? null;
+  const rows: ClientBucketRow[] = aging
+    .filter((r) => r.client_id !== null)
+    .map((r) => ({
+      clientId: r.client_id as string,
+      name: r.client_name ?? "—",
+      phone: r.phone_mobile,
+      current: Number(r.bucket_current),
+      b30: Number(r.bucket_30),
+      b60: Number(r.bucket_60),
+      b90: Number(r.bucket_90),
+      b90plus: Number(r.bucket_90_plus),
+      total: Number(r.total),
+    }));
+  const totals = {
+    current: Number(totalsRow?.bucket_current ?? 0),
+    b30: Number(totalsRow?.bucket_30 ?? 0),
+    b60: Number(totalsRow?.bucket_60 ?? 0),
+    b90: Number(totalsRow?.bucket_90 ?? 0),
+    b90plus: Number(totalsRow?.bucket_90_plus ?? 0),
+    total: Number(totalsRow?.total ?? 0),
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -171,7 +122,7 @@ export default async function ReceivablesReportPage({
                   name="agent"
                   defaultValue={agentId}
                   allLabel="Όλοι οι συνεργάτες"
-                  options={(agents ?? []).map((a) => ({ id: a.id, label: a.full_name }))}
+                  options={agents}
                   className="h-9 w-full text-sm"
                 />
               </div>
