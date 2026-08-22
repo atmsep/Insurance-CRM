@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PrintButton } from "@/components/print-button";
-import { AutoPrint } from "@/components/auto-print";
 import {
   Table,
   TableBody,
@@ -144,11 +143,18 @@ export default async function RemittanceReceiptPage({
 
   return (
     <div className="flex flex-col gap-6 p-6 print:p-0">
-      <AutoPrint />
-
-      <div className="flex items-center justify-between no-print">
+      {/* ΔΕΝ τυπώνεται μόνο του: ο διάλογος εκτύπωσης σκέπαζε αμέσως τα
+          σύνολα, που είναι ακριβώς αυτό που θέλει να ελέγξει κανείς πριν
+          παραδώσει τα χρήματα. Τυπώνει ο χρήστης όταν συμφωνήσει. */}
+      <div className="flex items-center justify-between gap-4 no-print">
         <h1 className="text-2xl font-semibold">{title}</h1>
-        <PrintButton />
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Σύνολο προς απόδοση</p>
+            <p className="text-xl font-semibold tabular-nums">{money(grandTotal)}</p>
+          </div>
+          <PrintButton />
+        </div>
       </div>
 
       {/* Επιστολόχαρτο: φαίνεται και στην οθόνη, ώστε να ελέγχεται πριν το χαρτί. */}
@@ -204,7 +210,7 @@ export default async function RemittanceReceiptPage({
               {g.rows.length} κιν. · {money(g.total)}
             </span>
           </div>
-          <div className="overflow-x-auto rounded-md border">
+          <div className="overflow-x-auto rounded-md border text-xs [&_td]:whitespace-normal [&_th]:whitespace-normal [&_.tabular-nums]:whitespace-nowrap">
             <Table>
               <TableHeader>
                 <TableRow>

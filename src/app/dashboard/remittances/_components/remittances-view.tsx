@@ -330,6 +330,27 @@ export async function RemittancesView({
       totalPages,
     } = opts;
     const ids = rows.map((m) => m.id);
+    // Τα ποσά ταξιδεύουν στη μπάρα ώστε να δείχνει το σύνολο ΤΩΝ ΕΠΙΛΕΓΜΕΝΩΝ
+    // — αυτό είναι το ποσό που θα παραδοθεί, και πρέπει να φαίνεται πριν
+    // πατηθεί η απόδοση, όχι μόνο πάνω στο έντυπο.
+    const amountById: Record<string, number> = {};
+    for (const m of rows) amountById[m.id] = getAmount(m);
+    const listedTotal = rows.reduce((sum, m) => sum + getAmount(m), 0);
+
+    const totalsBar = (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/40 px-4 py-2.5">
+        <span className="text-sm text-muted-foreground">
+          {rows.length} {mode === "pending" ? "εκκρεμείς" : "αποδοθείσες"} εγγραφές
+          {mode === "done" && " σε αυτή τη σελίδα"}
+        </span>
+        <span className="text-sm">
+          <span className="text-muted-foreground">
+            {mode === "pending" ? `Σύνολο ${amountLabel.toLowerCase()}: ` : "Σύνολο σελίδας: "}
+          </span>
+          <span className="font-semibold tabular-nums">{listedTotal.toFixed(2)} €</span>
+        </span>
+      </div>
+    );
 
     const table = (
       <div className="overflow-x-auto rounded-md border">
@@ -486,6 +507,7 @@ export async function RemittancesView({
     if (mode === "done") {
       return (
         <div className="flex flex-col gap-3">
+          {totalsBar}
           {table}
           <Pagination
             page={page}
@@ -516,9 +538,15 @@ export async function RemittancesView({
     return (
       <BulkSelectionProvider>
         <div className="flex flex-col gap-3">
+          {totalsBar}
           {table}
           {bulkAction && bulkSuccessLabel && (
-            <RemittanceBulkBar action={bulkAction} successLabel={bulkSuccessLabel} receiptKind={kind} />
+            <RemittanceBulkBar
+              action={bulkAction}
+              successLabel={bulkSuccessLabel}
+              receiptKind={kind}
+              amountById={amountById}
+            />
           )}
         </div>
       </BulkSelectionProvider>
@@ -563,10 +591,11 @@ export async function RemittancesView({
             </div>
           ) : (
             <>
-              <p className="text-sm text-muted-foreground">
-                {isPremium ? premiumTotalCount : commissionTotalCount}{" "}
-                {remitStatus === "pending" ? "εκκρεμείς" : "αποδοθείσες"} εγγραφές
-              </p>
+              {remitStatus === "done" && (
+                <p className="text-sm text-muted-foreground">
+                  {isPremium ? premiumTotalCount : commissionTotalCount} αποδοθείσες εγγραφές συνολικά
+                </p>
+              )}
               {isPremium
                 ? remitStatus === "pending"
                   ? renderTable({
