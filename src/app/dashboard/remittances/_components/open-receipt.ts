@@ -28,11 +28,27 @@ export function openReceiptWindow(href: string): Window | null {
 // απόδειξη για κάτι που απέτυχε), και μετά το await το κλικ έχει «λήξει».
 // Άρα: άνοιξε άδειο παράθυρο τώρα, γέμισέ το μετά — ή κλείσ' το αν η
 // ενέργεια απέτυχε.
+// Όσο τρέχει η απόδοση το παράθυρο θα ήταν κατάλευκο — σε αργή σύνδεση
+// αυτό διαρκεί δευτερόλεπτα και μοιάζει με κολλημένο παράθυρο.
+const PLACEHOLDER =
+  '<!doctype html><html lang="el"><head><meta charset="utf-8">' +
+  "<title>Απόδειξη απόδοσης</title></head>" +
+  '<body style="margin:0;height:100vh;display:grid;place-items:center;' +
+  'font:14px system-ui,sans-serif;color:#666">Δημιουργία απόδειξης…</body></html>';
+
 export function openReceiptWindowDeferred(): {
   fill: (href: string) => void;
   abort: () => void;
 } {
   const win = openReceiptWindow("about:blank");
+  if (win) {
+    try {
+      win.document.write(PLACEHOLDER);
+      win.document.close();
+    } catch {
+      // Αν ο φυλλομετρητής δεν το επιτρέπει, μένει λευκό — ασήμαντο.
+    }
+  }
   return {
     fill: (href) => {
       if (win && !win.closed) win.location.replace(href);
