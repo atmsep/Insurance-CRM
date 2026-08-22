@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Printer } from "lucide-react";
 import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ import { parsePerPage } from "../../policies/filters";
 import { parseRemittanceFilters, applyRemittanceFilters } from "../filters";
 import { BulkSelectionProvider, BulkSelectCheckbox, BulkSelectAllCheckbox } from "@/components/bulk-selection";
 import { RemittanceBulkBar } from "./remittance-bulk-bar";
+import { RemitRowButton } from "./remit-row-button";
 
 type SingleOrMany<T> = T | T[] | null;
 function one<T>(v: SingleOrMany<T>): T | null {
@@ -40,6 +42,8 @@ type RemittanceMovementRow = {
   kind: string;
   document_number: string | null;
   issue_date: string;
+  start_date: string;
+  premium_net: number | null;
   premium_gross: number;
   policy_id: string;
   policies: SingleOrMany<{
@@ -52,11 +56,11 @@ type RemittanceMovementRow = {
   }>;
 };
 
-// assigned_agent_id/carrier_id/insurance_line_id/status/start_date aren't
-// displayed anywhere on this page — they're here purely so
-// applyRemittanceFilters' dot-path filters have something to join against.
+// assigned_agent_id/carrier_id/insurance_line_id/status aren't displayed
+// anywhere on this page — they're here purely so applyRemittanceFilters'
+// dot-path filters have something to join against.
 const MOVEMENT_SELECT =
-  "id, kind, document_number, issue_date, start_date, premium_gross, policy_id, " +
+  "id, kind, document_number, issue_date, start_date, premium_net, premium_gross, policy_id, " +
   "policies!inner(policy_number, risk_label, assigned_agent_id, carrier_id, insurance_line_id, status, " +
   "clients!inner(display_name), agency_users!policies_assigned_agent_id_fkey(full_name), carriers(name), insurance_lines(name_el))";
 
@@ -105,6 +109,8 @@ async function undoCommissionRemit(movementId: string) {
 // has the identical per-row EXISTS-subquery shape that already caused two
 // real statement timeouts elsewhere in this schema.
 export type RemittanceKind = "premium" | "commission";
+
+const RECEIPT_PATH = "/dashboard/remittances/receipt";
 
 export async function RemittancesView({
   kind,
@@ -295,8 +301,13 @@ export async function RemittancesView({
 
   function renderTable<T extends RemittanceMovementRow>(opts: {
     rows: T[];
+    // Η στήλη που αποδίδεται (μικτά ή προμήθεια) φοράει το badge· οι
+    // υπόλοιπες είναι πληροφοριακές.
     amountLabel: string;
     getAmount: (m: T) => number;
+    // Οι προμήθειες δείχνουν ΚΑΙ τα ασφάλιστρα της κίνησης, ώστε να
+    // φαίνεται σε τι ποσό αντιστοιχεί η προμήθεια.
+    showPremiums?: boolean;
     action: (movementId: string) => Promise<void>;
     bulkAction?: (movementIds: string[]) => Promise<{ error: string } | undefined>;
     bulkSuccessLabel?: string;
@@ -309,6 +320,7 @@ export async function RemittancesView({
       rows,
       amountLabel,
       getAmount,
+      showPremiums,
       action,
       bulkAction,
       bulkSuccessLabel,
@@ -332,17 +344,21 @@ export async function RemittancesView({
                 <TableHead>Αποδόθηκε</TableHead>
               )}
               <TableHead>Έκδοση</TableHead>
+              <TableHead>Έναρξη</TableHead>
               <TableHead>Είδος</TableHead>
               <TableHead>Συμβόλαιο</TableHead>
               <TableHead>Χαρακτηριστικό</TableHead>
               <TableHead>Κλάδος</TableHead>
               <TableHead>Εταιρεία</TableHead>
               <TableHead>Πελάτης</TableHead>
+              <TableHead className="text-right">Καθαρά</TableHead>
+              {showPremiums && <TableHead className="text-right">Μικτά</TableHead>}
               <TableHead>{amountLabel}</TableHead>
               <TableHead>Συνεργάτης</TableHead>
               <TableHead />
             </TableRow>
             <TableRow>
+              <TableHead className="pb-2" />
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
@@ -377,6 +393,8 @@ export async function RemittancesView({
               </TableHead>
               <TableHead className="pb-2" />
               <TableHead className="pb-2" />
+              {showPremiums && <TableHead className="pb-2" />}
+              <TableHead className="pb-2" />
               <TableHead className="pb-2" />
             </TableRow>
           </TableHeader>
@@ -400,6 +418,7 @@ export async function RemittancesView({
                       </TableCell>
                     )}
                     <TableCell>{formatDate(m.issue_date)}</TableCell>
+                    <TableCell>{formatDate(m.start_date)}</TableCell>
                     <TableCell>{POLICY_MOVEMENT_KIND_LABELS[m.kind] ?? m.kind}</TableCell>
                     <TableCell>
                       <Link href={`/dashboard/policies/${m.policy_id}`} className="hover:underline">
@@ -410,6 +429,12 @@ export async function RemittancesView({
                     <TableCell>{line?.name_el ?? "—"}</TableCell>
                     <TableCell>{carrier?.name ?? "—"}</TableCell>
                     <TableCell>{client?.display_name ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {m.premium_net != null ? `${m.premium_net.toFixed(2)} €` : "—"}
+                    </TableCell>
+                    {showPremiums && (
+                      <TableCell className="text-right tabular-nums">{m.premium_gross.toFixed(2)} €</TableCell>
+                    )}
                     <TableCell>
                       <Badge variant={mode === "pending" ? "warning" : "success"}>
                         {getAmount(m).toFixed(2)} €
@@ -425,18 +450,43 @@ export async function RemittancesView({
                     </TableCell>
                     <TableCell>{agent?.full_name ?? "—"}</TableCell>
                     <TableCell>
-                      <form action={action.bind(null, m.id)}>
-                        <Button type="submit" size="sm" variant="outline">
-                          {mode === "pending" ? "Απόδοση" : "Αναίρεση"}
-                        </Button>
-                      </form>
+                      {mode === "pending" ? (
+                        <RemitRowButton
+                          movementId={m.id}
+                          action={action}
+                          receiptHref={`${RECEIPT_PATH}?kind=${kind}&ids=${m.id}`}
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <form action={action.bind(null, m.id)}>
+                            <Button type="submit" size="sm" variant="outline">
+                              Αναίρεση
+                            </Button>
+                          </form>
+                          {/* Επανεκτύπωση: η απόδειξη δεν εξαρτάται από την ενέργεια. */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            nativeButton={false}
+                            render={
+                              <a
+                                href={`${RECEIPT_PATH}?kind=${kind}&ids=${m.id}`}
+                                target="_blank"
+                                title="Απόδειξη"
+                              >
+                                <Printer className="size-4" />
+                              </a>
+                            }
+                          />
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={11} className="text-center text-muted-foreground">
+                <TableCell colSpan={showPremiums ? 14 : 13} className="text-center text-muted-foreground">
                   {mode === "pending" ? "Δεν υπάρχουν εκκρεμείς αποδόσεις." : "Δεν υπάρχουν αποδοθέντα."}
                 </TableCell>
               </TableRow>
@@ -481,7 +531,7 @@ export async function RemittancesView({
         <div className="flex flex-col gap-3">
           {table}
           {bulkAction && bulkSuccessLabel && (
-            <RemittanceBulkBar action={bulkAction} successLabel={bulkSuccessLabel} />
+            <RemittanceBulkBar action={bulkAction} successLabel={bulkSuccessLabel} receiptKind={kind} />
           )}
         </div>
       </BulkSelectionProvider>
@@ -556,6 +606,7 @@ export async function RemittancesView({
                       rows: commissionRows,
                       amountLabel: "Προμήθεια",
                       getAmount: (m) => m.commission,
+                      showPremiums: true,
                       action: remitCommission,
                       bulkAction: bulkRemitOutgoingCommissions,
                       bulkSuccessLabel: "Αποδόθηκαν προμήθειες",
@@ -565,6 +616,7 @@ export async function RemittancesView({
                       rows: commissionRows,
                       amountLabel: "Προμήθεια",
                       getAmount: (m) => m.commission,
+                      showPremiums: true,
                       action: undoCommissionRemit,
                       mode: "done",
                       getRemittedAt: (m) => m.outgoing_commission_remitted_at,
