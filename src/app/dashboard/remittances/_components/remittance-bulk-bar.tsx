@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useBulkSelection } from "@/components/bulk-selection";
 import { BulkActionsShell } from "@/components/bulk-actions-shell";
+import { openReceiptWindowDeferred } from "./open-receipt";
 
 export function RemittanceBulkBar({
   action,
@@ -24,27 +25,29 @@ export function RemittanceBulkBar({
         <Button
           size="sm"
           disabled={isPending}
-          onClick={() =>
+          onClick={() => {
+            const receipt = openReceiptWindowDeferred();
             startTransition(async () => {
               try {
                 const result = await action(ids);
                 if (result?.error) {
+                  receipt.abort();
                   toast.error(result.error);
                   return;
                 }
-                // Το έντυπο ανοίγει ΠΡΙΝ το clear(): μετά τον καθαρισμό της
+                // Το έντυπο γεμίζει ΠΡΙΝ το clear(): μετά τον καθαρισμό της
                 // επιλογής τα id δεν υπάρχουν πουθενά για να τυπωθούν.
-                window.open(
-                  `/dashboard/remittances/receipt?kind=${receiptKind}&ids=${ids.join(",")}`,
-                  "_blank",
+                receipt.fill(
+                  `/remittance-receipt?kind=${receiptKind}&ids=${ids.join(",")}`,
                 );
                 toast.success(`${successLabel} (${ids.length}).`);
                 clear();
               } catch {
+                receipt.abort();
                 toast.error("Κάτι πήγε στραβά. Δοκίμασε ξανά.");
               }
-            })
-          }
+            });
+          }}
         >
           Απόδοση επιλεγμένων
         </Button>

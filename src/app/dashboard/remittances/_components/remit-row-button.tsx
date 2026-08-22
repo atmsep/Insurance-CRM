@@ -3,11 +3,14 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { openReceiptWindowDeferred } from "./open-receipt";
 
 // Η μεμονωμένη απόδοση ήταν σκέτο <form action> — έγινε client κουμπί ώστε
-// μετά την επιτυχία να ανοίγει το έντυπο απόδειξης σε νέα καρτέλα, όπως
-// κάνει και η μαζική. Το άνοιγμα γίνεται ΜΟΝΟ αν πέτυχε η ενέργεια: μια
-// απόδειξη για απόδοση που δεν έγινε είναι χειρότερη από καθόλου απόδειξη.
+// μετά την επιτυχία να ανοίγει το έντυπο απόδειξης, όπως κάνει και η
+// μαζική. Το έντυπο ανοίγει σε ΞΕΧΩΡΙΣΤΟ παράθυρο (όχι καρτέλα), ώστε η
+// λίστα να μένει εκεί που την άφησε ο χρήστης· και μόνο αν πέτυχε η
+// ενέργεια — απόδειξη για απόδοση που δεν έγινε είναι χειρότερη από
+// καθόλου απόδειξη.
 export function RemitRowButton({
   movementId,
   action,
@@ -25,16 +28,18 @@ export function RemitRowButton({
       size="sm"
       variant="outline"
       disabled={isPending}
-      onClick={() =>
+      onClick={() => {
+        const receipt = openReceiptWindowDeferred();
         startTransition(async () => {
           try {
             await action(movementId);
-            window.open(receiptHref, "_blank");
+            receipt.fill(receiptHref);
           } catch {
+            receipt.abort();
             toast.error("Κάτι πήγε στραβά. Δοκίμασε ξανά.");
           }
-        })
-      }
+        });
+      }}
     >
       Απόδοση
     </Button>

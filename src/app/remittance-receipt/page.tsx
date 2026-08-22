@@ -13,14 +13,20 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/date";
 import { getAgencyProfileCached } from "@/lib/cached-queries/lookups";
-import { POLICY_MOVEMENT_KIND_LABELS } from "../../policies/movement-labels";
-import { getOutgoingCommissionsByMovement } from "../../reports/production/commissions";
+import { POLICY_MOVEMENT_KIND_LABELS } from "../dashboard/policies/movement-labels";
+import { getOutgoingCommissionsByMovement } from "../dashboard/reports/production/commissions";
 
 // Έντυπο απόδειξης απόδοσης — το χαρτί που συνοδεύει την πραγματική
 // πληρωμή προς την εταιρεία (ασφάλιστρα) ή προς τον συνεργάτη
 // (προμήθειες). Σκόπιμα ΑΝΕΞΑΡΤΗΤΟ από την ίδια την ενέργεια απόδοσης:
 // παίρνει μόνο τα id των κινήσεων, οπότε τυπώνεται και εκ των υστέρων για
 // κάτι που αποδόθηκε χθες, χωρίς να αλλάζει τίποτα στη βάση.
+//
+// Ζει ΕΞΩ από το /dashboard επίτηδες: ανοίγει σε ξεχωριστό παράθυρο-έντυπο,
+// και το μενού/κεφαλίδα της εφαρμογής μέσα σε τέτοιο παράθυρο είναι
+// αδιέξοδο — ο χρήστης θα πλοηγούνταν μέσα σε ένα popup. Η πρόσβαση
+// παραμένει κλειδωμένη: το proxy.ts στέλνει κάθε μη δημόσια διαδρομή στο
+// /login, και εδώ ελέγχεται ξανά ο ρόλος.
 //
 // Η ομαδοποίηση δεν είναι διακόσμηση: μια απόδοση ασφαλίστρων πληρώνεται
 // ΑΝΑ ΕΤΑΙΡΕΙΑ και μια απόδοση προμηθειών εισπράττεται ΑΝΑ ΣΥΝΕΡΓΑΤΗ, οπότε
@@ -83,7 +89,7 @@ export default async function RemittanceReceiptPage({
 
   if (ids.length === 0) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">{title}</h1>
         <p className="text-sm text-muted-foreground">
           Δεν επιλέχθηκαν κινήσεις. Επίλεξε γραμμές στις Αποδόσεις και πάτα «Απόδοση».
@@ -137,7 +143,7 @@ export default async function RemittanceReceiptPage({
   const recipientLabel = isPremium ? "Εταιρεία" : "Συνεργάτης";
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-6 print:p-0">
       <AutoPrint />
 
       <div className="flex items-center justify-between no-print">

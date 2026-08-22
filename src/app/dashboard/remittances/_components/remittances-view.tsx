@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Printer } from "lucide-react";
 import { requireAgencyUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +30,7 @@ import { parseRemittanceFilters, applyRemittanceFilters } from "../filters";
 import { BulkSelectionProvider, BulkSelectCheckbox, BulkSelectAllCheckbox } from "@/components/bulk-selection";
 import { RemittanceBulkBar } from "./remittance-bulk-bar";
 import { RemitRowButton } from "./remit-row-button";
+import { ReceiptPrintLink } from "./receipt-print-link";
 
 type SingleOrMany<T> = T | T[] | null;
 function one<T>(v: SingleOrMany<T>): T | null {
@@ -110,7 +110,7 @@ async function undoCommissionRemit(movementId: string) {
 // real statement timeouts elsewhere in this schema.
 export type RemittanceKind = "premium" | "commission";
 
-const RECEIPT_PATH = "/dashboard/remittances/receipt";
+const RECEIPT_PATH = "/remittance-receipt";
 
 export async function RemittancesView({
   kind,
@@ -464,20 +464,7 @@ export async function RemittancesView({
                             </Button>
                           </form>
                           {/* Επανεκτύπωση: η απόδειξη δεν εξαρτάται από την ενέργεια. */}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            nativeButton={false}
-                            render={
-                              <a
-                                href={`${RECEIPT_PATH}?kind=${kind}&ids=${m.id}`}
-                                target="_blank"
-                                title="Απόδειξη"
-                              >
-                                <Printer className="size-4" />
-                              </a>
-                            }
-                          />
+                          <ReceiptPrintLink href={`${RECEIPT_PATH}?kind=${kind}&ids=${m.id}`} />
                         </div>
                       )}
                     </TableCell>
